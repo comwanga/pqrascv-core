@@ -1,0 +1,47 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/pqrascv-core",
+    "crates/verifier",
+]
+
+[workspace.package]
+version       = "0.1.0"
+edition       = "2021"
+rust-version  = "1.85"
+authors       = ["pqrascv-core contributors"]
+license       = "MIT OR Apache-2.0"
+repository    = "https://github.com/comwanga/pqrascv-core"
+keywords      = ["attestation", "post-quantum", "no_std", "embedded", "supply-chain"]
+categories    = ["cryptography", "embedded", "no-std"]
+
+[workspace.dependencies]
+# Serialization
+serde       = { version = "1",           default-features = false, features = ["derive"] }
+serde_bytes = { version = "0.11",        default-features = false, features = ["alloc"] }
+ciborium    = { version = "0.2",         default-features = false }
+
+# Post-Quantum Cryptography (RustCrypto) — use pre-release versions as stable is not yet published
+ml-kem      = { version = "0.3.0-rc.1",  default-features = false }
+ml-dsa      = { version = "0.1.0-rc.8",  default-features = false, features = ["rand_core"] }
+signature   = { version = "3.0.0-rc.10", default-features = false }
+
+# Hashing
+sha3        = { version = "0.10",        default-features = false }
+digest      = { version = "0.10",        default-features = false }
+
+# Memory safety
+zeroize     = { version = "1",           default-features = false, features = ["derive"] }
+
+# RNG (rand_core 0.10 is required by ml-dsa)
+rand_core   = { version = "0.10",        default-features = false }
+getrandom   = { version = "0.4",         features = ["sys_rng"] }
+
+# Embedded / no_std collections
+heapless    = { version = "0.8",         default-features = false }
+
+[profile.release]
+opt-level     = 3
+lto           = true
+codegen-units = 1
+panic         = "abort"

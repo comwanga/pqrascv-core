@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ── Host builds & tests ──────────────────────────────────────────────────────
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (all features)
+        run: cargo clippy --all-features -- -D warnings
+
+      - name: Clippy (no default features)
+        run: cargo clippy -p pqrascv-core --no-default-features -- -D warnings
+
+      - name: Tests (default features)
+        run: cargo test --all
+
+      - name: Tests (all features)
+        run: cargo test --all-features
+
+      - name: Tests (no default features, host)
+        run: cargo test -p pqrascv-core --no-default-features
+
+  # ── Cross-compilation (no_std embedded targets) ──────────────────────────────
+  cross:
+    name: Cross (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - thumbv7em-none-eabi          # ARM Cortex-M4/M7
+          - riscv32imac-unknown-none-elf # RISC-V embedded
+          - wasm32-unknown-unknown       # WebAssembly
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build (no_std)
+        run: |
+          cargo build -p pqrascv-core \
+            --no-default-features \
+            --target ${{ matrix.target }}
+
+  # ── Feature matrix ────────────────────────────────────────────────────────────
+  features:
+    name: Features (${{ matrix.features }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - ""
+          - "hardware-tpm"
+          - "dice"
+          - "hardware-tpm,dice"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build with features=${{ matrix.features }}
+        run: |
+          if [ -z "${{ matrix.features }}" ]; then
+            cargo build -p pqrascv-core
+          else
+            cargo build -p pqrascv-core --features "${{ matrix.features }}"
+          fi
+
+  # ── Security audit ────────────────────────────────────────────────────────────
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Audit dependencies
+        run: cargo audit
+
+  # ── MSRV check ────────────────────────────────────────────────────────────────
+  msrv:
+    name: MSRV (Rust 1.85)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85
+      - uses: Swatinem/rust-cache@v2
+      - name: Build on MSRV
+        run: cargo build --all-features

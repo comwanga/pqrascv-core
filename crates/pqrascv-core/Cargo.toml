@@ -1,0 +1,37 @@
+[package]
+name          = "pqrascv-core"
+description   = "Post-Quantum Remote Attestation & Supply-Chain Verification (PQ-RASCV) prover core — no_std + alloc"
+readme        = "README.md"
+homepage      = "https://github.com/comwanga/pqrascv-core"
+documentation = "https://docs.rs/pqrascv-core"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+authors.workspace      = true
+license.workspace      = true
+repository.workspace   = true
+keywords.workspace     = true
+categories.workspace   = true
+
+[features]
+default      = ["std"]
+std          = ["alloc", "serde/std", "ciborium/std", "sha3/std", "zeroize/std"]
+alloc        = ["serde/alloc"]
+# Hardware backends (opt-in only)
+hardware-tpm = []
+dice         = []
+
+[dependencies]
+serde.workspace       = true
+serde_bytes.workspace = true
+ciborium.workspace    = true
+ml-dsa.workspace      = true
+ml-kem.workspace      = true
+signature.workspace   = true
+sha3.workspace        = true
+digest.workspace      = true
+zeroize.workspace     = true
+rand_core.workspace   = true
+getrandom.workspace   = true
+heapless.workspace    = true
+

@@ -1,0 +1,17 @@
+[package]
+name         = "pqrascv-verifier"
+description  = "Reference verifier for the PQ-RASCV protocol (std only)"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+authors.workspace      = true
+license.workspace      = true
+repository.workspace   = true
+
+[dependencies]
+pqrascv-core = { path = "../pqrascv-core", features = ["std"] }
+serde.workspace    = true
+ciborium.workspace = true
+
+[dev-dependencies]
+getrandom = { workspace = true }
