@@ -6,7 +6,7 @@
 //! | Module | Feature | Description |
 //! |--------|---------|-------------|
 //! | [`software`] | *(always available)* | SHA3-256 hash-based software RoT |
-//! | [`tpm`] | `hardware-tpm` | TPM 2.0 backend |
+//! | `tpm` | `hardware-tpm` | TPM 2.0 backend |
 //! | [`dice`] | `dice` | DICE RoT backend |
 
 pub mod software;
