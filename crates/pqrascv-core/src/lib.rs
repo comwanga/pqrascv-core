@@ -54,6 +54,7 @@
 //! ```
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![deny(clippy::all, clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
 // Allow missing_errors_doc and missing_panics_doc at module level — every
