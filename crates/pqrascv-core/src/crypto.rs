@@ -200,6 +200,7 @@ impl CryptoBackend for MlDsaBackend {
 ///
 /// Uses [`getrandom::SysRng`] internally, which sources entropy from the OS.
 /// The returned [`SigningKeySeed`] must be kept secret.
+#[cfg(feature = "std")]
 pub fn generate_ml_dsa_keypair(
 ) -> Result<
     (

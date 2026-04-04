@@ -15,7 +15,7 @@ categories.workspace   = true
 
 [features]
 default      = ["std"]
-std          = ["alloc", "serde/std", "ciborium/std", "sha3/std", "zeroize/std"]
+std          = ["alloc", "serde/std", "ciborium/std", "sha3/std", "zeroize/std", "dep:getrandom"]
 alloc        = ["serde/alloc"]
 # Hardware backends (opt-in only)
 hardware-tpm = ["dep:tss-esapi"]
@@ -32,7 +32,7 @@ sha3.workspace        = true
 digest.workspace      = true
 zeroize.workspace     = true
 rand_core.workspace   = true
-getrandom.workspace   = true
+getrandom             = { workspace = true, optional = true }
 heapless.workspace    = true
 tss-esapi             = { version = "8.0.0-alpha.2", optional = true }
 
