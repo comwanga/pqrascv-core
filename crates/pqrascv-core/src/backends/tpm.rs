@@ -125,7 +125,7 @@ mod inner {
             // We copy up to PCR_COUNT digests; extras are silently dropped.
             let mut pcrs = PcrBank::default();
             for (i, digest) in digest_list.value().iter().enumerate().take(PCR_COUNT) {
-                let bytes = digest.value();
+                let bytes: &[u8] = digest.as_ref();
                 if bytes.len() == PCR_SIZE {
                     pcrs.0[i].copy_from_slice(bytes);
                 } else {
