@@ -103,6 +103,7 @@ pub trait CryptoBackend {
     ) -> Result<(), PqRascvError>;
 
     /// Derive a 32-byte SHA3-256 fingerprint of a verifying key.
+    #[must_use]
     fn pub_key_id(verifying_key: &[u8]) -> [u8; 32] {
         let mut h = Sha3_256::new();
         h.update(verifying_key);
@@ -114,7 +115,7 @@ pub trait CryptoBackend {
 // MlDsaBackend
 // ────────────────────────────────────────────────────────────────────────────
 
-/// Concrete [`CryptoBackend`] using RustCrypto's `ml-dsa` crate (ML-DSA-65, FIPS 204).
+/// Concrete [`CryptoBackend`] using `RustCrypto`'s `ml-dsa` crate (ML-DSA-65, FIPS 204).
 ///
 /// Signing is deterministic (no randomness required at sign-time) as
 /// per the FIPS 204 §5.2 pure-message deterministic API.

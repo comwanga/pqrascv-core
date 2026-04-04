@@ -157,12 +157,14 @@ impl SlsaPredicateBuilder {
     }
 
     /// Sets the build configuration reference (e.g. git commit SHA).
+    #[must_use]
     pub fn with_build_config_ref(mut self, r#ref: impl Into<String>) -> Self {
         self.build_config_ref = r#ref.into();
         self
     }
 
     /// Sets build start and finish timestamps (Unix seconds).
+    #[must_use]
     pub fn with_timestamps(mut self, started_on: u64, finished_on: u64) -> Self {
         self.started_on = started_on;
         self.finished_on = finished_on;
@@ -170,18 +172,21 @@ impl SlsaPredicateBuilder {
     }
 
     /// Sets the SHA3-256 hash of the SBOM document.
+    #[must_use]
     pub fn with_sbom_hash(mut self, hash: [u8; 32]) -> Self {
         self.sbom_hash = hash;
         self
     }
 
     /// Sets the SLSA level (1–4).  Silently clamps to `[1, 4]`.
+    #[must_use]
     pub fn with_slsa_level(mut self, level: u8) -> Self {
         self.slsa_level = level.clamp(1, 4);
         self
     }
 
     /// Adds an attested subject.
+    #[must_use]
     pub fn add_subject(mut self, name: impl Into<String>, digest: &[u8; 32]) -> Self {
         self.subjects.push(Subject::new(name, digest));
         self

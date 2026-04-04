@@ -1,7 +1,7 @@
 //! Policy configuration for the PQ-RASCV attestation engine.
 //!
 //! [`PolicyConfig`] drives the verifier's acceptance criteria and can be
-//! constructed as a `const` value, making it suitable for no_std environments
+//! constructed as a `const` value, making it suitable for `no_std` environments
 //! where runtime configuration is not available.
 
 /// Minimum SLSA level required for a quote to pass policy.

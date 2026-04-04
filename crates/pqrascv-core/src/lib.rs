@@ -27,7 +27,7 @@
 //! | `std` | **yes** | Link against std, enable `std::error::Error` impls |
 //! | `alloc` | **yes** | Heap allocation (required for quote assembly) |
 //! | `hardware-tpm` | no | TPM 2.0 measurement backend |
-//! | `dice` | no | DICE RoT measurement backend |
+//! | `dice` | no | DICE `RoT` measurement backend |
 //!
 //! ## Quick start
 //!

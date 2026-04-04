@@ -59,7 +59,7 @@ pub struct Measurements {
     /// `[0u8; 32]` means "not present".
     pub ai_model_hash: [u8; 32],
 
-    /// Monotonic event counter from the RoT hardware (replay protection).
+    /// Monotonic event counter from the `RoT` hardware (replay protection).
     /// Zero if the backend does not support hardware counters.
     pub event_counter: u64,
 }
@@ -154,7 +154,7 @@ impl<'a> SoftwareRoT<'a> {
     }
 }
 
-impl<'a> RoT for SoftwareRoT<'a> {
+impl RoT for SoftwareRoT<'_> {
     fn measure(&self) -> Result<Measurements, PqRascvError> {
         use sha3::{Digest, Sha3_256};
 

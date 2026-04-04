@@ -94,7 +94,7 @@ impl<'a> DiceRoT<'a> {
     }
 }
 
-impl<'a> RoT for DiceRoT<'a> {
+impl RoT for DiceRoT<'_> {
     fn measure(&self) -> Result<Measurements, PqRascvError> {
         // ── 1. FWID = SHA3-256(firmware) ─────────────────────────────────────
         let firmware_hash: [u8; 32] = {
