@@ -36,6 +36,9 @@ jobs:
       - name: Clippy (no default features)
         run: cargo clippy -p pqrascv-core --no-default-features -- -D warnings
 
+      - name: Build CLI
+        run: cargo build -p pqrascv-cli
+
       - name: Tests (default features)
         run: cargo test --all
 

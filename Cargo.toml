@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/pqrascv-core",
     "crates/verifier",
+    "crates/cli",
 ]
 
 [workspace.package]

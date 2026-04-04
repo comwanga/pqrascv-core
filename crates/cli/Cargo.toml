@@ -1,0 +1,22 @@
+[package]
+name         = "pqrascv-cli"
+description  = "CLI prover and verifier for the PQ-RASCV attestation protocol"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+authors.workspace      = true
+license.workspace      = true
+repository.workspace   = true
+
+[[bin]]
+name = "pqrascv"
+path = "src/main.rs"
+
+[dependencies]
+pqrascv-core     = { path = "../pqrascv-core", version = "0.1.0", features = ["std"] }
+pqrascv-verifier = { path = "../verifier",     version = "0.1.0" }
+clap             = { version = "4", features = ["derive"] }
+hex              = "0.4"
+serde_json       = "1"
+anyhow = "1.0.102"
+sha3.workspace = true
