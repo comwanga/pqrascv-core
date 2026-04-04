@@ -141,7 +141,8 @@ impl CryptoBackend for MlDsaBackend {
             .map_err(|_| PqRascvError::SigningFailed)?;
 
         let encoded = sig.encode();
-        let sig_bytes: [u8; ML_DSA_65_SIGNATURE_SIZE] = (*encoded).try_into()
+        let sig_bytes: [u8; ML_DSA_65_SIGNATURE_SIZE] = (*encoded)
+            .try_into()
             .map_err(|_| PqRascvError::SigningFailed)?;
 
         Ok(SignatureBytes(sig_bytes))
@@ -174,8 +175,8 @@ impl CryptoBackend for MlDsaBackend {
             .map_err(|_| PqRascvError::VerificationFailed)?;
 
         let encoded_sig = ml_dsa::EncodedSignature::<MlDsa65>::from(sig_array);
-        let sig = Signature::<MlDsa65>::decode(&encoded_sig)
-            .ok_or(PqRascvError::VerificationFailed)?;
+        let sig =
+            Signature::<MlDsa65>::decode(&encoded_sig).ok_or(PqRascvError::VerificationFailed)?;
 
         // verify_with_context returns bool (not Result) in this API.
         if vk.verify_with_context(message, b"", &sig) {
@@ -202,17 +203,11 @@ impl CryptoBackend for MlDsaBackend {
 /// The returned [`SigningKeySeed`] must be kept secret.
 #[cfg(feature = "std")]
 pub fn generate_ml_dsa_keypair(
-) -> Result<
-    (
-        SigningKeySeed,
-        [u8; ML_DSA_65_VERIFYING_KEY_SIZE],
-    ),
-    PqRascvError,
-> {
+) -> Result<(SigningKeySeed, [u8; ML_DSA_65_VERIFYING_KEY_SIZE]), PqRascvError> {
     use getrandom::rand_core::UnwrapErr;
     use getrandom::SysRng;
-    use ml_dsa::{KeyGen, MlDsa65};
     use ml_dsa::signature::Keypair;
+    use ml_dsa::{KeyGen, MlDsa65};
 
     let mut rng = UnwrapErr(SysRng);
 
@@ -246,7 +241,9 @@ mod tests {
         let message = b"hello pqrascv-core";
 
         let sig = backend.sign(message, seed.as_bytes()).expect("sign failed");
-        backend.verify(message, &vk, sig.as_ref()).expect("verify failed");
+        backend
+            .verify(message, &vk, sig.as_ref())
+            .expect("verify failed");
     }
 
     #[test]
@@ -254,7 +251,9 @@ mod tests {
         let (seed, vk) = generate_ml_dsa_keypair().expect("keygen failed");
         let backend = MlDsaBackend;
 
-        let sig = backend.sign(b"original", seed.as_bytes()).expect("sign failed");
+        let sig = backend
+            .sign(b"original", seed.as_bytes())
+            .expect("sign failed");
         assert!(backend.verify(b"tampered", &vk, sig.as_ref()).is_err());
     }
 
@@ -267,7 +266,9 @@ mod tests {
         let sig = backend
             .sign(b"cross-key test", seed1.as_bytes())
             .expect("sign failed");
-        assert!(backend.verify(b"cross-key test", &vk2, sig.as_ref()).is_err());
+        assert!(backend
+            .verify(b"cross-key test", &vk2, sig.as_ref())
+            .is_err());
     }
 
     #[test]

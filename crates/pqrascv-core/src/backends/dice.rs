@@ -85,7 +85,12 @@ impl<'a> DiceRoT<'a> {
         ai_model: Option<&'a [u8]>,
         event_counter: u64,
     ) -> Self {
-        Self { cdi, firmware, ai_model, event_counter }
+        Self {
+            cdi,
+            firmware,
+            ai_model,
+            event_counter,
+        }
     }
 }
 
@@ -160,10 +165,14 @@ mod tests {
         let m_a = DiceRoT::new(CDI, FW_A, None, 0).measure().unwrap();
         let m_b = DiceRoT::new(CDI, FW_B, None, 0).measure().unwrap();
 
-        assert_ne!(m_a.firmware_hash, m_b.firmware_hash,
-            "different firmware must produce different firmware_hash");
-        assert_ne!(m_a.pcrs.0[0], m_b.pcrs.0[0],
-            "different firmware must produce different CDI attestation in PCR 0");
+        assert_ne!(
+            m_a.firmware_hash, m_b.firmware_hash,
+            "different firmware must produce different firmware_hash"
+        );
+        assert_ne!(
+            m_a.pcrs.0[0], m_b.pcrs.0[0],
+            "different firmware must produce different CDI attestation in PCR 0"
+        );
     }
 
     #[test]
@@ -172,10 +181,14 @@ mod tests {
         let m_a = DiceRoT::new(CDI, FW_A, None, 0).measure().unwrap();
         let m_b = DiceRoT::new(cdi_alt, FW_A, None, 0).measure().unwrap();
 
-        assert_eq!(m_a.firmware_hash, m_b.firmware_hash,
-            "same firmware must produce the same firmware_hash regardless of CDI");
-        assert_ne!(m_a.pcrs.0[0], m_b.pcrs.0[0],
-            "different CDI must produce different CDI attestation in PCR 0");
+        assert_eq!(
+            m_a.firmware_hash, m_b.firmware_hash,
+            "same firmware must produce the same firmware_hash regardless of CDI"
+        );
+        assert_ne!(
+            m_a.pcrs.0[0], m_b.pcrs.0[0],
+            "different CDI must produce different CDI attestation in PCR 0"
+        );
     }
 
     #[test]
@@ -188,7 +201,10 @@ mod tests {
     fn pcr1_through_7_are_zero() {
         let m = DiceRoT::new(CDI, FW_A, None, 0).measure().unwrap();
         for i in 1..8 {
-            assert_eq!(m.pcrs.0[i], [0u8; 32], "PCR {i} should be zero for single-layer DICE");
+            assert_eq!(
+                m.pcrs.0[i], [0u8; 32],
+                "PCR {i} should be zero for single-layer DICE"
+            );
         }
     }
 
@@ -200,7 +216,9 @@ mod tests {
 
     #[test]
     fn ai_model_hash_set_when_present() {
-        let m = DiceRoT::new(CDI, FW_A, Some(b"model-weights"), 0).measure().unwrap();
+        let m = DiceRoT::new(CDI, FW_A, Some(b"model-weights"), 0)
+            .measure()
+            .unwrap();
         assert_ne!(m.ai_model_hash, [0u8; 32]);
     }
 

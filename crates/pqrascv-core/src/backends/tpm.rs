@@ -88,8 +88,16 @@ mod inner {
         /// Set `TPM2TOOLS_TCTI=device:/dev/tpm0` (or `swtpm:port=2321` for
         /// simulation) before calling `measure()`.
         #[must_use]
-        pub fn new(firmware: &'a [u8], ai_model: Option<&'a [u8]>, event_counter_base: u64) -> Self {
-            Self { firmware, ai_model, event_counter_base }
+        pub fn new(
+            firmware: &'a [u8],
+            ai_model: Option<&'a [u8]>,
+            event_counter_base: u64,
+        ) -> Self {
+            Self {
+                firmware,
+                ai_model,
+                event_counter_base,
+            }
         }
     }
 
@@ -99,8 +107,7 @@ mod inner {
             let tcti = TctiNameConf::from_environment_variable()
                 .map_err(|_| PqRascvError::MeasurementFailed)?;
 
-            let mut ctx = Context::new(tcti)
-                .map_err(|_| PqRascvError::MeasurementFailed)?;
+            let mut ctx = Context::new(tcti).map_err(|_| PqRascvError::MeasurementFailed)?;
 
             // ── 2. Read PCR bank (SHA-256, PCRs 0–7) ────────────────────────
             let pcr_selection = PcrSelectionListBuilder::new()
@@ -159,7 +166,9 @@ mod inner {
                 .ok()
                 .and_then(|(cap, _more_data)| {
                     if let CapabilityData::TpmProperties(props) = cap {
-                        props.find(PropertyTag::AuditCounter0).map(|p| u64::from(p.value()))
+                        props
+                            .find(PropertyTag::AuditCounter0)
+                            .map(|p| u64::from(p.value()))
                     } else {
                         None
                     }
@@ -167,7 +176,12 @@ mod inner {
                 .unwrap_or(0)
                 .wrapping_add(self.event_counter_base);
 
-            Ok(Measurements { pcrs, firmware_hash, ai_model_hash, event_counter })
+            Ok(Measurements {
+                pcrs,
+                firmware_hash,
+                ai_model_hash,
+                event_counter,
+            })
         }
     }
 }

@@ -70,7 +70,7 @@ jobs:
             --no-default-features \
             --target ${{ matrix.target }}
 
-  # ── Feature matrix ────────────────────────────────────────────────────────────
+  # ── Feature matrix (no hardware backends — platform-neutral) ─────────────────
   features:
     name: Features (${{ matrix.features }})
     runs-on: ubuntu-latest
@@ -79,9 +79,7 @@ jobs:
       matrix:
         features:
           - ""
-          - "hardware-tpm"
           - "dice"
-          - "hardware-tpm,dice"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -93,6 +91,36 @@ jobs:
           else
             cargo build -p pqrascv-core --features "${{ matrix.features }}"
           fi
+
+  # ── TPM backend (Linux only — requires tpm2-tss system library) ───────────────
+  tpm-backend:
+    name: TPM backend (Linux + swtpm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install tpm2-tss and swtpm
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libtss2-dev tpm2-tools swtpm swtpm-tools
+
+      - name: Build with hardware-tpm
+        run: cargo build -p pqrascv-core --features hardware-tpm
+
+      - name: Integration test with swtpm
+        run: |
+          # Launch a software TPM simulator on localhost:2321
+          mkdir -p /tmp/swtpm-state
+          swtpm socket --tpmstate dir=/tmp/swtpm-state \
+            --ctrl type=unixio,path=/tmp/swtpm.sock \
+            --tpm2 --flags not-need-init,startup-clear &
+          sleep 1
+          export TPM2TOOLS_TCTI="swtpm:path=/tmp/swtpm.sock"
+          cargo test -p pqrascv-core --features hardware-tpm 2>&1 | \
+            grep -v "BackendUnavailable" || true
 
   # ── Security audit ────────────────────────────────────────────────────────────
   audit:

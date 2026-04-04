@@ -64,8 +64,7 @@ impl QuoteBody {
     /// Serialises the body to CBOR bytes for use as signing input.
     pub fn to_cbor(&self) -> Result<Vec<u8>, PqRascvError> {
         let mut buf = Vec::new();
-        ciborium::into_writer(self, &mut buf)
-            .map_err(|_| PqRascvError::SerializationFailed)?;
+        ciborium::into_writer(self, &mut buf).map_err(|_| PqRascvError::SerializationFailed)?;
         Ok(buf)
     }
 }
@@ -102,8 +101,7 @@ impl AttestationQuote {
     /// Serialises the full quote to CBOR bytes for transmission.
     pub fn to_cbor(&self) -> Result<Vec<u8>, PqRascvError> {
         let mut buf = Vec::new();
-        ciborium::into_writer(self, &mut buf)
-            .map_err(|_| PqRascvError::SerializationFailed)?;
+        ciborium::into_writer(self, &mut buf).map_err(|_| PqRascvError::SerializationFailed)?;
         Ok(buf)
     }
 
@@ -132,7 +130,10 @@ impl Challenge {
     /// Creates a new challenge from a random nonce.
     #[must_use]
     pub fn new(nonce: [u8; 32]) -> Self {
-        Self { nonce, policy_id: None }
+        Self {
+            nonce,
+            policy_id: None,
+        }
     }
 
     /// Attaches a policy identifier.
@@ -236,7 +237,10 @@ mod tests {
 
         assert_eq!(quote.body.version, PROTOCOL_VERSION);
         assert_eq!(quote.body.nonce, nonce);
-        assert_eq!(quote.signature.len(), crate::crypto::ML_DSA_65_SIGNATURE_SIZE);
+        assert_eq!(
+            quote.signature.len(),
+            crate::crypto::ML_DSA_65_SIGNATURE_SIZE
+        );
     }
 
     #[test]

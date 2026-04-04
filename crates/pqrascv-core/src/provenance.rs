@@ -245,7 +245,10 @@ mod tests {
         let digest = [0xffu8; 32];
         let subject = Subject::new("test", &digest);
         assert_eq!(subject.digest_sha3_256.len(), 64);
-        assert!(subject.digest_sha3_256.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(subject
+            .digest_sha3_256
+            .chars()
+            .all(|c| c.is_ascii_hexdigit()));
     }
 
     #[test]

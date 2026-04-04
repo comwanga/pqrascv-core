@@ -131,10 +131,8 @@ impl Verifier {
 mod tests {
     use super::*;
     use pqrascv_core::{
-        crypto::generate_ml_dsa_keypair,
-        measurement::SoftwareRoT,
-        provenance::SlsaPredicateBuilder,
-        quote::generate_quote,
+        crypto::generate_ml_dsa_keypair, measurement::SoftwareRoT,
+        provenance::SlsaPredicateBuilder, quote::generate_quote,
     };
 
     fn setup() -> (
@@ -200,7 +198,7 @@ mod tests {
     #[test]
     fn verifier_rejects_wrong_verifying_key() {
         let (_, _vk, quote) = setup();
-        
+
         let (_, different_vk) = generate_ml_dsa_keypair().unwrap();
         let verifier = Verifier::new(PolicyConfig::default());
         let cbor = quote.to_cbor().unwrap();

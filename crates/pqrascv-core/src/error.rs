@@ -39,17 +39,19 @@ pub enum PqRascvError {
 impl fmt::Display for PqRascvError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::SigningFailed       => f.write_str("signing failed"),
-            Self::VerificationFailed  => f.write_str("signature verification failed"),
+            Self::SigningFailed => f.write_str("signing failed"),
+            Self::VerificationFailed => f.write_str("signature verification failed"),
             Self::KeyGenerationFailed => f.write_str("key generation failed"),
-            Self::MeasurementFailed   => f.write_str("measurement collection failed"),
-            Self::InvalidNonce        => f.write_str("invalid nonce"),
+            Self::MeasurementFailed => f.write_str("measurement collection failed"),
+            Self::InvalidNonce => f.write_str("invalid nonce"),
             Self::SerializationFailed => f.write_str("CBOR serialisation failed"),
             Self::DeserializationFailed => f.write_str("CBOR deserialisation failed"),
-            Self::InvalidProvenance   => f.write_str("invalid provenance attestation"),
-            Self::BackendUnavailable  => f.write_str("backend unavailable (feature not compiled in)"),
-            Self::PolicyViolation     => f.write_str("quote failed policy validation"),
-            Self::InternalError       => f.write_str("internal error"),
+            Self::InvalidProvenance => f.write_str("invalid provenance attestation"),
+            Self::BackendUnavailable => {
+                f.write_str("backend unavailable (feature not compiled in)")
+            }
+            Self::PolicyViolation => f.write_str("quote failed policy validation"),
+            Self::InternalError => f.write_str("internal error"),
         }
     }
 }

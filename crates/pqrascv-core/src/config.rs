@@ -100,13 +100,7 @@ mod tests {
     #[test]
     fn default_policy_accepts_valid_quote() {
         let policy = PolicyConfig::default();
-        let result = policy.evaluate(
-            1,
-            &[0xabu8; 32],
-            0,
-            1_000,
-            1_100,
-        );
+        let result = policy.evaluate(1, &[0xabu8; 32], 0, 1_000, 1_100);
         assert!(result.is_ok());
     }
 

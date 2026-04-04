@@ -6,7 +6,11 @@
       "Bash(cargo doc:*)",
       "Bash(cargo test:*)",
       "Bash(cargo publish:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git:*)",
+      "Bash(cargo fetch:*)",
+      "Bash(xargs grep:*)",
+      "Bash(cargo fmt:*)"
     ]
   }
 }
