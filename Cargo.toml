@@ -40,6 +40,9 @@ getrandom   = { version = "0.4",         features = ["sys_rng"] }
 # Embedded / no_std collections
 heapless    = { version = "0.8",         default-features = false }
 
+# TPM 2.0 backend (hardware-tpm feature only — not optional at workspace level)
+tss-esapi   = { version = "8.0.0-alpha.2" }
+
 [profile.release]
 opt-level     = 3
 lto           = true

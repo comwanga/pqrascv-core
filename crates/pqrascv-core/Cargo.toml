@@ -18,7 +18,7 @@ default      = ["std"]
 std          = ["alloc", "serde/std", "ciborium/std", "sha3/std", "zeroize/std"]
 alloc        = ["serde/alloc"]
 # Hardware backends (opt-in only)
-hardware-tpm = []
+hardware-tpm = ["dep:tss-esapi"]
 dice         = []
 
 [dependencies]
@@ -34,4 +34,5 @@ zeroize.workspace     = true
 rand_core.workspace   = true
 getrandom.workspace   = true
 heapless.workspace    = true
+tss-esapi             = { version = "8.0.0-alpha.2", optional = true }
 

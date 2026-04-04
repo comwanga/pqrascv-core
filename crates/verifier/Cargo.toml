@@ -9,7 +9,7 @@ license.workspace      = true
 repository.workspace   = true
 
 [dependencies]
-pqrascv-core = { path = "../pqrascv-core", features = ["std"] }
+pqrascv-core = { path = "../pqrascv-core", version = "0.1.0", features = ["std"] }
 serde.workspace    = true
 ciborium.workspace = true
 
