@@ -31,7 +31,7 @@
 //!
 //! ## Quick start
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use pqrascv_core::{
 //!     crypto::{generate_ml_dsa_keypair, MlDsaBackend},
 //!     measurement::SoftwareRoT,

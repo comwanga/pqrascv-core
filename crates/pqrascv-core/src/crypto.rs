@@ -235,6 +235,8 @@ pub fn generate_ml_dsa_keypair(
 mod tests {
     use super::*;
 
+    // Tests that require OS RNG (generate_ml_dsa_keypair) are std-only.
+    #[cfg(feature = "std")]
     #[test]
     fn sign_and_verify_roundtrip() {
         let (seed, vk) = generate_ml_dsa_keypair().expect("keygen failed");
@@ -247,6 +249,7 @@ mod tests {
             .expect("verify failed");
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn verify_rejects_tampered_message() {
         let (seed, vk) = generate_ml_dsa_keypair().expect("keygen failed");
@@ -258,6 +261,7 @@ mod tests {
         assert!(backend.verify(b"tampered", &vk, sig.as_ref()).is_err());
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn verify_rejects_wrong_key() {
         let (seed1, _vk1) = generate_ml_dsa_keypair().expect("keygen 1 failed");
@@ -278,6 +282,7 @@ mod tests {
         assert_eq!(MlDsaBackend::pub_key_id(&vk), MlDsaBackend::pub_key_id(&vk));
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn signing_is_deterministic() {
         // Same seed + message must produce the same signature.

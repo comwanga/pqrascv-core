@@ -1,4 +1,6 @@
 //! Integration tests for pqrascv-core.
+// All tests require alloc (quote assembly) and std (OS RNG for keygen).
+#![cfg(feature = "std")]
 
 use pqrascv_core::{
     config::PolicyConfig,
