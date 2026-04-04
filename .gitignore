@@ -3,3 +3,6 @@
 .DS_Store
 Thumbs.db
 CLAUDE.md
+.claude/
+image.png
+markdown.md
