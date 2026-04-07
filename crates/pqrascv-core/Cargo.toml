@@ -40,6 +40,6 @@ tss-esapi             = { version = "8.0.0-alpha.2", optional = true }
 # Build docs with `std` + `dice` so all public items are visible.
 # `hardware-tpm` is excluded because it requires the tpm2-tss system library.
 [package.metadata.docs.rs]
+all-features = true
 features = ["std", "dice"]
 rustdoc-args = ["--cfg", "docsrs"]
-
