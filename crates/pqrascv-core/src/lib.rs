@@ -32,7 +32,7 @@
 //! | `std`          | yes     | Enables `std::error::Error` impls                        |
 //! | `alloc`        | yes     | Required for quote assembly and provenance               |
 //! | `hardware-tpm` | no      | TPM 2.0 measurement backend (Linux only, requires `tss-esapi`) |
-//! | `dice`         | no      | TCG DICE RoT backend (pure Rust, bare-metal friendly)    |
+//! | `dice`         | no      | TCG DICE `RoT` backend (pure Rust, bare-metal friendly)  |
 //!
 //! ## Quick start
 //!
@@ -78,7 +78,7 @@
 //!
 //! - [`measurement`] — `RoT` trait + backends (Software, TPM 2.0, DICE)
 //! - [`provenance`] — SLSA v1 / in-toto predicate builder
-//! - [`crypto`] — ML-DSA-65 abstraction (constant-time via RustCrypto)
+//! - [`crypto`] — ML-DSA-65 abstraction (constant-time via `RustCrypto`)
 //! - [`quote`] — `AttestationQuote` and the main `generate_quote` entry point
 //! - [`config`] — policy configuration (re-exported)
 //! - [`error`] — error types
@@ -86,7 +86,7 @@
 //!
 //! ## Security & usage notes
 //!
-//! - Store the signing seed in a hardware-protected location (TPM NV, eFuse, TrustZone, etc.).
+//! - Store the signing seed in a hardware-protected location (TPM NV, eFuse, `TrustZone`, etc.).
 //! - Always use a fresh nonce supplied by the verifier for replay protection.
 //! - Pair with a post-quantum transport layer when possible (classical TLS is vulnerable to "harvest now, decrypt later").
 //! - See the repository for full security considerations.
@@ -98,7 +98,7 @@
 //!   - Additional platform backends (SEV-SNP, OP-TEE, etc.)
 //!   - Heapless / fully allocation-free quote assembly
 //!   - Formal verification (Kani, fuzzing) and audits
-//!   - Noise_PQX or COSE integration
+//!   - `Noise_PQX` or COSE integration
 //!
 //! Licensed under either MIT or Apache-2.0 at your option.
 
