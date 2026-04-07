@@ -37,6 +37,8 @@
 //! ## Quick start
 //!
 //! ```rust
+//! # #[cfg(all(feature = "std", feature = "alloc"))]
+//! # {
 //! use pqrascv_core::{
 //!     crypto::{generate_ml_dsa_keypair, MlDsaBackend},
 //!     measurement::SoftwareRoT,
@@ -69,6 +71,7 @@
 //! .unwrap();
 //!
 //! let cbor_bytes = quote.to_cbor().unwrap();
+//! # }
 //! ```
 //!
 //! The resulting `cbor_bytes` can be sent to a verifier. See the companion
