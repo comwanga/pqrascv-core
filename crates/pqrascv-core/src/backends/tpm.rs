@@ -57,10 +57,10 @@ mod inner {
 
     /// TPM 2.0 Root-of-Trust.
     ///
-    /// Opens the TPM connection on each call to [`RoT::measure`] to avoid
-    /// holding a long-lived context (the TPM resource manager has limited
-    /// concurrent session slots).  For high-frequency attestation consider
-    /// pooling contexts externally.
+    /// Opens a fresh TPM connection on every call to [`RoT::measure`] rather
+    /// than keeping one around. The TPM resource manager only has a handful of
+    /// session slots, so holding one open would starve other processes. If
+    /// you're measuring frequently, manage a connection pool yourself.
     ///
     /// # Example
     ///
@@ -84,9 +84,9 @@ mod inner {
     impl<'a> TpmRoT<'a> {
         /// Creates a new [`TpmRoT`].
         ///
-        /// The TPM connection is opened lazily inside [`RoT::measure`].
+        /// The actual TPM connection is opened when you call `measure()`, not here.
         /// Set `TPM2TOOLS_TCTI=device:/dev/tpm0` (or `swtpm:port=2321` for
-        /// simulation) before calling `measure()`.
+        /// simulation) before you call `measure()`.
         #[must_use]
         pub fn new(
             firmware: &'a [u8],
@@ -121,15 +121,15 @@ mod inner {
 
             // ── 3. Copy digests into our PCR bank ────────────────────────────
             //
-            // tss-esapi returns SHA-256 digests (32 bytes each).
-            // We copy up to PCR_COUNT digests; extras are silently dropped.
+            // tss-esapi gives us SHA-256 digests. We take up to PCR_COUNT of them;
+            // anything beyond that is dropped.
             let mut pcrs = PcrBank::default();
             for (i, digest) in digest_list.value().iter().enumerate().take(PCR_COUNT) {
                 let bytes: &[u8] = digest.as_ref();
                 if bytes.len() == PCR_SIZE {
                     pcrs.0[i].copy_from_slice(bytes);
                 } else {
-                    // Digest shorter than 32 bytes — left-pad with zeros.
+                    // Digest came back shorter than 32 bytes — left-pad with zeros.
                     let offset = PCR_SIZE - bytes.len().min(PCR_SIZE);
                     pcrs.0[i][offset..].copy_from_slice(&bytes[..bytes.len().min(PCR_SIZE)]);
                 }
@@ -153,8 +153,8 @@ mod inner {
 
             // ── 5. Get event counter (TPM audit counter as monotonic proxy) ────
             //
-            // AuditCounter0 is a u32 variable property that increments with every
-            // audited command, providing a best-effort monotonic counter.
+            // AuditCounter0 ticks up with every audited TPM command — good enough
+            // as a best-effort monotonic counter.
             let event_counter = ctx
                 .execute_without_session(|c| {
                     c.get_capability(

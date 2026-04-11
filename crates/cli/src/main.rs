@@ -77,7 +77,8 @@ enum Command {
         #[arg(long, default_value_t = 1)]
         slsa_level: u8,
 
-        /// 32-byte nonce from the verifier, as 64 hex chars (default: random-looking but zero for demo).
+        /// 32-byte nonce from the verifier, as 64 hex chars. Defaults to all zeros —
+        /// fine for demos, but use a real nonce in production.
         #[arg(
             long,
             default_value = "0000000000000000000000000000000000000000000000000000000000000000"
@@ -194,7 +195,7 @@ fn cmd_prove(
 
     let rot = SoftwareRoT::new(&firmware, model.as_deref(), 0);
 
-    // Build provenance: SHA3-256 the firmware and register it as a subject.
+    // Hash the firmware and register it as a provenance subject.
     let fw_digest = sha3_256(&firmware);
     let mut builder_obj = SlsaPredicateBuilder::new(&builder)
         .add_subject(

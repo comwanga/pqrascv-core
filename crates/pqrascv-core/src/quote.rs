@@ -39,9 +39,9 @@ pub const PROTOCOL_VERSION: u16 = 1;
 // QuoteBody — the signed payload
 // ────────────────────────────────────────────────────────────────────────────
 
-/// The portion of [`AttestationQuote`] that is covered by the ML-DSA-65 signature.
+/// The portion of [`AttestationQuote`] covered by the ML-DSA-65 signature.
 ///
-/// Serialised to CBOR bytes, then signed.
+/// Serialized to CBOR bytes, then signed.
 #[cfg(feature = "alloc")]
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct QuoteBody {
@@ -61,7 +61,7 @@ pub struct QuoteBody {
 
 #[cfg(feature = "alloc")]
 impl QuoteBody {
-    /// Serialises the body to CBOR bytes for use as signing input.
+    /// Serializes the body to CBOR — this is what gets signed.
     pub fn to_cbor(&self) -> Result<Vec<u8>, PqRascvError> {
         let mut buf = Vec::new();
         ciborium::into_writer(self, &mut buf).map_err(|_| PqRascvError::SerializationFailed)?;
@@ -91,21 +91,21 @@ pub struct AttestationQuote {
     /// Signed payload.
     pub body: QuoteBody,
     /// ML-DSA-65 signature over the CBOR encoding of `body`.
-    /// Serialised as a CBOR byte string.
+    /// Serialized as a CBOR byte string.
     #[serde(with = "serde_bytes")]
     pub signature: Vec<u8>,
 }
 
 #[cfg(feature = "alloc")]
 impl AttestationQuote {
-    /// Serialises the full quote to CBOR bytes for transmission.
+    /// Serializes the complete quote to CBOR bytes, ready to send over the wire.
     pub fn to_cbor(&self) -> Result<Vec<u8>, PqRascvError> {
         let mut buf = Vec::new();
         ciborium::into_writer(self, &mut buf).map_err(|_| PqRascvError::SerializationFailed)?;
         Ok(buf)
     }
 
-    /// Deserialises an [`AttestationQuote`] from CBOR bytes.
+    /// Deserializes an [`AttestationQuote`] from CBOR bytes.
     pub fn from_cbor(bytes: &[u8]) -> Result<Self, PqRascvError> {
         ciborium::from_reader(bytes).map_err(|_| PqRascvError::DeserializationFailed)
     }

@@ -32,7 +32,7 @@ pub enum PqRascvError {
     BackendUnavailable,
     /// The quote failed policy validation.
     PolicyViolation,
-    /// An internal invariant was violated.  Should never happen in correct code.
+    /// Something that should never happen did. This is a bug in the library — please file an issue.
     InternalError,
 }
 

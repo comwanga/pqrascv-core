@@ -28,8 +28,7 @@ pub const PCR_SIZE: usize = 32;
 /// An array of PCR (Platform Configuration Register) values.
 ///
 /// Each register is a 32-byte SHA3-256 hash of the corresponding measurement.
-/// Index semantics follow the caller's convention; the core crate does not
-/// assign meaning to individual PCR indices.
+/// What each index means is up to you — this crate doesn't define per-slot semantics.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PcrBank(pub [[u8; PCR_SIZE]; PCR_COUNT]);
 
@@ -65,7 +64,7 @@ pub struct Measurements {
 }
 
 impl Measurements {
-    /// Create a zeroed `Measurements` struct.  Useful as a default in tests.
+    /// Returns a zeroed `Measurements`. Handy for tests and default initializations.
     #[must_use]
     pub fn zeroed() -> Self {
         Self {
@@ -83,10 +82,11 @@ impl Measurements {
 
 /// Root-of-Trust abstraction.
 ///
-/// Implementors collect platform measurements and return them as a
-/// [`Measurements`] snapshot.  The implementation must be deterministic
-/// for the same platform state — repeated calls on the same state must
-/// return the same PCR values.
+/// Your implementation should collect whatever platform measurements are
+/// available and pack them into a [`Measurements`] snapshot.
+///
+/// Important: two calls on the same, unchanged platform must return
+/// identical PCR values — the verifier depends on this.
 pub trait RoT {
     /// Collect all measurements from the platform.
     ///
@@ -123,7 +123,7 @@ pub struct SoftwareRoT<'a> {
     ai_model: Option<&'a [u8]>,
     /// Monotonic counter value to embed.
     event_counter: u64,
-    /// Optional extra regions to fold into individual PCRs (up to `PCR_COUNT`).
+    /// Extra memory regions to hash into PCR slots, one region per slot.
     pcr_regions: &'a [&'a [u8]],
 }
 
@@ -145,8 +145,8 @@ impl<'a> SoftwareRoT<'a> {
 
     /// Attaches additional memory regions for PCR measurements.
     ///
-    /// Each region is hashed into the corresponding PCR slot.  If more than
-    /// [`PCR_COUNT`] regions are supplied the extras are silently ignored.
+    /// Each region gets hashed into its matching PCR slot, in order.
+    /// Extras beyond [`PCR_COUNT`] are quietly ignored.
     #[must_use]
     pub fn with_pcr_regions(mut self, regions: &'a [&'a [u8]]) -> Self {
         self.pcr_regions = regions;
@@ -223,10 +223,10 @@ mod tests {
         let regions: &[&[u8]] = &[b"pcr0", b"pcr1"];
         let rot = SoftwareRoT::new(b"fw", None, 0).with_pcr_regions(regions);
         let m = rot.measure().unwrap();
-        // PCR 0 and 1 should not be zero.
+        // We supplied two regions, so PCR 0 and 1 should be filled in.
         assert_ne!(m.pcrs.0[0], [0u8; 32]);
         assert_ne!(m.pcrs.0[1], [0u8; 32]);
-        // PCR 2+ untouched → zero.
+        // PCR 2 and above were never touched, so they stay zero.
         assert_eq!(m.pcrs.0[2], [0u8; 32]);
     }
 }

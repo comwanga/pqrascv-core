@@ -2,18 +2,18 @@
 //!
 //! # Design
 //!
-//! [`InTotoAttestation`] is an owned, CBOR-serialisable representation of
-//! in-toto statement metadata.  It follows the in-toto Attestation Framework
+//! [`InTotoAttestation`] is an owned, CBOR-serializable representation of
+//! in-toto statement metadata, following the in-toto Attestation Framework
 //! v1 schema (see <https://github.com/in-toto/attestation>).
 //!
-//! [`SlsaPredicateBuilder`] constructs SLSA v1 build provenance predicates
-//! and embeds them inside an [`InTotoAttestation`].
+//! [`SlsaPredicateBuilder`] is a straightforward builder for SLSA v1 build
+//! provenance predicates that bundles them into an [`InTotoAttestation`].
 //!
-//! # No-std considerations
+//! # no_std notes
 //!
-//! Both types require `alloc` (they contain `Vec`/`String` fields) but are
-//! otherwise `no_std`-compatible.  On bare-metal targets that supply an
-//! allocator (e.g. `embedded-alloc`) this module works unchanged.
+//! Both types need `alloc` because they contain `Vec`/`String` fields.
+//! On bare-metal targets with an allocator (e.g. `embedded-alloc`) this
+//! module works without any changes.
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -80,7 +80,7 @@ pub struct BuildMetadata {
 // InTotoAttestation
 // ────────────────────────────────────────────────────────────────────────────
 
-/// Serialisable in-toto v1 attestation statement.
+/// Serializable in-toto v1 attestation statement.
 ///
 /// Wire format: CBOR via serde.
 ///
@@ -192,11 +192,11 @@ impl SlsaPredicateBuilder {
         self
     }
 
-    /// Consumes the builder and returns a complete [`InTotoAttestation`].
+    /// Finalizes the builder and gives back a complete [`InTotoAttestation`].
     ///
     /// # Errors
     ///
-    /// Returns [`PqRascvError::InvalidProvenance`] if no subjects were added.
+    /// Returns [`PqRascvError::InvalidProvenance`] if you forgot to add any subjects.
     pub fn build(self) -> Result<InTotoAttestation, PqRascvError> {
         if self.subjects.is_empty() {
             return Err(PqRascvError::InvalidProvenance);

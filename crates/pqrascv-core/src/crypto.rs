@@ -80,18 +80,18 @@ impl SigningKeySeed {
 
 /// Abstraction over post-quantum signing and verification.
 ///
-/// Keys are passed as raw byte slices to keep the trait `no_std`-compatible
-/// without requiring generic associated types that vary by algorithm.
+/// Keys are passed as raw byte slices so the trait stays `no_std`-compatible
+/// without needing generic associated types.
 ///
 /// # Safety contract
 ///
-/// - `sign` must execute in constant time with respect to `signing_seed`.
-/// - `verify` must execute in constant time with respect to `verifying_key`.
+/// - `sign` must run in constant time with respect to `signing_seed`.
+/// - `verify` must run in constant time with respect to `verifying_key`.
 pub trait CryptoBackend {
     /// Sign `message` using the 32-byte ML-DSA-65 seed.
     ///
     /// The seed is expanded to the full signing key inside this call and is
-    /// not stored.  Empty context bytes (`b""`) are used per FIPS 204 §5.2.
+    /// never stored.  We pass empty context bytes, as the spec requires.
     fn sign(&self, message: &[u8], signing_seed: &[u8]) -> Result<SignatureBytes, PqRascvError>;
 
     /// Verify `signature` over `message` using the encoded verifying key.
@@ -135,7 +135,7 @@ impl CryptoBackend for MlDsaBackend {
         // Expand seed → full signing key (constant-time, no heap).
         let sk = MlDsa65::from_seed(&seed);
 
-        // Sign with empty context (FIPS 204 §5.2 deterministic API).
+        // Sign with empty context — deterministic, so no randomness needed here.
         let sig = sk
             .signing_key()
             .sign_deterministic(message, b"")
@@ -179,7 +179,7 @@ impl CryptoBackend for MlDsaBackend {
         let sig =
             Signature::<MlDsa65>::decode(&encoded_sig).ok_or(PqRascvError::VerificationFailed)?;
 
-        // verify_with_context returns bool (not Result) in this API.
+        // Returns bool, not Result — so we convert it ourselves.
         if vk.verify_with_context(message, b"", &sig) {
             Ok(())
         } else {
@@ -235,7 +235,7 @@ pub fn generate_ml_dsa_keypair(
 mod tests {
     use super::*;
 
-    // Tests that require OS RNG (generate_ml_dsa_keypair) are std-only.
+    // Key generation needs OS entropy, so these tests only run with std.
     #[cfg(feature = "std")]
     #[test]
     fn sign_and_verify_roundtrip() {
@@ -285,7 +285,7 @@ mod tests {
     #[cfg(feature = "std")]
     #[test]
     fn signing_is_deterministic() {
-        // Same seed + message must produce the same signature.
+        // Signing the same message twice with the same seed must give the same result.
         let (seed, _vk) = generate_ml_dsa_keypair().expect("keygen failed");
         let backend = MlDsaBackend;
         let message = b"determinism test";

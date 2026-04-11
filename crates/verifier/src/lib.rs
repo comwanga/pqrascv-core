@@ -4,8 +4,8 @@
 //!
 //! ## Verification procedure
 //!
-//! 1. Deserialise the CBOR-encoded [`AttestationQuote`] from the prover.
-//! 2. Re-serialise the [`QuoteBody`] to reproduce the signing input.
+//! 1. Deserialize the CBOR-encoded [`AttestationQuote`] from the prover.
+//! 2. Re-serialize the [`QuoteBody`] to reproduce the exact bytes that were signed.
 //! 3. Verify the ML-DSA-65 signature using the prover's known verifying key.
 //! 4. Check `body.pub_key_id` matches the expected key fingerprint.
 //! 5. Apply [`PolicyConfig`] (SLSA level, age, firmware hash presence, etc.).
@@ -28,8 +28,8 @@ use pqrascv_core::{
 pub struct VerificationResult {
     /// `true` if all checks passed.
     pub ok: bool,
-    /// The deserialized quote (present even if verification failed, for
-    /// diagnostic purposes).
+    /// The decoded quote — included even when verification fails so you can
+    /// inspect what went wrong.
     pub quote: AttestationQuote,
 }
 
@@ -79,7 +79,6 @@ impl Verifier {
         expected_nonce: &[u8; 32],
         now_secs: u64,
     ) -> Result<VerificationResult, PqRascvError> {
-        // 1. Deserialise.
         let quote = AttestationQuote::from_cbor(cbor)?;
 
         self.verify_quote(&quote, verifying_key, expected_nonce, now_secs)?;
@@ -87,7 +86,8 @@ impl Verifier {
         Ok(VerificationResult { ok: true, quote })
     }
 
-    /// Verifies a pre-deserialized [`AttestationQuote`].
+    /// Verifies an already-parsed [`AttestationQuote`]. Useful if you've already
+    /// deserialized the CBOR yourself and don't want to do it twice.
     pub fn verify_quote(
         &self,
         quote: &AttestationQuote,
@@ -95,22 +95,22 @@ impl Verifier {
         expected_nonce: &[u8; 32],
         now_secs: u64,
     ) -> Result<(), PqRascvError> {
-        // 2. Nonce check (replay protection).
+        // Nonce must match what we originally sent — if it doesn't, this is a replay or mix-up.
         if &quote.body.nonce != expected_nonce {
             return Err(PqRascvError::VerificationFailed);
         }
 
-        // 3. Public key fingerprint check.
+        // Make sure the quote was signed with the key we actually trust.
         let expected_id = MlDsaBackend::pub_key_id(verifying_key);
         if quote.body.pub_key_id != expected_id {
             return Err(PqRascvError::VerificationFailed);
         }
 
-        // 4. Reproduce the signing input and verify signature.
+        // Re-serialize the body and check the signature over it.
         let body_cbor = quote.body.to_cbor()?;
         MlDsaBackend.verify(&body_cbor, verifying_key, &quote.signature)?;
 
-        // 5. Policy evaluation.
+        // Finally, check that the quote meets our policy (SLSA level, age, firmware hash, etc.).
         self.policy.evaluate(
             quote.body.provenance.slsa_level(),
             &quote.body.measurements.firmware_hash,
@@ -187,7 +187,7 @@ mod tests {
         let (_, vk, mut quote) = setup();
         let verifier = Verifier::new(PolicyConfig::default());
 
-        // Tamper with the event counter after signing.
+        // Mess with the event counter after it's been signed — signature should break.
         quote.body.measurements.event_counter = 999;
         let cbor = quote.to_cbor().unwrap();
 

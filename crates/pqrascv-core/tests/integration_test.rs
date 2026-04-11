@@ -1,5 +1,5 @@
 //! Integration tests for pqrascv-core.
-// All tests require alloc (quote assembly) and std (OS RNG for keygen).
+// These tests all need alloc for quote assembly and std for OS-based key generation.
 #![cfg(feature = "std")]
 
 use pqrascv_core::{

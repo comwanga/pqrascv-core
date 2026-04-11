@@ -115,8 +115,8 @@ impl RoT for DiceRoT<'_> {
 
         // ── 3. Attestation CDI = SHA3-256(CDI ‖ "DICE-attest" ‖ FWID) ───────
         //
-        // Follows TCG DICE Architecture §6.2.  Domain-separation via the fixed
-        // label prevents length-extension and cross-purpose CDI reuse.
+        // Mixing in the fixed "DICE-attest" label keeps this CDI purpose-specific
+        // and prevents length-extension attacks across different CDI uses.
         let cdi_attestation: [u8; 32] = {
             let mut h = Sha3_256::new();
             h.update(self.cdi);
@@ -127,9 +127,8 @@ impl RoT for DiceRoT<'_> {
 
         // ── 4. Populate PCR bank ─────────────────────────────────────────────
         //
-        // PCR 0 = attestation CDI (one-way function of CDI + FWID).
-        // All other PCRs are left at zero — hardware DICE layers can populate
-        // additional PCRs by calling `measure()` on nested `DiceRoT` instances.
+        // PCR 0 holds the attestation CDI. The rest stay zero for now —
+        // if you're stacking DICE layers, each nested DiceRoT fills in the next slot.
         let mut pcrs = PcrBank::default();
         pcrs.0[0] = cdi_attestation;
 
