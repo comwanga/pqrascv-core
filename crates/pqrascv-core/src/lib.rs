@@ -1,7 +1,7 @@
 //! # pqrascv-core
 //!
 //! A `no_std + alloc` Rust library for issuing post-quantum attestation quotes on embedded
-//! devices, IoT firmware, cloud orchestrators, and AI agents.
+//! devices, `IoT` firmware, cloud orchestrators, and AI agents.
 //!
 //! Every quote is signed with **ML-DSA-65 (FIPS 204)** and carries a **SLSA v1 / in-toto
 //! provenance predicate** — binding the device's firmware identity to its build pipeline in
@@ -84,7 +84,7 @@
 //!
 //! - [`measurement`] — the `RoT` trait and backends (Software SHA3-256, TPM 2.0, DICE)
 //! - [`provenance`] — builds SLSA v1 predicates and in-toto attestations
-//! - [`crypto`] — ML-DSA-65 sign and verify, all constant-time via RustCrypto
+//! - [`crypto`] — ML-DSA-65 sign and verify, all constant-time via `RustCrypto`
 //! - [`quote`] — assembles and serializes an `AttestationQuote`; `generate_quote` is the main entry point
 //! - [`config`] — policy settings: minimum SLSA level, max quote age, firmware hash requirements
 //! - [`error`] — the single `PqRascvError` type used throughout the crate
@@ -92,7 +92,7 @@
 //!
 //! ## Security notes
 //!
-//! - **Keep the seed secret.** Store it in a TPM NV slot, eFuse, or TrustZone keystore — not in flash.
+//! - **Keep the seed secret.** Store it in a TPM NV slot, eFuse, or `TrustZone` keystore — not in flash.
 //! - **Use a fresh nonce every time.** Reusing a nonce breaks replay protection.
 //! - **Use a post-quantum transport.** ML-DSA-65 protects the signature, but classical TLS is
 //!   still vulnerable to "harvest now, decrypt later" attacks. Pair with a PQ transport when you can.
