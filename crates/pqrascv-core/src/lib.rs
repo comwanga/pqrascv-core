@@ -1,38 +1,41 @@
 //! # pqrascv-core
 //!
-//! **Post-Quantum Remote Attestation & Supply-Chain Verification (PQ-RASCV)** — a `no_std + alloc` Rust library for the prover side.
+//! A `no_std + alloc` Rust library for issuing post-quantum attestation quotes on embedded
+//! devices, IoT firmware, cloud orchestrators, and AI agents.
 //!
-//! This crate implements the prover side of a challenge-response remote attestation protocol inspired by IETF RATS.
-//! It binds firmware/platform measurements to cryptographically verifiable supply-chain provenance (SLSA v1 + in-toto)
-//! and signs the entire quote with **ML-DSA-65** (FIPS 204).
+//! Every quote is signed with **ML-DSA-65 (FIPS 204)** and carries a **SLSA v1 / in-toto
+//! provenance predicate** — binding the device's firmware identity to its build pipeline in
+//! a single compact CBOR message, on bare-metal Cortex-M4, RISC-V, WASM, or Linux.
 //!
 //! ## Why PQ-RASCV?
 //!
-//! Traditional attestation solutions prove *what* is running, but rarely prove *how* the firmware was built or who approved the build.
-//! Classical signatures (RSA/ECDSA) are also vulnerable to future quantum computers.
+//! Traditional attestation tells you *what* is running. It doesn't tell you *how* the firmware
+//! was built, *who* signed it off, or whether the build pipeline was compromised. Classical
+//! signatures (RSA, ECDSA) also won't survive a cryptographically-relevant quantum computer.
 //!
-//! PQ-RASCV solves both problems in one compact, embedded-friendly package:
-//! - ML-DSA-65 signatures by default (no fallback to RSA/ECDSA)
-//! - SLSA v1 + in-toto provenance predicate embedded in every quote
-//! - Same API across Cortex-M, RISC-V, WASM, Linux, and other `no_std` targets
+//! PQ-RASCV fixes both in one library:
+//! - **Post-quantum by default** — ML-DSA-65 signatures, no RSA or ECDSA anywhere.
+//! - **Supply-chain provenance** — SLSA v1 predicate + SBOM hash inside every signed quote.
+//! - **One API everywhere** — Cortex-M4, RISC-V, WASM, Linux, all using the same code.
 //!
-//! ## Protocol flow
+//! ## How it works
+//!
+//! The verifier sends a random nonce; the prover measures its firmware, attaches provenance,
+//! signs everything, and sends back a CBOR quote:
 //!
 //! ```text
 //! Verifier ───── Challenge { nonce: [u8; 32] } ─────► Prover
 //!            ◄────── AttestationQuote (CBOR + ML-DSA-65 signature) ───────
 //! ```
 //!
-//! The prover collects measurements, attaches provenance, assembles the quote, signs it, and returns the CBOR bytes.
-//!
 //! ## Feature flags
 //!
-//! | Feature        | Default | Description                                              |
-//! |----------------|---------|----------------------------------------------------------|
-//! | `std`          | yes     | Enables `std::error::Error` impls                        |
-//! | `alloc`        | yes     | Required for quote assembly and provenance               |
-//! | `hardware-tpm` | no      | TPM 2.0 measurement backend (Linux only, requires `tss-esapi`) |
-//! | `dice`         | no      | TCG DICE `RoT` backend (pure Rust, bare-metal friendly)  |
+//! | Feature        | Default | What it does                                                   |
+//! |----------------|---------|----------------------------------------------------------------|
+//! | `std`          | yes     | Enables `std::error::Error` on the error type                  |
+//! | `alloc`        | yes     | Required for building quotes and provenance predicates         |
+//! | `hardware-tpm` | no      | Reads PCR values from a real TPM 2.0 chip (Linux only)        |
+//! | `dice`         | no      | DICE CDI derivation backend — pure Rust, no OS required        |
 //!
 //! ## Quick start
 //!
@@ -46,7 +49,7 @@
 //!     quote::generate_quote,
 //! };
 //!
-//! // Generate ML-DSA-65 keypair (protect the seed in production!)
+//! // Keep the signing seed secret — store it in a hardware keystore on real devices.
 //! let (sk, vk) = generate_ml_dsa_keypair().unwrap();
 //!
 //! let rot = SoftwareRoT::new(b"my-firmware", None, 1);
@@ -57,7 +60,7 @@
 //!     .build()
 //!     .unwrap();
 //!
-//! let nonce = [0x42u8; 32]; // supplied by the verifier
+//! let nonce = [0x42u8; 32]; // received from the verifier's Challenge
 //!
 //! let quote = generate_quote(
 //!     &rot,
@@ -66,42 +69,43 @@
 //!     &vk,
 //!     &nonce,
 //!     provenance,
-//!     0, // protocol version
+//!     0, // Unix timestamp — pass 0 if the device has no real-time clock
 //! )
 //! .unwrap();
 //!
-//! let cbor_bytes = quote.to_cbor().unwrap();
+//! let cbor_bytes = quote.to_cbor().unwrap(); // send this to the verifier
 //! # }
 //! ```
 //!
-//! The resulting `cbor_bytes` can be sent to a verifier. See the companion
-//! [`pqrascv-verifier`](https://crates.io/crates/pqrascv-verifier) crate for verification logic.
+//! Send `cbor_bytes` to a verifier. See [`pqrascv-verifier`](https://crates.io/crates/pqrascv-verifier)
+//! for the verification side.
 //!
-//! ## Main modules
+//! ## Modules
 //!
-//! - [`measurement`] — `RoT` trait + backends (Software, TPM 2.0, DICE)
-//! - [`provenance`] — SLSA v1 / in-toto predicate builder
-//! - [`crypto`] — ML-DSA-65 abstraction (constant-time via `RustCrypto`)
-//! - [`quote`] — `AttestationQuote` and the main `generate_quote` entry point
-//! - [`config`] — policy configuration (re-exported)
-//! - [`error`] — error types
-//! - [`backends`] — optional hardware-specific backends
+//! - [`measurement`] — the `RoT` trait and backends (Software SHA3-256, TPM 2.0, DICE)
+//! - [`provenance`] — builds SLSA v1 predicates and in-toto attestations
+//! - [`crypto`] — ML-DSA-65 sign and verify, all constant-time via RustCrypto
+//! - [`quote`] — assembles and serializes an `AttestationQuote`; `generate_quote` is the main entry point
+//! - [`config`] — policy settings: minimum SLSA level, max quote age, firmware hash requirements
+//! - [`error`] — the single `PqRascvError` type used throughout the crate
+//! - [`backends`] — optional hardware backends gated behind feature flags
 //!
-//! ## Security & usage notes
+//! ## Security notes
 //!
-//! - Store the signing seed in a hardware-protected location (TPM NV, eFuse, `TrustZone`, etc.).
-//! - Always use a fresh nonce supplied by the verifier for replay protection.
-//! - Pair with a post-quantum transport layer when possible (classical TLS is vulnerable to "harvest now, decrypt later").
-//! - See the repository for full security considerations.
+//! - **Keep the seed secret.** Store it in a TPM NV slot, eFuse, or TrustZone keystore — not in flash.
+//! - **Use a fresh nonce every time.** Reusing a nonce breaks replay protection.
+//! - **Use a post-quantum transport.** ML-DSA-65 protects the signature, but classical TLS is
+//!   still vulnerable to "harvest now, decrypt later" attacks. Pair with a PQ transport when you can.
+//! - See the repository README for the full security considerations.
 //!
-//! ## Repository & contributing
+//! ## Contributing
 //!
-//! - GitHub: <https://github.com/comwanga/pqrascv-core>
-//! - Contributions are welcome! Especially valued:
-//!   - Additional platform backends (SEV-SNP, OP-TEE, etc.)
-//!   - Heapless / fully allocation-free quote assembly
-//!   - Formal verification (Kani, fuzzing) and audits
-//!   - `Noise_PQX` or COSE integration
+//! Issues, PRs, and feedback are welcome at <https://github.com/comwanga/pqrascv-core>.
+//! Areas where contributions are especially valuable:
+//! - **New platform backends** — SEV-SNP, TDX, OP-TEE, Apple Secure Enclave
+//! - **Allocation-free quote assembly** — removing the `alloc` requirement entirely
+//! - **Post-quantum transport** — Noise\_PQX or COSE/CBOR signing integration
+//! - **Formal verification** — Kani harnesses and fuzzing coverage
 //!
 //! Licensed under either MIT or Apache-2.0 at your option.
 
