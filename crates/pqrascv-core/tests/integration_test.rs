@@ -4,7 +4,9 @@
 
 use pqrascv_core::{
     config::PolicyConfig,
-    crypto::{generate_ml_dsa_keypair, pub_key_id, CryptoBackend, MlDsaBackend, ML_DSA_65_SIGNATURE_SIZE},
+    crypto::{
+        generate_ml_dsa_keypair, pub_key_id, CryptoBackend, MlDsaBackend, ML_DSA_65_SIGNATURE_SIZE,
+    },
     measurement::SoftwareRoT,
     provenance::SlsaPredicateBuilder,
     quote::{generate_quote, AttestationQuote},

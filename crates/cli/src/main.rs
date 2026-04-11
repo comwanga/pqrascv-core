@@ -135,7 +135,16 @@ fn run() -> anyhow::Result<()> {
             slsa_level,
             nonce,
             out,
-        } => cmd_prove(seed, vk, firmware, model, builder, slsa_level, nonce.as_deref(), out),
+        } => cmd_prove(
+            seed,
+            vk,
+            firmware,
+            model,
+            builder,
+            slsa_level,
+            nonce.as_deref(),
+            out,
+        ),
         Command::Verify {
             vk,
             quote,
@@ -283,7 +292,10 @@ fn cmd_verify(
         Ok(result) => {
             println!("✓  Quote verified successfully.");
             println!("   Quote:        {}", quote_path.display());
-            println!("   SLSA level:   {} (minimum required: {min_slsa_level})", result.slsa_level());
+            println!(
+                "   SLSA level:   {} (minimum required: {min_slsa_level})",
+                result.slsa_level()
+            );
             println!("   Firmware:     {}", hex::encode(result.firmware_hash()));
             println!("   Nonce:        {}", hex::encode(result.nonce()));
         }
