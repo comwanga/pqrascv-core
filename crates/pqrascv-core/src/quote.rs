@@ -11,7 +11,7 @@
 //! ```
 //!
 //! The [`AttestationQuote`] is CBOR-encoded and ML-DSA-65 signed.  The
-//! signature covers the CBOR serialisation of [`QuoteBody`] (the
+//! signature covers the CBOR serialization of [`QuoteBody`] (the
 //! `signature` field itself is excluded from signing input).
 
 #[cfg(feature = "alloc")]
@@ -22,7 +22,7 @@ use alloc::vec::Vec;
 
 #[cfg(feature = "alloc")]
 use crate::{
-    crypto::CryptoBackend,
+    crypto::{pub_key_id, CryptoBackend},
     error::PqRascvError,
     measurement::{Measurements, RoT},
     provenance::InTotoAttestation,
@@ -43,6 +43,7 @@ pub const PROTOCOL_VERSION: u16 = 1;
 ///
 /// Serialized to CBOR bytes, then signed.
 #[cfg(feature = "alloc")]
+#[non_exhaustive]
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct QuoteBody {
     /// Protocol version (currently `1`).
@@ -86,6 +87,7 @@ impl QuoteBody {
 /// 4. Check `body.pub_key_id == SHA3-256(verifying_key)`.
 /// 5. Apply [`PolicyConfig`](crate::config::PolicyConfig).
 #[cfg(feature = "alloc")]
+#[non_exhaustive]
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct AttestationQuote {
     /// Signed payload.
@@ -116,7 +118,10 @@ impl AttestationQuote {
 // ────────────────────────────────────────────────────────────────────────────
 
 /// Challenge message sent from verifier to prover.
+///
+/// The `nonce` field is what you pass directly to [`generate_quote`] on the prover side.
 #[cfg(feature = "alloc")]
+#[non_exhaustive]
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Challenge {
     /// Cryptographically random nonce; prevents replay attacks.
@@ -177,7 +182,7 @@ pub fn generate_quote<R: RoT, C: CryptoBackend>(
     timestamp: u64,
 ) -> Result<AttestationQuote, PqRascvError> {
     let measurements = rot.measure()?;
-    let pub_key_id = C::pub_key_id(verifying_key);
+    let pub_key_id = pub_key_id(verifying_key);
 
     let body = QuoteBody {
         version: PROTOCOL_VERSION,

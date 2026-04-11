@@ -29,14 +29,8 @@ pub const PCR_SIZE: usize = 32;
 ///
 /// Each register is a 32-byte SHA3-256 hash of the corresponding measurement.
 /// What each index means is up to you — this crate doesn't define per-slot semantics.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PcrBank(pub [[u8; PCR_SIZE]; PCR_COUNT]);
-
-impl Default for PcrBank {
-    fn default() -> Self {
-        Self([[0u8; PCR_SIZE]; PCR_COUNT])
-    }
-}
 
 // ────────────────────────────────────────────────────────────────────────────
 // Measurements struct
@@ -45,7 +39,7 @@ impl Default for PcrBank {
 /// All measurements produced by a Root-of-Trust during attestation.
 ///
 /// This struct is embedded verbatim in [`AttestationQuote`](crate::quote::AttestationQuote)
-/// and therefore serialised as CBOR on the wire.
+/// and serialized as CBOR on the wire.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Measurements {
     /// PCR-style hash bank (SHA3-256 digests of measured regions).

@@ -4,7 +4,7 @@
 
 use pqrascv_core::{
     config::PolicyConfig,
-    crypto::{generate_ml_dsa_keypair, CryptoBackend, MlDsaBackend, ML_DSA_65_SIGNATURE_SIZE},
+    crypto::{generate_ml_dsa_keypair, pub_key_id, CryptoBackend, MlDsaBackend, ML_DSA_65_SIGNATURE_SIZE},
     measurement::SoftwareRoT,
     provenance::SlsaPredicateBuilder,
     quote::{generate_quote, AttestationQuote},
@@ -146,7 +146,7 @@ fn pub_key_id_matches_verifying_key_fingerprint() {
     )
     .unwrap();
 
-    assert_eq!(quote.body.pub_key_id, MlDsaBackend::pub_key_id(&vk));
+    assert_eq!(quote.body.pub_key_id, pub_key_id(&vk));
 }
 
 fn rot_fw(fw: &[u8]) -> SoftwareRoT<'_> {

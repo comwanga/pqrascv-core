@@ -9,7 +9,7 @@
 //! [`SlsaPredicateBuilder`] is a straightforward builder for SLSA v1 build
 //! provenance predicates that bundles them into an [`InTotoAttestation`].
 //!
-//! # no_std notes
+//! # `no_std` notes
 //!
 //! Both types need `alloc` because they contain `Vec`/`String` fields.
 //! On bare-metal targets with an allocator (e.g. `embedded-alloc`) this
@@ -30,6 +30,7 @@ use crate::error::PqRascvError;
 
 /// A subject in an in-toto statement — identifies the artefact being attested.
 #[cfg(feature = "alloc")]
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Subject {
     /// Human-readable name (e.g. `"firmware-v1.2.3.bin"`).
@@ -60,6 +61,7 @@ impl Subject {
 
 /// SLSA v1 build metadata embedded in a provenance predicate.
 #[cfg(feature = "alloc")]
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BuildMetadata {
     /// URI of the builder (e.g. `"https://github.com/actions/runner"`).
@@ -92,6 +94,7 @@ pub struct BuildMetadata {
 /// }
 /// ```
 #[cfg(feature = "alloc")]
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InTotoAttestation {
     /// Must be `"https://slsa.dev/provenance/v1"` for SLSA v1.

@@ -1,0 +1,21 @@
+[package]
+name    = "pqrascv-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+# This crate intentionally lives outside the main workspace.
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+pqrascv-core  = { path = "../crates/pqrascv-core", features = ["std"] }
+
+[[bin]]
+name = "quote_roundtrip"
+path = "fuzz_targets/quote_roundtrip.rs"
+test = false
+doc  = false

@@ -77,13 +77,11 @@ enum Command {
         #[arg(long, default_value_t = 1)]
         slsa_level: u8,
 
-        /// 32-byte nonce from the verifier, as 64 hex chars. Defaults to all zeros —
-        /// fine for demos, but use a real nonce in production.
-        #[arg(
-            long,
-            default_value = "0000000000000000000000000000000000000000000000000000000000000000"
-        )]
-        nonce: String,
+        /// 32-byte nonce from the verifier, as 64 hex chars.
+        /// If omitted, a cryptographically random nonce is generated and printed —
+        /// copy it to use with `verify --nonce`.
+        #[arg(long)]
+        nonce: Option<String>,
 
         /// Output path for the CBOR-encoded quote.
         #[arg(long, default_value = "quote.cbor")]
@@ -137,7 +135,7 @@ fn run() -> anyhow::Result<()> {
             slsa_level,
             nonce,
             out,
-        } => cmd_prove(seed, vk, firmware, model, builder, slsa_level, nonce, out),
+        } => cmd_prove(seed, vk, firmware, model, builder, slsa_level, nonce.as_deref(), out),
         Command::Verify {
             vk,
             quote,
@@ -178,7 +176,7 @@ fn cmd_prove(
     model_path: Option<PathBuf>,
     builder: String,
     slsa_level: u8,
-    nonce_hex: String,
+    nonce_hex: Option<&str>,
     out: PathBuf,
 ) -> anyhow::Result<()> {
     let seed_bytes = fs::read(&seed_path)?;
@@ -186,7 +184,10 @@ fn cmd_prove(
     let firmware = fs::read(&fw_path)?;
     let model: Option<Vec<u8>> = model_path.map(fs::read).transpose()?;
 
-    let nonce = parse_nonce(&nonce_hex)?;
+    let nonce = match nonce_hex {
+        Some(hex) => parse_nonce(hex)?,
+        None => random_nonce()?,
+    };
 
     let vk_array: [u8; ML_DSA_65_VERIFYING_KEY_SIZE] =
         vk_bytes.as_slice().try_into().map_err(|_| {
@@ -232,13 +233,14 @@ fn cmd_prove(
 
     fs::write(&out, &cbor)?;
 
+    let nonce_display = hex::encode(nonce);
     println!("Quote generated ({} bytes) → {}", cbor.len(), out.display());
     println!(
         "  Firmware:  {} (SHA3-256: {})",
         fw_path.display(),
         hex::encode(fw_digest)
     );
-    println!("  Nonce:     {nonce_hex}");
+    println!("  Nonce:     {nonce_display}  ← pass this to `verify --nonce`");
     println!("  SLSA:      level {slsa_level}");
     println!("  Timestamp: {timestamp}");
     Ok(())
@@ -278,10 +280,12 @@ fn cmd_verify(
     let verifier = Verifier::new(policy);
 
     match verifier.verify_cbor(&quote_bytes, &vk_array, &nonce, now) {
-        Ok(_) => {
+        Ok(result) => {
             println!("✓  Quote verified successfully.");
-            println!("   Quote: {}", quote_path.display());
-            println!("   SLSA level ≥ {min_slsa_level}: satisfied");
+            println!("   Quote:        {}", quote_path.display());
+            println!("   SLSA level:   {} (minimum required: {min_slsa_level})", result.slsa_level());
+            println!("   Firmware:     {}", hex::encode(result.firmware_hash()));
+            println!("   Nonce:        {}", hex::encode(result.nonce()));
         }
         Err(e) => {
             println!("✗  Verification FAILED: {e}");
@@ -295,6 +299,14 @@ fn cmd_verify(
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+fn random_nonce() -> anyhow::Result<[u8; 32]> {
+    use getrandom::rand_core::{Rng, UnwrapErr};
+    use getrandom::SysRng;
+    let mut nonce = [0u8; 32];
+    UnwrapErr(SysRng).fill_bytes(&mut nonce);
+    Ok(nonce)
+}
 
 fn parse_nonce(hex: &str) -> anyhow::Result<[u8; 32]> {
     let bytes = hex::decode(hex)

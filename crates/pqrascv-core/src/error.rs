@@ -44,8 +44,8 @@ impl fmt::Display for PqRascvError {
             Self::KeyGenerationFailed => f.write_str("key generation failed"),
             Self::MeasurementFailed => f.write_str("measurement collection failed"),
             Self::InvalidNonce => f.write_str("invalid nonce"),
-            Self::SerializationFailed => f.write_str("CBOR serialisation failed"),
-            Self::DeserializationFailed => f.write_str("CBOR deserialisation failed"),
+            Self::SerializationFailed => f.write_str("CBOR serialization failed"),
+            Self::DeserializationFailed => f.write_str("CBOR deserialization failed"),
             Self::InvalidProvenance => f.write_str("invalid provenance attestation"),
             Self::BackendUnavailable => {
                 f.write_str("backend unavailable (feature not compiled in)")

@@ -22,26 +22,19 @@ serde       = { version = "1",           default-features = false, features = ["
 serde_bytes = { version = "0.11",        default-features = false, features = ["alloc"] }
 ciborium    = { version = "0.2",         default-features = false }
 
-# Post-Quantum Cryptography (RustCrypto) — use pre-release versions as stable is not yet published
-ml-kem      = { version = "0.3.0-rc.1",  default-features = false }
+# Post-Quantum Cryptography (RustCrypto — pre-release; stable not yet published)
 ml-dsa      = { version = "0.1.0-rc.8",  default-features = false, features = ["rand_core"] }
-signature   = { version = "3.0.0-rc.10", default-features = false }
 
 # Hashing
 sha3        = { version = "0.10",        default-features = false }
-digest      = { version = "0.10",        default-features = false }
 
 # Memory safety
 zeroize     = { version = "1",           default-features = false, features = ["derive"] }
 
-# RNG (rand_core 0.10 is required by ml-dsa)
-rand_core   = { version = "0.10",        default-features = false }
+# RNG
 getrandom   = { version = "0.4",         features = ["sys_rng"] }
 
-# Embedded / no_std collections
-heapless    = { version = "0.8",         default-features = false }
-
-# TPM 2.0 backend (hardware-tpm feature only — not optional at workspace level)
+# TPM 2.0 backend (hardware-tpm feature only)
 tss-esapi   = { version = "8.0.0-alpha.2" }
 
 [profile.release]

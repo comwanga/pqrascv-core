@@ -14,23 +14,42 @@
 
 use pqrascv_core::{
     config::PolicyConfig,
-    crypto::{CryptoBackend, MlDsaBackend},
+    crypto::{pub_key_id, CryptoBackend, MlDsaBackend},
     error::PqRascvError,
-    quote::AttestationQuote,
+    quote::{AttestationQuote, Challenge},
 };
 
 // ────────────────────────────────────────────────────────────────────────────
 // VerificationResult
 // ────────────────────────────────────────────────────────────────────────────
 
-/// Outcome of a completed attestation verification.
+/// Outcome of a successful attestation verification.
+///
+/// Only returned when ALL checks pass — errors surface as `Err(PqRascvError)`.
 #[derive(Debug)]
 pub struct VerificationResult {
-    /// `true` if all checks passed.
-    pub ok: bool,
-    /// The decoded quote — included even when verification fails so you can
-    /// inspect what went wrong.
+    /// The verified quote, available for further inspection.
     pub quote: AttestationQuote,
+}
+
+impl VerificationResult {
+    /// SLSA level claimed by the prover's provenance predicate.
+    #[must_use]
+    pub fn slsa_level(&self) -> u8 {
+        self.quote.body.provenance.slsa_level()
+    }
+
+    /// SHA3-256 digest of the firmware image that was measured.
+    #[must_use]
+    pub fn firmware_hash(&self) -> &[u8; 32] {
+        &self.quote.body.measurements.firmware_hash
+    }
+
+    /// The nonce that was bound into this quote.
+    #[must_use]
+    pub fn nonce(&self) -> &[u8; 32] {
+        &self.quote.body.nonce
+    }
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -83,7 +102,21 @@ impl Verifier {
 
         self.verify_quote(&quote, verifying_key, expected_nonce, now_secs)?;
 
-        Ok(VerificationResult { ok: true, quote })
+        Ok(VerificationResult { quote })
+    }
+
+    /// Convenience wrapper that takes a [`Challenge`] directly instead of a raw nonce.
+    ///
+    /// Use this when you generated the challenge with [`Challenge::new`] and want
+    /// to pair it with the quote the prover returned.
+    pub fn verify_with_challenge(
+        &self,
+        cbor: &[u8],
+        verifying_key: &[u8],
+        challenge: &Challenge,
+        now_secs: u64,
+    ) -> Result<VerificationResult, PqRascvError> {
+        self.verify_cbor(cbor, verifying_key, &challenge.nonce, now_secs)
     }
 
     /// Verifies an already-parsed [`AttestationQuote`]. Useful if you've already
@@ -101,7 +134,7 @@ impl Verifier {
         }
 
         // Make sure the quote was signed with the key we actually trust.
-        let expected_id = MlDsaBackend::pub_key_id(verifying_key);
+        let expected_id = pub_key_id(verifying_key);
         if quote.body.pub_key_id != expected_id {
             return Err(PqRascvError::VerificationFailed);
         }
@@ -205,5 +238,45 @@ mod tests {
 
         let result = verifier.verify_cbor(&cbor, &different_vk, &[0x77u8; 32], 1_700_000_600);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn verify_with_challenge_accepts_valid_quote() {
+        let (_, vk, quote) = setup();
+        let verifier = Verifier::new(PolicyConfig::default());
+        let cbor = quote.to_cbor().unwrap();
+
+        let challenge = pqrascv_core::quote::Challenge::new([0x77u8; 32]);
+        let result = verifier.verify_with_challenge(&cbor, &vk, &challenge, 1_700_000_600);
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[test]
+    fn verify_with_challenge_rejects_wrong_nonce() {
+        let (_, vk, quote) = setup();
+        let verifier = Verifier::new(PolicyConfig::default());
+        let cbor = quote.to_cbor().unwrap();
+
+        // Challenge carries a nonce that doesn't match what was signed into the quote.
+        let challenge = pqrascv_core::quote::Challenge::new([0x00u8; 32]);
+        let result = verifier.verify_with_challenge(&cbor, &vk, &challenge, 1_700_000_600);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn verification_result_accessors_return_correct_data() {
+        let (_, vk, quote) = setup();
+        let verifier = Verifier::new(PolicyConfig::default());
+        let expected_firmware_hash = quote.body.measurements.firmware_hash;
+        let cbor = quote.to_cbor().unwrap();
+
+        let result = verifier
+            .verify_cbor(&cbor, &vk, &[0x77u8; 32], 1_700_000_600)
+            .unwrap();
+
+        // The result exposes provenance and measurement data from the verified quote.
+        assert_eq!(result.slsa_level(), 2);
+        assert_eq!(result.firmware_hash(), &expected_firmware_hash);
+        assert_eq!(result.nonce(), &[0x77u8; 32]);
     }
 }

@@ -39,8 +39,8 @@ pub const ML_DSA_65_SIGNATURE_SIZE: usize = 3309;
 // Signature bytes — fixed-size, stack-allocatable
 // ────────────────────────────────────────────────────────────────────────────
 
-/// Raw ML-DSA-65 signature bytes.  Fixed-size so usable without `alloc`.
-#[derive(Clone)]
+/// Raw ML-DSA-65 signature bytes. Fixed-size so usable without `alloc`.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SignatureBytes(pub [u8; ML_DSA_65_SIGNATURE_SIZE]);
 
 impl AsRef<[u8]> for SignatureBytes {
@@ -58,7 +58,7 @@ impl AsRef<[u8]> for SignatureBytes {
 /// Always prefer this type over a raw array for secret key storage so that
 /// the seed is wiped from memory when the value goes out of scope.
 #[derive(Clone, Zeroize, ZeroizeOnDrop)]
-pub struct SigningKeySeed(pub [u8; ML_DSA_65_SEED_SIZE]);
+pub struct SigningKeySeed([u8; ML_DSA_65_SEED_SIZE]);
 
 impl SigningKeySeed {
     /// Wraps a raw seed.
@@ -101,14 +101,18 @@ pub trait CryptoBackend {
         verifying_key: &[u8],
         signature: &[u8],
     ) -> Result<(), PqRascvError>;
+}
 
-    /// Derive a 32-byte SHA3-256 fingerprint of a verifying key.
-    #[must_use]
-    fn pub_key_id(verifying_key: &[u8]) -> [u8; 32] {
-        let mut h = Sha3_256::new();
-        h.update(verifying_key);
-        h.finalize().into()
-    }
+/// Derives a 32-byte SHA3-256 fingerprint from a verifying key.
+///
+/// The fingerprint is embedded in [`QuoteBody`](crate::quote::QuoteBody) so verifiers can
+/// confirm a quote was signed by the key they trust without re-doing the full
+/// signature check first.
+#[must_use]
+pub fn pub_key_id(verifying_key: &[u8]) -> [u8; 32] {
+    let mut h = Sha3_256::new();
+    h.update(verifying_key);
+    h.finalize().into()
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -117,9 +121,9 @@ pub trait CryptoBackend {
 
 /// Concrete [`CryptoBackend`] using `RustCrypto`'s `ml-dsa` crate (ML-DSA-65, FIPS 204).
 ///
-/// Signing is deterministic (no randomness required at sign-time) as
-/// per the FIPS 204 §5.2 pure-message deterministic API.
-/// All operations are constant-time as guaranteed by the `ml-dsa` crate.
+/// Signing is deterministic (no randomness required at sign-time) and
+/// all operations are constant-time as guaranteed by the `ml-dsa` crate.
+#[derive(Debug, Default, Clone, Copy)]
 pub struct MlDsaBackend;
 
 impl CryptoBackend for MlDsaBackend {
@@ -279,7 +283,7 @@ mod tests {
     #[test]
     fn pub_key_id_is_deterministic() {
         let vk = [0u8; ML_DSA_65_VERIFYING_KEY_SIZE];
-        assert_eq!(MlDsaBackend::pub_key_id(&vk), MlDsaBackend::pub_key_id(&vk));
+        assert_eq!(pub_key_id(&vk), pub_key_id(&vk));
     }
 
     #[cfg(feature = "std")]
@@ -292,6 +296,6 @@ mod tests {
 
         let sig1 = backend.sign(message, seed.as_bytes()).unwrap();
         let sig2 = backend.sign(message, seed.as_bytes()).unwrap();
-        assert_eq!(sig1.0, sig2.0);
+        assert_eq!(sig1, sig2);
     }
 }

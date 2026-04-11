@@ -115,7 +115,7 @@ let verifier = Verifier::new(PolicyConfig {
 
 // trusted_vk obtained out-of-band (provisioning DB, PKI, TPM EK cert).
 match verifier.verify_cbor(&cbor_bytes, &trusted_vk, &nonce, now_secs) {
-    Ok(r)  => println!("Verified — SLSA {}", r.slsa_level),
+    Ok(r)  => println!("Verified — SLSA {}", r.slsa_level()),
     Err(e) => eprintln!("Rejected: {e}"),
 }
 ```
