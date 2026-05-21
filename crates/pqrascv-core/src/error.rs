@@ -32,6 +32,17 @@ pub enum PqRascvError {
     BackendUnavailable,
     /// The quote failed policy validation.
     PolicyViolation,
+    /// The quote's protocol version is not supported by this verifier.
+    UnsupportedVersion,
+    /// The quote was generated without a real-time clock and the policy
+    /// requires one (`allow_rtcless_devices` is false).
+    RtcRequired,
+    /// Certificate chain validation failed (v2 PKI).
+    CertificateInvalid,
+    /// Certificate has been revoked.
+    CertificateRevoked,
+    /// The external provenance bundle signature is invalid (v2 Sigstore).
+    ProvenanceBundleInvalid,
     /// Something that should never happen did. This is a bug in the library — please file an issue.
     InternalError,
 }
@@ -51,6 +62,15 @@ impl fmt::Display for PqRascvError {
                 f.write_str("backend unavailable (feature not compiled in)")
             }
             Self::PolicyViolation => f.write_str("quote failed policy validation"),
+            Self::UnsupportedVersion => f.write_str("unsupported protocol version"),
+            Self::RtcRequired => {
+                f.write_str("quote has no timestamp and policy requires a real-time clock")
+            }
+            Self::CertificateInvalid => f.write_str("certificate chain validation failed"),
+            Self::CertificateRevoked => f.write_str("certificate has been revoked"),
+            Self::ProvenanceBundleInvalid => {
+                f.write_str("external provenance bundle signature is invalid")
+            }
             Self::InternalError => f.write_str("internal error"),
         }
     }

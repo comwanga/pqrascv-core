@@ -14,7 +14,7 @@ use core::convert::TryFrom;
 
 // ── Algorithm Types ───────────────────────────────────────────────────────
 
-/// TPM Algorithm Identifiers (TPM_ALG_ID).
+/// TPM Algorithm Identifiers (`TPM_ALG_ID`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u16)]
 pub enum TpmAlgId {
@@ -53,7 +53,7 @@ impl TryFrom<u16> for TpmAlgId {
     }
 }
 
-/// TPM ECC Curve Identifiers (TPM_ECC_CURVE).
+/// TPM ECC Curve Identifiers (`TPM_ECC_CURVE`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u16)]
 pub enum TpmEccCurve {
@@ -113,10 +113,12 @@ pub struct TpmBuffer<'a> {
 }
 
 impl<'a> TpmBuffer<'a> {
+    #[must_use]
     pub fn new(data: &'a [u8]) -> Self {
         Self { data }
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
@@ -180,7 +182,7 @@ impl<'a> TpmBuffer<'a> {
 
 // ── TPM2B_ATTEST / TPMS_ATTEST ────────────────────────────────────────────
 
-/// Represents a parsed TPMS_ATTEST structure.
+/// Represents a parsed `TPMS_ATTEST` structure.
 #[derive(Debug, Clone)]
 pub struct TpmsAttest<'a> {
     pub magic: u32,
@@ -219,7 +221,7 @@ impl<'a> TpmsAttest<'a> {
     /// Parses a raw `TPMS_ATTEST` structure.
     pub fn parse(buf: &mut TpmBuffer<'a>) -> Result<Self, TpmParseError> {
         let magic = buf.read_u32()?;
-        if magic != 0xFF544347 { // TPM_GENERATED_VALUE
+        if magic != 0xFF54_4347 { // TPM_GENERATED_VALUE
             return Err(TpmParseError::InvalidMagic);
         }
 

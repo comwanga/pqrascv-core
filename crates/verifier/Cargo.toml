@@ -15,3 +15,4 @@ ciborium.workspace = true
 
 [dev-dependencies]
 getrandom = { workspace = true }
+pqrascv-core = { path = "../pqrascv-core", version = "0.1.0", features = ["std", "software-rot-unsafe"] }

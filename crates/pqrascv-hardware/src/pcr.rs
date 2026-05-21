@@ -60,7 +60,7 @@ pub enum PcrSemantic {
     Initrd,
     /// Boot configuration, device tree, or kernel command line.
     Config,
-    /// Secure-world image (TrustZone, OP-TEE, Intel TXT ACM).
+    /// Secure-world image (`TrustZone`, OP-TEE, Intel TXT ACM).
     SecureWorld,
     /// Application-layer measurement (device-specific use).
     Application,
@@ -155,7 +155,7 @@ impl PcrMeasurement {
             return Err(SlotSemanticMismatch {
                 index,
                 semantic,
-                expected_index: semantic.canonical_slot() as u8,
+                expected_index: u8::try_from(semantic.canonical_slot()).unwrap_or(0),
             });
         }
         Ok(Self { index, semantic, digest })
@@ -233,7 +233,7 @@ impl TypedPcrBank {
     /// Returns `true` if all present measurements use the canonical algorithm.
     #[must_use]
     pub fn all_normalized(&self) -> bool {
-        self.measurements.iter().all(|m| m.is_normalized())
+        self.measurements.iter().all(PcrMeasurement::is_normalized)
     }
 
     /// Returns the number of measured slots.

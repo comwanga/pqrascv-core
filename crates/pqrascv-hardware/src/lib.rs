@@ -59,6 +59,13 @@ pub mod policy;
 pub mod tpm_structures;
 pub mod tpm_verify;
 pub mod ek_framework;
+pub mod secure_boot;
+pub mod boot_chain;
+pub mod runtime_integrity;
+pub mod baseline;
+pub mod drift;
+pub mod platform_profiles;
+pub mod profiles;
 
 // ── Convenience re-exports ────────────────────────────────────────────────
 
@@ -72,3 +79,10 @@ pub use digest::{DigestAlgorithm, TypedDigest};
 pub use pcr::{PcrMeasurement, PcrSemantic, SlotSemanticMismatch, TypedPcrBank};
 pub use policy::{HardwarePolicyContext, HardwarePolicyEngine, HardwarePolicyError, HardwarePolicyRule};
 pub use tpm_verify::{TpmQuoteVerifier, TpmVerifyError};
+pub use secure_boot::{SecureBootState, SecureBootEvidence};
+pub use boot_chain::BootChainEvidence;
+pub use runtime_integrity::RuntimeIntegrityEvidence;
+pub use baseline::{PolicyVersion, ExpectedPcr, PcrBaseline};
+pub use drift::{DriftSeverity, DriftPolicyMode, DriftReport, DriftDetectionEngine};
+pub use platform_profiles::{PlatformClass, PlatformVendor, PlatformProfile, VerificationDecisionReason, PlatformVerificationReport};
+pub use profiles::sovereign_bitcoin_node_profile;

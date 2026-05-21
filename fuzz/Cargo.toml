@@ -13,9 +13,16 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 pqrascv-core  = { path = "../crates/pqrascv-core", features = ["std"] }
+pqrascv-hardware = { path = "../crates/pqrascv-hardware" }
 
 [[bin]]
 name = "quote_roundtrip"
 path = "fuzz_targets/quote_roundtrip.rs"
+test = false
+doc  = false
+
+[[bin]]
+name = "policy_eval"
+path = "fuzz_targets/policy_eval.rs"
 test = false
 doc  = false

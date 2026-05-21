@@ -21,7 +21,7 @@ use pqrascv_core::{
     crypto::{generate_ml_dsa_keypair, MlDsaBackend, ML_DSA_65_VERIFYING_KEY_SIZE},
     measurement::SoftwareRoT,
     provenance::SlsaPredicateBuilder,
-    quote::generate_quote,
+    quote::{generate_quote, QuoteTimestamp},
 };
 use pqrascv_verifier::Verifier;
 
@@ -109,6 +109,11 @@ enum Command {
         /// Maximum quote age in seconds (0 = no check).
         #[arg(long, default_value_t = 300)]
         max_age: u64,
+
+        /// Accept quotes from devices that have no real-time clock.
+        /// Without this flag, NoRtc quotes are rejected.
+        #[arg(long, default_value_t = false)]
+        allow_rtcless: bool,
     },
 }
 
@@ -151,7 +156,8 @@ fn run() -> anyhow::Result<()> {
             nonce,
             min_slsa_level,
             max_age,
-        } => cmd_verify(vk, quote, nonce, min_slsa_level, max_age),
+            allow_rtcless,
+        } => cmd_verify(vk, quote, nonce, min_slsa_level, max_age, allow_rtcless),
     }
 }
 
@@ -225,9 +231,10 @@ fn cmd_prove(
 
     let provenance = builder_obj.build()?;
 
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs());
+    let timestamp = match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(d) => QuoteTimestamp::Rtc(d.as_secs()),
+        Err(_) => QuoteTimestamp::NoRtc,
+    };
 
     let quote = generate_quote(
         &rot,
@@ -251,7 +258,7 @@ fn cmd_prove(
     );
     println!("  Nonce:     {nonce_display}  ← pass this to `verify --nonce`");
     println!("  SLSA:      level {slsa_level}");
-    println!("  Timestamp: {timestamp}");
+    println!("  Timestamp: {:?}", timestamp);
     Ok(())
 }
 
@@ -265,6 +272,7 @@ fn cmd_verify(
     nonce_hex: String,
     min_slsa_level: u8,
     max_age: u64,
+    allow_rtcless: bool,
 ) -> anyhow::Result<()> {
     let vk_bytes = fs::read(&vk_path)?;
     let quote_bytes = fs::read(&quote_path)?;
@@ -280,6 +288,7 @@ fn cmd_verify(
         max_quote_age_secs: max_age,
         require_firmware_hash: true,
         require_event_counter: false,
+        allow_rtcless_devices: allow_rtcless,
     };
 
     let now = SystemTime::now()

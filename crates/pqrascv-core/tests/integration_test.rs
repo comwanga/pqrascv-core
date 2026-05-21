@@ -1,6 +1,5 @@
 //! Integration tests for pqrascv-core.
-// These tests all need alloc for quote assembly and std for OS-based key generation.
-#![cfg(feature = "std")]
+#![cfg(all(feature = "std", feature = "software-rot-unsafe"))]
 
 use pqrascv_core::{
     config::PolicyConfig,
@@ -9,7 +8,7 @@ use pqrascv_core::{
     },
     measurement::SoftwareRoT,
     provenance::SlsaPredicateBuilder,
-    quote::{generate_quote, AttestationQuote},
+    quote::{generate_quote, AttestationQuote, QuoteTimestamp},
 };
 
 fn make_provenance() -> pqrascv_core::provenance::InTotoAttestation {
@@ -35,7 +34,7 @@ fn full_pipeline_sign_and_verify() {
         &vk,
         &nonce,
         make_provenance(),
-        1_700_000_500,
+        QuoteTimestamp::Rtc(1_700_000_500),
     )
     .expect("generate_quote failed");
 
@@ -49,7 +48,7 @@ fn full_pipeline_sign_and_verify() {
 
     assert_eq!(decoded.body.nonce, nonce);
     assert_eq!(decoded.body.version, 1);
-    assert_eq!(decoded.body.timestamp, 1_700_000_500);
+    assert_eq!(decoded.body.timestamp, QuoteTimestamp::Rtc(1_700_000_500));
     assert_ne!(decoded.body.measurements.firmware_hash, [0u8; 32]);
     assert_ne!(decoded.body.measurements.ai_model_hash, [0u8; 32]);
     assert_eq!(decoded.body.measurements.event_counter, 7);
@@ -69,7 +68,7 @@ fn policy_accepts_valid_quote() {
         &vk,
         &nonce,
         make_provenance(),
-        1_700_000_000,
+        QuoteTimestamp::Rtc(1_700_000_000),
     )
     .unwrap();
 
@@ -78,6 +77,7 @@ fn policy_accepts_valid_quote() {
         max_quote_age_secs: 300,
         require_firmware_hash: true,
         require_event_counter: false,
+        allow_rtcless_devices: false,
     };
 
     policy
@@ -103,7 +103,7 @@ fn tampered_quote_fails_verification() {
         &vk,
         &[0x33u8; 32],
         make_provenance(),
-        0,
+        QuoteTimestamp::NoRtc,
     )
     .unwrap();
 
@@ -126,7 +126,7 @@ fn nonce_is_preserved_in_quote() {
         &vk,
         &nonce,
         make_provenance(),
-        0,
+        QuoteTimestamp::NoRtc,
     )
     .unwrap();
 
@@ -144,11 +144,18 @@ fn pub_key_id_matches_verifying_key_fingerprint() {
         &vk,
         &[0x55u8; 32],
         make_provenance(),
-        0,
+        QuoteTimestamp::NoRtc,
     )
     .unwrap();
 
     assert_eq!(quote.body.pub_key_id, pub_key_id(&vk));
+}
+
+#[test]
+fn from_cbor_rejects_oversized_input() {
+    use pqrascv_core::quote::MAX_QUOTE_CBOR_SIZE;
+    let oversized = vec![0u8; MAX_QUOTE_CBOR_SIZE + 1];
+    assert!(AttestationQuote::from_cbor(&oversized).is_err());
 }
 
 fn rot_fw(fw: &[u8]) -> SoftwareRoT<'_> {

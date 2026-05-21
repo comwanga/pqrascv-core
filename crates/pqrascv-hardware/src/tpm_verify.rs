@@ -20,13 +20,17 @@ use sha3::{Sha3_256, Sha3_384, Sha3_512};
 use crate::{
     backend::TpmQuoteEvidence,
     pcr::{PcrSemantic, TypedPcrBank},
-    tpm_structures::{TpmAlgId, TpmEccCurve, TpmParseError, TpmsAttest, TpmtPublic, TpmtSignature},
+    tpm_structures::{TpmAlgId, TpmParseError, TpmsAttest},
 };
+
+#[cfg(feature = "tpm-crypto")]
+use crate::tpm_structures::{TpmEccCurve, TpmtPublic, TpmtSignature};
 
 // ── TpmVerificationReport ─────────────────────────────────────────────────
 
 /// Structured report of a TPM quote verification.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct TpmVerificationReport {
     pub quote_valid: bool,
     pub nonce_valid: bool,
@@ -36,6 +40,7 @@ pub struct TpmVerificationReport {
 }
 
 impl TpmVerificationReport {
+    #[must_use]
     pub fn is_fully_valid(&self) -> bool {
         self.quote_valid && self.nonce_valid && self.pcr_digest_valid && self.ak_valid
     }
@@ -83,13 +88,11 @@ impl TpmQuoteVerifier {
         }
         report.pcr_digest_valid = true;
 
-        // 5. Parse AK Public Key
-        let ak_pub = TpmtPublic::parse_tpm2b(&evidence.identity.ak_pub)
-            .map_err(TpmVerifyError::ParseError)?;
-        
-        // 6. Verify Signature
+        // 5. Parse AK Public Key & Verify Signature
         #[cfg(feature = "tpm-crypto")]
         {
+            let ak_pub = TpmtPublic::parse_tpm2b(&evidence.identity.ak_pub)
+                .map_err(TpmVerifyError::ParseError)?;
             let sig = TpmtSignature::parse(&evidence.quote_signature)
                 .map_err(TpmVerifyError::ParseError)?;
             Self::verify_signature(&evidence.quote_blob, &sig, &ak_pub)?;
@@ -132,7 +135,8 @@ impl TpmQuoteVerifier {
         for (byte_idx, &byte) in selection.pcr_select.iter().enumerate() {
             for bit_idx in 0..8 {
                 if (byte & (1 << bit_idx)) != 0 {
-                    let pcr_index = (byte_idx * 8 + bit_idx) as u8;
+                    let pcr_index = u8::try_from(byte_idx * 8 + bit_idx)
+                        .map_err(|_| TpmVerifyError::ParseError(TpmParseError::TooManyPcrSelections))?;
                     
                     let measurement = bank.get_by_index(pcr_index)
                         .ok_or(TpmVerifyError::MissingPcrInBank(pcr_index))?;
@@ -292,20 +296,20 @@ pub enum TpmVerifyError {
 impl core::fmt::Display for TpmVerifyError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::ParseError(e) => write!(f, "TPM structure parsing failed: {}", e),
+            Self::ParseError(e) => write!(f, "TPM structure parsing failed: {e}"),
             Self::NonceMismatch => f.write_str("TPM extraData does not match expected nonce"),
             Self::PcrDigestRecomputationMismatch => f.write_str("recomputed PCR digest does not match quote pcrDigest"),
             Self::EmptyPcrSelection => f.write_str("TPML_PCR_SELECTION is empty"),
             Self::UnsupportedMultipleBanks => f.write_str("multiple PCR banks in selection is unsupported"),
-            Self::MissingPcrInBank(idx) => write!(f, "PCR {} is selected in quote but missing from evidence bank", idx),
+            Self::MissingPcrInBank(idx) => write!(f, "PCR {idx} is selected in quote but missing from evidence bank"),
             Self::UnsupportedHashAlgorithm => f.write_str("unsupported hash algorithm in quote"),
             Self::UnsupportedEccCurve => f.write_str("unsupported ECC curve"),
             Self::InvalidPublicKey => f.write_str("invalid AK public key"),
             Self::InvalidSignature => f.write_str("invalid quote signature format"),
             Self::SignatureVerificationFailed => f.write_str("cryptographic signature verification failed"),
             Self::AlgorithmMismatch => f.write_str("AK public key type does not match signature type"),
-            Self::PcrSemanticAbsent(s) => write!(f, "required PCR semantic {:?} is absent", s),
-            Self::PcrValueMismatch { semantic, .. } => write!(f, "PCR value mismatch for semantic {:?}", semantic),
+            Self::PcrSemanticAbsent(s) => write!(f, "required PCR semantic {s:?} is absent"),
+            Self::PcrValueMismatch { semantic, .. } => write!(f, "PCR value mismatch for semantic {semantic:?}"),
         }
     }
 }

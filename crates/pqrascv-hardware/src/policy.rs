@@ -12,20 +12,26 @@
 //! # Production Preset
 //!
 //! [`HardwarePolicyEngine::hardware_production()`] returns a preset that:
-//! - Requires a hardware-rooted backend (no TestOnly)
+//! - Requires a hardware-rooted backend (no `TestOnly`)
 //! - Requires measured boot (Firmware + Bootloader PCRs present)
 //! - Requires a hardware monotonic counter
 //! - Requires all PCR digests to be normalized
-//! - Rejects TestOnly backends unconditionally
+//! - Rejects `TestOnly` backends unconditionally
 
 extern crate alloc;
 use alloc::vec::Vec;
+use alloc::string::String;
 
 use crate::{
     backend::HardwareBackendType,
     counter::CounterEvidence,
     pcr::{PcrSemantic, TypedPcrBank},
     digest::TypedDigest,
+    secure_boot::{SecureBootState, SecureBootEvidence},
+    boot_chain::BootChainEvidence,
+    platform_profiles::{PlatformProfile, VerificationDecisionReason},
+    drift::DriftPolicyMode,
+    baseline::PcrBaseline,
 };
 
 // ── HardwarePolicyRule ────────────────────────────────────────────────────
@@ -98,6 +104,25 @@ pub enum HardwarePolicyRule {
     /// cannot bind a nonce into their evidence cannot provide freshness
     /// guarantees beyond the nonce ledger.
     RequireNonceBinding,
+
+    /// Reject evidence where Secure Boot is not in the required state.
+    RequireSecureBootState(SecureBootState),
+
+    /// Reject evidence if the Boot Chain does not match expectations.
+    RequireBootChain(BootChainEvidence),
+
+    /// Reject evidence if it does not match the specified Platform Profile.
+    RequirePlatformProfile {
+        profile: PlatformProfile,
+        drift_mode: DriftPolicyMode,
+        upgrade_baseline: Option<PcrBaseline>,
+    },
+
+    /// Reject evidence if the baseline is invalid or rolled back.
+    RequireValidBaselineTransition {
+        current: PcrBaseline,
+        previous: PcrBaseline,
+    },
 }
 
 // ── HardwarePolicyContext ─────────────────────────────────────────────────
@@ -116,6 +141,12 @@ pub struct HardwarePolicyContext<'a> {
     pub supports_nonce_binding: bool,
     /// The firmware digest from the evidence.
     pub firmware_digest: &'a TypedDigest,
+    /// Optional Secure Boot evidence.
+    pub secure_boot: Option<&'a SecureBootEvidence>,
+    /// Optional Boot Chain evidence.
+    pub boot_chain: Option<&'a BootChainEvidence>,
+    /// Optional Runtime Integrity evidence.
+    pub runtime_integrity: Option<&'a crate::runtime_integrity::RuntimeIntegrityEvidence>,
 }
 
 // ── HardwarePolicyEngine ──────────────────────────────────────────────────
@@ -138,7 +169,7 @@ impl HardwarePolicyEngine {
     /// Returns the hardware production preset.
     ///
     /// Enforces:
-    /// - Hardware-rooted backend (no TestOnly)
+    /// - Hardware-rooted backend (no `TestOnly`)
     /// - Measured boot (Firmware + Bootloader PCRs present)
     /// - Normalized PCR digests
     /// - Hardware monotonic counter
@@ -172,14 +203,83 @@ impl HardwarePolicyEngine {
     ///
     /// Returns `Ok(())` if all rules pass, or the first [`HardwarePolicyError`].
     pub fn evaluate(&self, ctx: &HardwarePolicyContext<'_>) -> Result<(), HardwarePolicyError> {
+        // Fail-closed conflict detection
+        self.detect_conflicts().map_err(HardwarePolicyError::PolicyConflict)?;
+
         for rule in &self.rules {
-            self.evaluate_rule(rule, ctx)?;
+            Self::evaluate_rule(rule, ctx)?;
         }
         Ok(())
     }
 
+    /// Validates that there are no conflicting rules in the policy engine.
+    ///
+    /// Conflicting rules include:
+    /// - Requiring two different backend types.
+    /// - Requiring contradictory Secure Boot states.
+    /// - Contradictory PCR value expectations for the same PCR semantic.
+    /// - Requiring contradictory Platform Profiles.
+    pub fn detect_conflicts(&self) -> Result<(), PolicyConflictError> {
+        let mut required_backend = None;
+        let mut required_sb_state = None;
+        let mut pcr_expectations = alloc::vec::Vec::new();
+        let mut required_profile: Option<String> = None;
+
+        for rule in &self.rules {
+            match rule {
+                HardwarePolicyRule::RequireBackendType(backend) => {
+                    if let Some(prev) = required_backend {
+                        if prev != *backend {
+                            return Err(PolicyConflictError::ConflictingBackendTypes {
+                                type_a: prev,
+                                type_b: *backend,
+                            });
+                        }
+                    }
+                    required_backend = Some(*backend);
+                }
+                HardwarePolicyRule::RequireSecureBootState(state) => {
+                    if let Some(prev) = required_sb_state {
+                        if prev != *state {
+                            return Err(PolicyConflictError::ConflictingSecureBootStates {
+                                state_a: prev,
+                                state_b: *state,
+                            });
+                        }
+                    }
+                    required_sb_state = Some(*state);
+                }
+                HardwarePolicyRule::RequirePcrValue { semantic, expected } => {
+                    for (prev_semantic, prev_val) in &pcr_expectations {
+                        if prev_semantic == semantic && prev_val != expected {
+                            return Err(PolicyConflictError::ConflictingPcrValues {
+                                semantic: *semantic,
+                                val_a: *prev_val,
+                                val_b: *expected,
+                            });
+                        }
+                    }
+                    pcr_expectations.push((*semantic, *expected));
+                }
+                HardwarePolicyRule::RequirePlatformProfile { profile, .. } => {
+                    if let Some(ref prev_id) = required_profile {
+                        if prev_id != &profile.profile_id {
+                            return Err(PolicyConflictError::ConflictingPlatformProfiles {
+                                profile_a: prev_id.clone(),
+                                profile_b: profile.profile_id.clone(),
+                            });
+                        }
+                    }
+                    required_profile = Some(profile.profile_id.clone());
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_lines)]
     fn evaluate_rule(
-        &self,
         rule: &HardwarePolicyRule,
         ctx: &HardwarePolicyContext<'_>,
     ) -> Result<(), HardwarePolicyError> {
@@ -276,8 +376,109 @@ impl HardwarePolicyEngine {
                     return Err(HardwarePolicyError::NonceBindingUnsupported);
                 }
             }
+            HardwarePolicyRule::RequireSecureBootState(expected) => {
+                let sb = ctx.secure_boot.ok_or(HardwarePolicyError::SecureBootEvidenceMissing)?;
+                if sb.state != *expected {
+                    return Err(HardwarePolicyError::SecureBootStateMismatch {
+                        expected: *expected,
+                        got: sb.state,
+                    });
+                }
+            }
+            HardwarePolicyRule::RequireBootChain(expected) => {
+                let bc = ctx.boot_chain.ok_or(HardwarePolicyError::BootChainEvidenceMissing)?;
+                if bc.firmware != expected.firmware {
+                    return Err(HardwarePolicyError::BootChainFirmwareMismatch {
+                        expected: expected.firmware,
+                        got: bc.firmware,
+                    });
+                }
+                if bc.bootloader != expected.bootloader {
+                    return Err(HardwarePolicyError::BootChainBootloaderMismatch {
+                        expected: expected.bootloader,
+                        got: bc.bootloader,
+                    });
+                }
+                if bc.kernel != expected.kernel {
+                    return Err(HardwarePolicyError::BootChainKernelMismatch {
+                        expected: expected.kernel,
+                        got: bc.kernel,
+                    });
+                }
+            }
+            HardwarePolicyRule::RequirePlatformProfile { profile, drift_mode, upgrade_baseline } => {
+                let report = profile.verify(
+                    ctx.pcr_bank,
+                    ctx.secure_boot,
+                    *drift_mode,
+                    upgrade_baseline.as_ref(),
+                );
+                if !report.profile_match {
+                    return Err(HardwarePolicyError::PlatformProfileMismatch {
+                        reason: report.decision_reason,
+                    });
+                }
+            }
+            HardwarePolicyRule::RequireValidBaselineTransition { current, previous } => {
+                if !current.is_valid_successor(previous) {
+                    return Err(HardwarePolicyError::BaselineRollbackDetected);
+                }
+            }
         }
         Ok(())
+    }
+}
+
+// ── PolicyConflictError ───────────────────────────────────────────────────
+
+/// Errors representing conflicts within policy rules.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum PolicyConflictError {
+    /// Two or more rules require conflicting hardware backend types.
+    ConflictingBackendTypes {
+        type_a: HardwareBackendType,
+        type_b: HardwareBackendType,
+    },
+    /// Two or more rules require conflicting Secure Boot states.
+    ConflictingSecureBootStates {
+        state_a: SecureBootState,
+        state_b: SecureBootState,
+    },
+    /// Two or more rules require conflicting expected PCR digests.
+    ConflictingPcrValues {
+        semantic: PcrSemantic,
+        val_a: [u8; 32],
+        val_b: [u8; 32],
+    },
+    /// Two or more rules require conflicting platform profiles.
+    ConflictingPlatformProfiles {
+        profile_a: String,
+        profile_b: String,
+    },
+}
+
+impl core::fmt::Display for PolicyConflictError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::ConflictingBackendTypes { type_a, type_b } => write!(
+                f,
+                "conflicting backend types required: {} vs {}",
+                type_a.name(),
+                type_b.name()
+            ),
+            Self::ConflictingSecureBootStates { state_a, state_b } => write!(
+                f,
+                "conflicting Secure Boot states required: {state_a:?} vs {state_b:?}"
+            ),
+            Self::ConflictingPcrValues { semantic, val_a, val_b } => write!(
+                f,
+                "conflicting PCR value digests for {semantic:?}: {val_a:x?} vs {val_b:x?}"
+            ),
+            Self::ConflictingPlatformProfiles { profile_a, profile_b } => write!(
+                f,
+                "conflicting platform profiles required: {profile_a} vs {profile_b}"
+            ),
+        }
     }
 }
 
@@ -286,7 +487,7 @@ impl HardwarePolicyEngine {
 /// Errors from hardware policy evaluation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HardwarePolicyError {
-    /// The backend is not hardware-rooted (e.g. TestOnly).
+    /// The backend is not hardware-rooted (e.g. `TestOnly`).
     BackendNotHardwareRooted(HardwareBackendType),
     /// The backend type does not match the required type.
     WrongBackendType {
@@ -311,6 +512,38 @@ pub enum HardwarePolicyError {
     CounterTooLow { got: u64, min: u64 },
     /// The backend does not support nonce binding.
     NonceBindingUnsupported,
+    /// Secure Boot state mismatch.
+    SecureBootStateMismatch {
+        expected: SecureBootState,
+        got: SecureBootState,
+    },
+    /// Boot chain firmware digest mismatch.
+    BootChainFirmwareMismatch {
+        expected: TypedDigest,
+        got: TypedDigest,
+    },
+    /// Boot chain bootloader digest mismatch.
+    BootChainBootloaderMismatch {
+        expected: TypedDigest,
+        got: TypedDigest,
+    },
+    /// Boot chain kernel digest mismatch.
+    BootChainKernelMismatch {
+        expected: TypedDigest,
+        got: TypedDigest,
+    },
+    /// Missing Secure Boot evidence when required.
+    SecureBootEvidenceMissing,
+    /// Missing Boot Chain evidence when required.
+    BootChainEvidenceMissing,
+    /// Mismatch with Platform Profile.
+    PlatformProfileMismatch {
+        reason: VerificationDecisionReason,
+    },
+    /// Baseline version rollback detected.
+    BaselineRollbackDetected,
+    /// Policy evaluation failed due to conflicts.
+    PolicyConflict(PolicyConflictError),
 }
 
 impl core::fmt::Display for HardwarePolicyError {
@@ -326,15 +559,15 @@ impl core::fmt::Display for HardwarePolicyError {
                 got.name()
             ),
             Self::UnnormalizedPcrs => f.write_str("PCR digests are not normalized to SHA3-256"),
-            Self::PcrSemanticAbsent(s) => write!(f, "PCR semantic {:?} is absent", s),
+            Self::PcrSemanticAbsent(s) => write!(f, "PCR semantic {s:?} is absent"),
             Self::PcrValueMismatch { semantic, .. } => {
-                write!(f, "PCR value mismatch for semantic {:?}", semantic)
+                write!(f, "PCR value mismatch for semantic {semantic:?}")
             }
             Self::MeasuredBootIncomplete(s) => {
-                write!(f, "measured boot incomplete: {:?} PCR absent", s)
+                write!(f, "measured boot incomplete: {s:?} PCR absent")
             }
             Self::CounterNotHardwareBacked(c) => {
-                write!(f, "counter is not hardware-backed: {:?}", c)
+                write!(f, "counter is not hardware-backed: {c:?}")
             }
             Self::CounterTooLow { got, min } => {
                 write!(f, "counter {got} is below minimum {min}")
@@ -342,6 +575,25 @@ impl core::fmt::Display for HardwarePolicyError {
             Self::NonceBindingUnsupported => {
                 f.write_str("backend does not support nonce binding")
             }
+            Self::SecureBootStateMismatch { expected, got } => {
+                write!(f, "Secure Boot state mismatch: expected {expected:?}, got {got:?}")
+            }
+            Self::BootChainFirmwareMismatch { expected, got } => {
+                write!(f, "Boot Chain firmware mismatch: expected {expected:?}, got {got:?}")
+            }
+            Self::BootChainBootloaderMismatch { expected, got } => {
+                write!(f, "Boot Chain bootloader mismatch: expected {expected:?}, got {got:?}")
+            }
+            Self::BootChainKernelMismatch { expected, got } => {
+                write!(f, "Boot Chain kernel mismatch: expected {expected:?}, got {got:?}")
+            }
+            Self::SecureBootEvidenceMissing => f.write_str("Secure Boot evidence is missing"),
+            Self::BootChainEvidenceMissing => f.write_str("Boot Chain evidence is missing"),
+            Self::PlatformProfileMismatch { reason } => {
+                write!(f, "platform profile mismatch: {reason:?}")
+            }
+            Self::BaselineRollbackDetected => f.write_str("baseline rollback detected"),
+            Self::PolicyConflict(err) => write!(f, "policy conflict: {err}"),
         }
     }
 }
@@ -374,6 +626,9 @@ mod tests {
             counter: CounterEvidence::HardwareMonotonic(1_000),
             supports_nonce_binding: true,
             firmware_digest: fw,
+            secure_boot: None,
+            boot_chain: None,
+            runtime_integrity: None,
         }
     }
 
@@ -509,5 +764,279 @@ mod tests {
             HardwarePolicyRule::RequireNormalizedPcrs,
         ]);
         assert_eq!(engine.evaluate(&ctx), Err(HardwarePolicyError::UnnormalizedPcrs));
+    }
+
+    #[test]
+    fn secure_boot_state_enforced() {
+        let bank = measured_boot_bank();
+        let fw = sha3(0xab);
+        let mut ctx = good_ctx(&bank, &fw);
+
+        // Secure boot evidence missing
+        let engine = HardwarePolicyEngine::new(alloc::vec![
+            HardwarePolicyRule::RequireSecureBootState(SecureBootState::Enabled),
+        ]);
+        assert_eq!(
+            engine.evaluate(&ctx),
+            Err(HardwarePolicyError::SecureBootEvidenceMissing)
+        );
+
+        // Secure boot disabled
+        let sb_disabled = SecureBootEvidence {
+            state: SecureBootState::Disabled,
+            db_hash: None,
+            dbx_hash: None,
+            mok_hash: None,
+        };
+        ctx.secure_boot = Some(&sb_disabled);
+        assert!(matches!(
+            engine.evaluate(&ctx),
+            Err(HardwarePolicyError::SecureBootStateMismatch { .. })
+        ));
+
+        // Secure boot enabled
+        let sb_enabled = SecureBootEvidence {
+            state: SecureBootState::Enabled,
+            db_hash: None,
+            dbx_hash: None,
+            mok_hash: None,
+        };
+        ctx.secure_boot = Some(&sb_enabled);
+        assert!(engine.evaluate(&ctx).is_ok());
+    }
+
+    #[test]
+    fn boot_chain_mismatch_rejected() {
+        let bank = measured_boot_bank();
+        let fw = sha3(0xab);
+        let mut ctx = good_ctx(&bank, &fw);
+
+        let expected_bc = BootChainEvidence {
+            firmware: sha3(0x01),
+            bootloader: sha3(0x02),
+            kernel: sha3(0x03),
+            initrd: None,
+            secure_boot: SecureBootEvidence {
+                state: SecureBootState::Enabled,
+                db_hash: None,
+                dbx_hash: None,
+                mok_hash: None,
+            },
+        };
+
+        let engine = HardwarePolicyEngine::new(alloc::vec![
+            HardwarePolicyRule::RequireBootChain(expected_bc.clone()),
+        ]);
+
+        // Missing boot chain evidence
+        assert_eq!(
+            engine.evaluate(&ctx),
+            Err(HardwarePolicyError::BootChainEvidenceMissing)
+        );
+
+        // Incorrect bootloader hash
+        let actual_bc = BootChainEvidence {
+            firmware: sha3(0x01),
+            bootloader: sha3(0xff), // mismatch
+            kernel: sha3(0x03),
+            initrd: None,
+            secure_boot: SecureBootEvidence {
+                state: SecureBootState::Enabled,
+                db_hash: None,
+                dbx_hash: None,
+                mok_hash: None,
+            },
+        };
+        ctx.boot_chain = Some(&actual_bc);
+        assert!(matches!(
+            engine.evaluate(&ctx),
+            Err(HardwarePolicyError::BootChainBootloaderMismatch { .. })
+        ));
+
+        // Correct boot chain
+        let correct_bc = BootChainEvidence {
+            firmware: sha3(0x01),
+            bootloader: sha3(0x02),
+            kernel: sha3(0x03),
+            initrd: None,
+            secure_boot: SecureBootEvidence {
+                state: SecureBootState::Enabled,
+                db_hash: None,
+                dbx_hash: None,
+                mok_hash: None,
+            },
+        };
+        ctx.boot_chain = Some(&correct_bc);
+        assert!(engine.evaluate(&ctx).is_ok());
+    }
+
+    #[test]
+    fn platform_profile_verification() {
+        let mut bank = TypedPcrBank::new();
+        bank.push(PcrMeasurement::new(0, PcrSemantic::Firmware, sha3(0x01)).unwrap());
+        bank.push(PcrMeasurement::new(1, PcrSemantic::Bootloader, sha3(0x02)).unwrap());
+        bank.push(PcrMeasurement::new(2, PcrSemantic::Kernel, sha3(0x03)).unwrap());
+        bank.push(PcrMeasurement::new(3, PcrSemantic::Initrd, sha3(0x04)).unwrap());
+
+        let fw = sha3(0x01);
+        let mut ctx = good_ctx(&bank, &fw);
+
+        let sb = SecureBootEvidence {
+            state: SecureBootState::Enabled,
+            db_hash: None,
+            dbx_hash: None,
+            mok_hash: None,
+        };
+        ctx.secure_boot = Some(&sb);
+
+        let profile = crate::profiles::sovereign_bitcoin_node_profile();
+        let engine = HardwarePolicyEngine::new(alloc::vec![
+            HardwarePolicyRule::RequirePlatformProfile {
+                profile: profile.clone(),
+                drift_mode: DriftPolicyMode::Enforcing,
+                upgrade_baseline: None,
+            },
+        ]);
+
+        // Perfect match passes
+        assert!(engine.evaluate(&ctx).is_ok());
+
+        // Mismatched kernel measurement -> critical drift -> rejected
+        let mut bad_bank = bank.clone();
+        if let Some(m) = bad_bank.measurements.iter_mut().find(|m| m.semantic == PcrSemantic::Kernel) {
+            m.digest = sha3(0xff);
+        }
+        let bad_ctx = HardwarePolicyContext {
+            pcr_bank: &bad_bank,
+            secure_boot: Some(&sb),
+            ..good_ctx(&bad_bank, &fw)
+        };
+        assert!(matches!(
+            engine.evaluate(&bad_ctx),
+            Err(HardwarePolicyError::PlatformProfileMismatch {
+                reason: VerificationDecisionReason::CriticalDriftDetected
+            })
+        ));
+
+        // Under Learning mode, drift is permitted
+        let engine_learning = HardwarePolicyEngine::new(alloc::vec![
+            HardwarePolicyRule::RequirePlatformProfile {
+                profile: profile.clone(),
+                drift_mode: DriftPolicyMode::Learning,
+                upgrade_baseline: None,
+            },
+        ]);
+        assert!(engine_learning.evaluate(&bad_ctx).is_ok());
+    }
+
+    #[test]
+    fn policy_conflict_detection() {
+        // Conflicting backend types
+        let engine_backend = HardwarePolicyEngine::new(alloc::vec![
+            HardwarePolicyRule::RequireBackendType(HardwareBackendType::Tpm2),
+            HardwarePolicyRule::RequireBackendType(HardwareBackendType::Dice),
+        ]);
+        assert!(matches!(
+            engine_backend.detect_conflicts(),
+            Err(PolicyConflictError::ConflictingBackendTypes { .. })
+        ));
+
+        // Conflicting secure boot states
+        let engine_sb = HardwarePolicyEngine::new(alloc::vec![
+            HardwarePolicyRule::RequireSecureBootState(SecureBootState::Enabled),
+            HardwarePolicyRule::RequireSecureBootState(SecureBootState::Disabled),
+        ]);
+        assert!(matches!(
+            engine_sb.detect_conflicts(),
+            Err(PolicyConflictError::ConflictingSecureBootStates { .. })
+        ));
+
+        // Conflicting PCR values
+        let engine_pcr = HardwarePolicyEngine::new(alloc::vec![
+            HardwarePolicyRule::RequirePcrValue {
+                semantic: PcrSemantic::Firmware,
+                expected: [0x01; 32],
+            },
+            HardwarePolicyRule::RequirePcrValue {
+                semantic: PcrSemantic::Firmware,
+                expected: [0x02; 32],
+            },
+        ]);
+        assert!(matches!(
+            engine_pcr.detect_conflicts(),
+            Err(PolicyConflictError::ConflictingPcrValues { .. })
+        ));
+
+        // Conflicting platform profiles
+        let profile1 = crate::profiles::sovereign_bitcoin_node_profile();
+        let mut profile2 = profile1.clone();
+        profile2.profile_id = "bitcoin-node-sovereign-v2".to_string();
+        let engine_profile = HardwarePolicyEngine::new(alloc::vec![
+            HardwarePolicyRule::RequirePlatformProfile {
+                profile: profile1,
+                drift_mode: DriftPolicyMode::Enforcing,
+                upgrade_baseline: None,
+            },
+            HardwarePolicyRule::RequirePlatformProfile {
+                profile: profile2,
+                drift_mode: DriftPolicyMode::Enforcing,
+                upgrade_baseline: None,
+            },
+        ]);
+        assert!(matches!(
+            engine_profile.detect_conflicts(),
+            Err(PolicyConflictError::ConflictingPlatformProfiles { .. })
+        ));
+    }
+
+    #[test]
+    fn baseline_rollback_rejected() {
+        let prev = PcrBaseline {
+            baseline_id: "baseline-1".to_string(),
+            version: 2,
+            measurements: alloc::vec![],
+            created_at: 100,
+            supersedes: None,
+        };
+
+        // Rollback version (1 <= 2)
+        let rollback = PcrBaseline {
+            baseline_id: "baseline-2".to_string(),
+            version: 1,
+            measurements: alloc::vec![],
+            created_at: 200,
+            supersedes: Some("baseline-1".to_string()),
+        };
+
+        let engine = HardwarePolicyEngine::new(alloc::vec![
+            HardwarePolicyRule::RequireValidBaselineTransition {
+                current: rollback,
+                previous: prev.clone(),
+            },
+        ]);
+        let bank = measured_boot_bank();
+        let fw = sha3(0xab);
+        let ctx = good_ctx(&bank, &fw);
+
+        assert_eq!(
+            engine.evaluate(&ctx),
+            Err(HardwarePolicyError::BaselineRollbackDetected)
+        );
+
+        // Valid transition
+        let valid = PcrBaseline {
+            baseline_id: "baseline-2".to_string(),
+            version: 3,
+            measurements: alloc::vec![],
+            created_at: 200,
+            supersedes: Some("baseline-1".to_string()),
+        };
+        let engine_valid = HardwarePolicyEngine::new(alloc::vec![
+            HardwarePolicyRule::RequireValidBaselineTransition {
+                current: valid,
+                previous: prev,
+            },
+        ]);
+        assert!(engine_valid.evaluate(&ctx).is_ok());
     }
 }

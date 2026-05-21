@@ -97,6 +97,7 @@ impl HardwareBackendType {
 /// hardware features. A missing capability is not an error — it means the
 /// corresponding policy rule cannot be satisfied by this backend.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct HardwareCapabilities {
     /// Backend provides a hardware-backed monotonic counter.
     /// If `false`, `CounterEvidence` will be `Unsupported`.
@@ -105,7 +106,7 @@ pub struct HardwareCapabilities {
     pub has_ek_certificate: bool,
     /// Backend supports measured boot (PCR extend chain from firmware).
     pub supports_measured_boot: bool,
-    /// Backend provides a nonce-bound quote (TPM2_Quote or equivalent).
+    /// Backend provides a nonce-bound quote (`TPM2_Quote` or equivalent).
     pub supports_nonce_binding: bool,
     /// Backend provides a hardware-signed quote (not just measurements).
     pub provides_signed_quote: bool,
@@ -309,8 +310,8 @@ pub struct DiceEvidence {
 
 /// Intel TDX attestation evidence (Phase 4 placeholder).
 ///
-/// In a full implementation, this would contain the TDX Quote (TD Report
-/// + QE Report + QE Cert Chain) as produced by the Intel DCAP library.
+/// In a full implementation, this would contain the TDX Quote (TD Report,
+/// QE Report, and QE Cert Chain) as produced by the Intel DCAP library.
 /// The verifier would validate it against Intel's PCK certificate hierarchy.
 ///
 /// # Security Note
