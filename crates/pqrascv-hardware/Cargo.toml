@@ -1,0 +1,32 @@
+[package]
+name         = "pqrascv-hardware"
+description  = "Hardware trust validation layer for PQ-RASCV — TPM 2.0, DICE, TDX, SEV-SNP abstractions"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+authors.workspace      = true
+license.workspace      = true
+repository.workspace   = true
+
+[features]
+default = ["std"]
+std     = []
+# Enables the TestOnly backend. MUST NOT be enabled in production builds.
+# Gated separately so CI can verify it is absent from release profiles.
+unsafe-test-backend = []
+# Enables cryptographic AK signature verification (RSA-PSS, ECDSA P-256).
+# Requires std. Without this flag, only structural verification is available.
+tpm-crypto = ["std", "dep:p256", "dep:rsa", "dep:signature"]
+
+[dependencies]
+serde       = { workspace = true }
+serde_bytes = { workspace = true }
+sha3        = { workspace = true }
+sha2        = { workspace = true }
+zeroize     = { workspace = true }
+ciborium    = { workspace = true }
+
+# TPM cryptographic verification (tpm-crypto feature only)
+p256        = { version = "0.13", default-features = false, features = ["ecdsa", "pkcs8"], optional = true }
+rsa         = { version = "0.9",  default-features = false, features = ["sha2"],           optional = true }
+signature   = { version = "2",    default-features = false,                                optional = true }
