@@ -149,8 +149,10 @@ pub mod provenance_v2;
 pub use config::PolicyConfig;
 pub use error::PqRascvError;
 
+pub use quote::QuoteTimestamp;
+
 #[cfg(feature = "alloc")]
-pub use quote::{generate_quote, AttestationQuote, Challenge, QuoteTimestamp};
+pub use quote::{generate_quote, AttestationQuote, Challenge};
 
 #[cfg(feature = "alloc")]
 pub use nonce::{ClockEvidence, InMemoryNonceLedger, NonceLedger, NonceHandle};

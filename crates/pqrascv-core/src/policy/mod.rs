@@ -22,6 +22,7 @@ extern crate alloc;
 #[cfg(feature = "alloc")]
 use alloc::{string::String, vec::Vec};
 
+#[cfg(feature = "alloc")]
 use crate::{error::PqRascvError, nonce::ClockEvidence};
 
 // ── HardwareBackendKind ───────────────────────────────────────────────────

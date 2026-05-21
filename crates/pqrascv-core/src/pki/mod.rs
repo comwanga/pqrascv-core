@@ -27,10 +27,12 @@ extern crate alloc;
 #[cfg(feature = "alloc")]
 use alloc::{string::String, vec::Vec};
 
-use crate::{
-    crypto::{pub_key_id, ML_DSA_65_VERIFYING_KEY_SIZE},
-    error::PqRascvError,
-};
+use crate::crypto::{pub_key_id, ML_DSA_65_VERIFYING_KEY_SIZE};
+
+#[cfg(feature = "alloc")]
+use crate::error::PqRascvError;
+
+#[cfg(feature = "alloc")]
 use sha3::{Digest, Sha3_256};
 
 // ── Certificate version ───────────────────────────────────────────────────
@@ -44,6 +46,7 @@ pub const CERT_VERSION: u8 = 2;
 ///
 /// The verifier uses this to confirm the device certificate was issued for
 /// the specific hardware that produced the attestation quote.
+#[cfg(feature = "alloc")]
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum HardwareIdentity {
     /// SHA3-256 of the TPM 2.0 Endorsement Key certificate DER bytes.

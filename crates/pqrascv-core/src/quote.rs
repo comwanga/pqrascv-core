@@ -48,7 +48,6 @@ pub const MAX_QUOTE_CBOR_SIZE: usize = 65_536;
 /// Devices with a real-time clock use `Rtc(unix_secs)`. Devices without one
 /// use `NoRtc`. The verifier's `allow_rtcless_devices` policy flag controls
 /// whether `NoRtc` quotes are accepted — there is no silent bypass.
-#[cfg(feature = "alloc")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "t", content = "v")]
 pub enum QuoteTimestamp {
