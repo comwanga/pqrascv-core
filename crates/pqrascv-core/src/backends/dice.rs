@@ -57,7 +57,7 @@ const DICE_ATTEST_LABEL: &[u8] = b"DICE-attest";
 ///
 /// let rot = DiceRoT::new(cdi, FIRMWARE, None, 0);
 /// let m = rot.measure().unwrap();
-/// assert_ne!(m.pcrs.0[0], [0u8; 32], "PCR 0 must contain CDI attestation");
+/// assert_ne!(m.pcrs.digests[0], [0u8; 32], "PCR 0 must contain CDI attestation");
 /// assert_ne!(m.firmware_hash, [0u8; 32]);
 /// ```
 pub struct DiceRoT<'a> {
@@ -130,7 +130,7 @@ impl RoT for DiceRoT<'_> {
         // PCR 0 holds the attestation CDI. The rest stay zero for now —
         // if you're stacking DICE layers, each nested DiceRoT fills in the next slot.
         let mut pcrs = PcrBank::default();
-        pcrs.0[0] = cdi_attestation;
+        pcrs.digests[0] = cdi_attestation;
 
         Ok(Measurements {
             pcrs,
@@ -169,7 +169,7 @@ mod tests {
             "different firmware must produce different firmware_hash"
         );
         assert_ne!(
-            m_a.pcrs.0[0], m_b.pcrs.0[0],
+            m_a.pcrs.digests[0], m_b.pcrs.digests[0],
             "different firmware must produce different CDI attestation in PCR 0"
         );
     }
@@ -185,7 +185,7 @@ mod tests {
             "same firmware must produce the same firmware_hash regardless of CDI"
         );
         assert_ne!(
-            m_a.pcrs.0[0], m_b.pcrs.0[0],
+            m_a.pcrs.digests[0], m_b.pcrs.digests[0],
             "different CDI must produce different CDI attestation in PCR 0"
         );
     }
@@ -193,7 +193,7 @@ mod tests {
     #[test]
     fn pcr0_is_not_zero() {
         let m = DiceRoT::new(CDI, FW_A, None, 0).measure().unwrap();
-        assert_ne!(m.pcrs.0[0], [0u8; 32]);
+        assert_ne!(m.pcrs.digests[0], [0u8; 32]);
     }
 
     #[test]
@@ -201,7 +201,7 @@ mod tests {
         let m = DiceRoT::new(CDI, FW_A, None, 0).measure().unwrap();
         for i in 1..8 {
             assert_eq!(
-                m.pcrs.0[i], [0u8; 32],
+                m.pcrs.digests[i], [0u8; 32],
                 "PCR {i} should be zero for single-layer DICE"
             );
         }
@@ -225,5 +225,12 @@ mod tests {
     fn event_counter_propagated() {
         let m = DiceRoT::new(CDI, FW_A, None, 99).measure().unwrap();
         assert_eq!(m.event_counter, 99);
+    }
+
+    #[test]
+    fn pcr_algorithm_is_sha3_256() {
+        use crate::measurement::PcrAlgorithm;
+        let m = DiceRoT::new(CDI, FW_A, None, 0).measure().unwrap();
+        assert_eq!(m.pcrs.algorithm, PcrAlgorithm::Sha3_256);
     }
 }

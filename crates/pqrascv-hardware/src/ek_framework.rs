@@ -5,8 +5,8 @@
 //! be delegated to a PKI crate, but this module provides the trait and types.
 
 extern crate alloc;
-use alloc::vec::Vec;
 use alloc::string::String;
+use alloc::vec::Vec;
 
 // ── EkCertChain ───────────────────────────────────────────────────────────
 
@@ -21,8 +21,12 @@ pub struct EkCertChain {
 }
 
 impl EkCertChain {
+    #[must_use]
     pub fn new(ek_cert: Vec<u8>, intermediates: Vec<Vec<u8>>) -> Self {
-        Self { ek_cert, intermediates }
+        Self {
+            ek_cert,
+            intermediates,
+        }
     }
 }
 
@@ -65,7 +69,7 @@ impl core::fmt::Display for EkValidationError {
             Self::MissingRequiredEku => f.write_str("EK certificate missing required EKU"),
             Self::UntrustedChain => f.write_str("EK certificate chain could not be verified"),
             Self::Revoked => f.write_str("EK certificate is revoked"),
-            Self::UnknownManufacturer(m) => write!(f, "unknown manufacturer: {}", m),
+            Self::UnknownManufacturer(m) => write!(f, "unknown manufacturer: {m}"),
         }
     }
 }

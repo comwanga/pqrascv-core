@@ -40,18 +40,19 @@
 //! ## Quick start
 //!
 //! ```rust
-//! # #[cfg(all(feature = "std", feature = "alloc"))]
+//! # #[cfg(all(feature = "std", feature = "alloc", feature = "software-rot-unsafe"))]
 //! # {
 //! use pqrascv_core::{
 //!     crypto::{generate_ml_dsa_keypair, MlDsaBackend},
 //!     measurement::SoftwareRoT,
 //!     provenance::SlsaPredicateBuilder,
-//!     quote::generate_quote,
+//!     quote::{generate_quote, QuoteTimestamp},
 //! };
 //!
 //! // Keep the signing seed secret — store it in a hardware keystore on real devices.
 //! let (sk, vk) = generate_ml_dsa_keypair().unwrap();
 //!
+//! // SoftwareRoT is for testing only. Use TpmRoT or DiceRoT in production.
 //! let rot = SoftwareRoT::new(b"my-firmware", None, 1);
 //!
 //! let provenance = SlsaPredicateBuilder::new("https://ci.example.com/pipeline/42")
@@ -69,7 +70,7 @@
 //!     &vk,
 //!     &nonce,
 //!     provenance,
-//!     0, // Unix timestamp — pass 0 if the device has no real-time clock
+//!     QuoteTimestamp::Rtc(1_700_000_000),
 //! )
 //! .unwrap();
 //!
@@ -125,10 +126,39 @@ pub mod measurement;
 pub mod provenance;
 pub mod quote;
 
+// ── v2 modules ───────────────────────────────────────────────────────────────
+
+/// Device PKI — certificate chain, trust anchor, and revocation.
+/// Fixes audit finding #4 (missing PKI).
+pub mod pki;
+
+/// Replay-resistant nonce management and explicit clock evidence.
+/// Fixes audit findings #3 and #6.
+pub mod nonce;
+
+/// Composable policy engine v2.
+/// Fixes audit findings #1, #2, #4, #10.
+pub mod policy;
+
+/// External CI-signed provenance bundles (Sigstore).
+/// Fixes audit finding #2 (self-asserted SLSA provenance).
+pub mod provenance_v2;
+
 // ── Convenience re-exports ───────────────────────────────────────────────────
 
 pub use config::PolicyConfig;
 pub use error::PqRascvError;
 
+pub use quote::QuoteTimestamp;
+
 #[cfg(feature = "alloc")]
 pub use quote::{generate_quote, AttestationQuote, Challenge};
+
+#[cfg(feature = "alloc")]
+pub use nonce::{ClockEvidence, InMemoryNonceLedger, NonceHandle, NonceLedger};
+
+#[cfg(feature = "alloc")]
+pub use policy::{HardwareBackendKind, PolicyEngineV2, PolicyRule};
+
+#[cfg(feature = "alloc")]
+pub use pki::{validate_chain, CertChain, DeviceCertificate, TrustAnchor};

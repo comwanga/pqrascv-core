@@ -16,7 +16,7 @@ use pqrascv_core::{
     config::PolicyConfig,
     crypto::{pub_key_id, CryptoBackend, MlDsaBackend},
     error::PqRascvError,
-    quote::{AttestationQuote, Challenge},
+    quote::{AttestationQuote, Challenge, PROTOCOL_VERSION},
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -128,6 +128,11 @@ impl Verifier {
         expected_nonce: &[u8; 32],
         now_secs: u64,
     ) -> Result<(), PqRascvError> {
+        // Reject unknown protocol versions before doing any other work.
+        if quote.body.version != PROTOCOL_VERSION {
+            return Err(PqRascvError::UnsupportedVersion);
+        }
+
         // Nonce must match what we originally sent — if it doesn't, this is a replay or mix-up.
         if &quote.body.nonce != expected_nonce {
             return Err(PqRascvError::VerificationFailed);
@@ -164,8 +169,10 @@ impl Verifier {
 mod tests {
     use super::*;
     use pqrascv_core::{
-        crypto::generate_ml_dsa_keypair, measurement::SoftwareRoT,
-        provenance::SlsaPredicateBuilder, quote::generate_quote,
+        crypto::generate_ml_dsa_keypair,
+        measurement::SoftwareRoT,
+        provenance::SlsaPredicateBuilder,
+        quote::{generate_quote, QuoteTimestamp},
     };
 
     fn setup() -> (
@@ -189,7 +196,7 @@ mod tests {
             &vk,
             &nonce,
             provenance,
-            1_700_000_500,
+            QuoteTimestamp::Rtc(1_700_000_500),
         )
         .unwrap();
         (sk, vk, quote)
@@ -220,7 +227,6 @@ mod tests {
         let (_, vk, mut quote) = setup();
         let verifier = Verifier::new(PolicyConfig::default());
 
-        // Mess with the event counter after it's been signed — signature should break.
         quote.body.measurements.event_counter = 999;
         let cbor = quote.to_cbor().unwrap();
 
@@ -241,6 +247,47 @@ mod tests {
     }
 
     #[test]
+    fn verifier_rejects_unsupported_version() {
+        let (_, vk, mut quote) = setup();
+        let verifier = Verifier::new(PolicyConfig::default());
+
+        // Tamper with the version field — signature will break too, but version
+        // check must fire first and return UnsupportedVersion.
+        quote.body.version = 99;
+        let cbor = quote.to_cbor().unwrap();
+
+        let result = verifier.verify_cbor(&cbor, &vk, &[0x77u8; 32], 1_700_000_600);
+        assert!(matches!(result, Err(PqRascvError::UnsupportedVersion)));
+    }
+
+    #[test]
+    fn verifier_rejects_rtcless_by_default() {
+        let (sk, vk) = generate_ml_dsa_keypair().unwrap();
+        let rot = SoftwareRoT::new(b"fw", None, 1);
+        let provenance = SlsaPredicateBuilder::new("https://ci.example.com")
+            .add_subject("fw.bin", &[0xabu8; 32])
+            .with_slsa_level(2)
+            .build()
+            .unwrap();
+        let quote = generate_quote(
+            &rot,
+            &pqrascv_core::crypto::MlDsaBackend,
+            sk.as_bytes(),
+            &vk,
+            &[0x77u8; 32],
+            provenance,
+            QuoteTimestamp::NoRtc,
+        )
+        .unwrap();
+        let cbor = quote.to_cbor().unwrap();
+        let verifier = Verifier::new(PolicyConfig::default());
+        assert!(matches!(
+            verifier.verify_cbor(&cbor, &vk, &[0x77u8; 32], 9_999_999),
+            Err(PqRascvError::RtcRequired)
+        ));
+    }
+
+    #[test]
     fn verify_with_challenge_accepts_valid_quote() {
         let (_, vk, quote) = setup();
         let verifier = Verifier::new(PolicyConfig::default());
@@ -257,7 +304,6 @@ mod tests {
         let verifier = Verifier::new(PolicyConfig::default());
         let cbor = quote.to_cbor().unwrap();
 
-        // Challenge carries a nonce that doesn't match what was signed into the quote.
         let challenge = pqrascv_core::quote::Challenge::new([0x00u8; 32]);
         let result = verifier.verify_with_challenge(&cbor, &vk, &challenge, 1_700_000_600);
         assert!(result.is_err());
@@ -274,7 +320,6 @@ mod tests {
             .verify_cbor(&cbor, &vk, &[0x77u8; 32], 1_700_000_600)
             .unwrap();
 
-        // The result exposes provenance and measurement data from the verified quote.
         assert_eq!(result.slsa_level(), 2);
         assert_eq!(result.firmware_hash(), &expected_firmware_hash);
         assert_eq!(result.nonce(), &[0x77u8; 32]);

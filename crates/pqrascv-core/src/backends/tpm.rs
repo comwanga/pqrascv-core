@@ -11,10 +11,19 @@
 //! - The TPM access path is configured via the `TPM2TOOLS_TCTI` environment
 //!   variable (e.g. `device:/dev/tpm0` or `swtpm:port=2321` for simulation).
 //!
-//! # PCR bank selection
+//! # PCR normalization
 //!
-//! The backend reads the SHA-256 PCR bank by default (PCRs 0–7).
-//! SHA-384 is not used because our `Measurements` struct stores 32-byte digests.
+//! The TPM hardware stores PCRs as SHA-256 digests. To ensure consistent
+//! cross-backend comparisons and policy enforcement, this backend normalizes
+//! each raw SHA-256 PCR value through SHA3-256:
+//!
+//! ```text
+//! pcrs.digests[i] = SHA3-256( tpm_sha256_pcr[i] )
+//! ```
+//!
+//! This means `pcrs.digests` values are **not** the raw TPM PCR values.
+//! Policy rules that compare PCR values must account for this normalization.
+//! The `pcrs.algorithm` field is always `PcrAlgorithm::Sha3_256`.
 //!
 //! # Firmware measurement
 //!
@@ -119,20 +128,25 @@ mod inner {
                 .execute_without_session(|c| c.pcr_read(pcr_selection))
                 .map_err(|_| PqRascvError::MeasurementFailed)?;
 
-            // ── 3. Copy digests into our PCR bank ────────────────────────────
+            // ── 3. Normalize SHA-256 PCRs → SHA3-256 ────────────────────────
             //
-            // tss-esapi gives us SHA-256 digests. We take up to PCR_COUNT of them;
-            // anything beyond that is dropped.
+            // The TPM returns SHA-256 digests. We normalize each one through
+            // SHA3-256 so that pcrs.digests is always algorithm-consistent with
+            // the SoftwareRoT and DiceRoT backends. Policy rules can then
+            // compare PCR values across backends without algorithm confusion.
+            //
+            // Stored value: SHA3-256( raw_tpm_sha256_pcr )
             let mut pcrs = PcrBank::default();
             for (i, digest) in digest_list.value().iter().enumerate().take(PCR_COUNT) {
-                let bytes: &[u8] = digest.as_ref();
-                if bytes.len() == PCR_SIZE {
-                    pcrs.0[i].copy_from_slice(bytes);
-                } else {
-                    // Digest came back shorter than 32 bytes — left-pad with zeros.
-                    let offset = PCR_SIZE - bytes.len().min(PCR_SIZE);
-                    pcrs.0[i][offset..].copy_from_slice(&bytes[..bytes.len().min(PCR_SIZE)]);
-                }
+                let raw: &[u8] = digest.as_ref();
+                // Pad or truncate to exactly PCR_SIZE before normalizing.
+                let mut padded = [0u8; PCR_SIZE];
+                let copy_len = raw.len().min(PCR_SIZE);
+                padded[PCR_SIZE - copy_len..].copy_from_slice(&raw[..copy_len]);
+
+                let mut h = Sha3_256::new();
+                h.update(padded);
+                pcrs.digests[i] = h.finalize().into();
             }
 
             // ── 4. Hash firmware and AI model locally (SHA3-256) ─────────────

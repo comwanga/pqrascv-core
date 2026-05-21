@@ -84,6 +84,14 @@ pub struct BuildMetadata {
 
 /// Serializable in-toto v1 attestation statement.
 ///
+/// # ⚠ Self-asserted — no independent CI signature
+///
+/// When embedded in a [`QuoteBody`](crate::quote::QuoteBody), this attestation
+/// is signed by the **device key**, not by the CI provider. The verifier can
+/// confirm the device attested this provenance, but cannot confirm the named
+/// `builder_id` actually produced the firmware. See [`SlsaPredicateBuilder`]
+/// for the full security caveat.
+///
 /// Wire format: CBOR via serde.
 ///
 /// ```text
@@ -119,6 +127,23 @@ impl InTotoAttestation {
 // ────────────────────────────────────────────────────────────────────────────
 
 /// Builder for SLSA v1 provenance predicates.
+///
+/// # ⚠ Self-asserted provenance — not independently verifiable
+///
+/// The provenance built here is **constructed and signed by the device itself**.
+/// There is no independent signature from a CI provider. This means:
+///
+/// - `builder_id` is a free-form string; the verifier cannot confirm the named
+///   CI system actually built the firmware.
+/// - `slsa_level` is self-reported; setting it to `4` provides no SLSA-4 guarantee.
+///
+/// Real SLSA provenance requires the CI provider to sign the provenance statement
+/// with its own key (e.g. a GitHub Actions OIDC token or sigstore bundle), and
+/// the verifier to check that independent signature. That capability is tracked
+/// in the roadmap as `ExternalProvenanceBundle`.
+///
+/// Until then, treat the provenance fields as **auditable metadata**, not as
+/// cryptographic supply-chain guarantees.
 ///
 /// # Example
 ///

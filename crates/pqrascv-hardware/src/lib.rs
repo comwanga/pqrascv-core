@@ -52,13 +52,20 @@
 extern crate alloc;
 
 pub mod backend;
+pub mod baseline;
+pub mod boot_chain;
 pub mod counter;
 pub mod digest;
+pub mod drift;
+pub mod ek_framework;
 pub mod pcr;
+pub mod platform_profiles;
 pub mod policy;
+pub mod profiles;
+pub mod runtime_integrity;
+pub mod secure_boot;
 pub mod tpm_structures;
 pub mod tpm_verify;
-pub mod ek_framework;
 
 // ── Convenience re-exports ────────────────────────────────────────────────
 
@@ -67,8 +74,20 @@ pub use backend::{
     HardwareError, HardwareEvidence, HardwareRootOfTrust, NitroEnclaveEvidence, SevSnpEvidence,
     TdxEvidence, TpmClockInfo, TpmIdentity, TpmQuoteEvidence,
 };
+pub use baseline::{ExpectedPcr, PcrBaseline, PolicyVersion};
+pub use boot_chain::BootChainEvidence;
 pub use counter::CounterEvidence;
 pub use digest::{DigestAlgorithm, TypedDigest};
+pub use drift::{DriftDetectionEngine, DriftPolicyMode, DriftReport, DriftSeverity};
 pub use pcr::{PcrMeasurement, PcrSemantic, SlotSemanticMismatch, TypedPcrBank};
-pub use policy::{HardwarePolicyContext, HardwarePolicyEngine, HardwarePolicyError, HardwarePolicyRule};
+pub use platform_profiles::{
+    PlatformClass, PlatformProfile, PlatformVendor, PlatformVerificationReport,
+    VerificationDecisionReason,
+};
+pub use policy::{
+    HardwarePolicyContext, HardwarePolicyEngine, HardwarePolicyError, HardwarePolicyRule,
+};
+pub use profiles::sovereign_bitcoin_node_profile;
+pub use runtime_integrity::RuntimeIntegrityEvidence;
+pub use secure_boot::{SecureBootEvidence, SecureBootState};
 pub use tpm_verify::{TpmQuoteVerifier, TpmVerifyError};

@@ -1,0 +1,4 @@
+[advisories]
+ignore = [
+    "RUSTSEC-2023-0071", # Marvin Attack: local TPM AK verification only, not exposed to network timing side-channels
+]

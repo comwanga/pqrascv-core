@@ -4,6 +4,8 @@
 //! constructed as a `const` value, making it suitable for `no_std` environments
 //! where runtime configuration is not available.
 
+use crate::quote::QuoteTimestamp;
+
 /// Minimum SLSA level required for a quote to pass policy.
 pub const DEFAULT_MIN_SLSA_LEVEL: u8 = 1;
 
@@ -26,6 +28,7 @@ pub const DEFAULT_MAX_QUOTE_AGE_SECS: u64 = 300; // 5 minutes
 ///     max_quote_age_secs: 120,
 ///     require_firmware_hash: true,
 ///     require_event_counter: false,
+///     allow_rtcless_devices: false,
 /// };
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,10 +38,7 @@ pub struct PolicyConfig {
 
     /// Maximum acceptable quote age in seconds (0 = no check).
     ///
-    /// If the prover has no real-time clock it passes `timestamp = 0` to
-    /// [`generate_quote`](crate::quote::generate_quote). A zero timestamp is
-    /// treated as "no clock available" and the age check is skipped regardless
-    /// of this setting, so RTC-less devices are never silently rejected.
+    /// Only applied when the quote carries a [`QuoteTimestamp::Rtc`] value.
     pub max_quote_age_secs: u64,
 
     /// When `true`, reject quotes with an all-zero firmware hash.
@@ -46,6 +46,14 @@ pub struct PolicyConfig {
 
     /// When `true`, reject quotes where `event_counter == 0`.
     pub require_event_counter: bool,
+
+    /// When `true`, accept quotes from devices that have no real-time clock
+    /// ([`QuoteTimestamp::NoRtc`]). When `false` (the default), such quotes
+    /// are rejected with [`PqRascvError::RtcRequired`].
+    ///
+    /// There is no silent bypass: a `NoRtc` quote is always rejected unless
+    /// this flag is explicitly set.
+    pub allow_rtcless_devices: bool,
 }
 
 impl Default for PolicyConfig {
@@ -55,6 +63,7 @@ impl Default for PolicyConfig {
             max_quote_age_secs: DEFAULT_MAX_QUOTE_AGE_SECS,
             require_firmware_hash: true,
             require_event_counter: false,
+            allow_rtcless_devices: false,
         }
     }
 }
@@ -63,13 +72,13 @@ impl PolicyConfig {
     /// Evaluates a quote's provenance and measurements against this policy.
     ///
     /// Returns `Ok(())` if all checks pass, or the first
-    /// [`crate::error::PqRascvError::PolicyViolation`] encountered.
+    /// [`crate::error::PqRascvError`] encountered.
     pub fn evaluate(
         &self,
         slsa_level: u8,
         firmware_hash: &[u8; 32],
         event_counter: u64,
-        quote_timestamp: u64,
+        timestamp: QuoteTimestamp,
         now_secs: u64,
     ) -> Result<(), crate::error::PqRascvError> {
         use crate::error::PqRascvError;
@@ -83,12 +92,21 @@ impl PolicyConfig {
         if self.require_event_counter && event_counter == 0 {
             return Err(PqRascvError::PolicyViolation);
         }
-        // timestamp == 0 means the prover has no real-time clock; skip the age
-        // check rather than silently rejecting every quote from RTC-less devices.
-        if self.max_quote_age_secs > 0 && quote_timestamp > 0 {
-            let age = now_secs.saturating_sub(quote_timestamp);
-            if age > self.max_quote_age_secs {
-                return Err(PqRascvError::PolicyViolation);
+
+        match timestamp {
+            QuoteTimestamp::NoRtc => {
+                if !self.allow_rtcless_devices {
+                    return Err(PqRascvError::RtcRequired);
+                }
+                // age check skipped — no clock available
+            }
+            QuoteTimestamp::Rtc(ts) => {
+                if self.max_quote_age_secs > 0 {
+                    let age = now_secs.saturating_sub(ts);
+                    if age > self.max_quote_age_secs {
+                        return Err(PqRascvError::PolicyViolation);
+                    }
+                }
             }
         }
 
@@ -103,11 +121,15 @@ impl PolicyConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::quote::QuoteTimestamp;
 
     #[test]
     fn default_policy_accepts_valid_quote() {
-        let policy = PolicyConfig::default();
-        let result = policy.evaluate(1, &[0xabu8; 32], 0, 1_000, 1_100);
+        let policy = PolicyConfig {
+            allow_rtcless_devices: false,
+            ..Default::default()
+        };
+        let result = policy.evaluate(1, &[0xabu8; 32], 0, QuoteTimestamp::Rtc(1_000), 1_100);
         assert!(result.is_ok());
     }
 
@@ -117,7 +139,9 @@ mod tests {
             min_slsa_level: 3,
             ..Default::default()
         };
-        assert!(policy.evaluate(2, &[0xabu8; 32], 0, 1_000, 1_100).is_err());
+        assert!(policy
+            .evaluate(2, &[0xabu8; 32], 0, QuoteTimestamp::Rtc(1_000), 1_100)
+            .is_err());
     }
 
     #[test]
@@ -126,7 +150,9 @@ mod tests {
             require_firmware_hash: true,
             ..Default::default()
         };
-        assert!(policy.evaluate(1, &[0u8; 32], 0, 1_000, 1_100).is_err());
+        assert!(policy
+            .evaluate(1, &[0u8; 32], 0, QuoteTimestamp::Rtc(1_000), 1_100)
+            .is_err());
     }
 
     #[test]
@@ -135,8 +161,9 @@ mod tests {
             max_quote_age_secs: 60,
             ..Default::default()
         };
-        // Quote is 120 seconds old.
-        assert!(policy.evaluate(1, &[0xabu8; 32], 0, 1_000, 1_120).is_err());
+        assert!(policy
+            .evaluate(1, &[0xabu8; 32], 0, QuoteTimestamp::Rtc(1_000), 1_120)
+            .is_err());
     }
 
     #[test]
@@ -145,19 +172,29 @@ mod tests {
             max_quote_age_secs: 0,
             ..Default::default()
         };
-        // Quote appears 10 000 seconds old — no age check, should pass.
-        assert!(policy.evaluate(1, &[0xabu8; 32], 0, 1_000, 11_000).is_ok());
+        assert!(policy
+            .evaluate(1, &[0xabu8; 32], 0, QuoteTimestamp::Rtc(1_000), 11_000)
+            .is_ok());
     }
 
     #[test]
-    fn policy_accepts_rtc_less_device_with_age_check_enabled() {
-        // Devices without a real-time clock pass timestamp=0. The age check
-        // must be skipped for them even when max_quote_age_secs is set, to
-        // avoid silently rejecting every quote they produce.
+    fn policy_rejects_rtcless_by_default() {
+        // Default policy has allow_rtcless_devices: false.
+        let policy = PolicyConfig::default();
+        assert_eq!(
+            policy.evaluate(1, &[0xabu8; 32], 0, QuoteTimestamp::NoRtc, 999_999),
+            Err(crate::error::PqRascvError::RtcRequired)
+        );
+    }
+
+    #[test]
+    fn policy_accepts_rtcless_when_explicitly_allowed() {
         let policy = PolicyConfig {
-            max_quote_age_secs: 60,
+            allow_rtcless_devices: true,
             ..Default::default()
         };
-        assert!(policy.evaluate(1, &[0xabu8; 32], 0, 0, 999_999).is_ok());
+        assert!(policy
+            .evaluate(1, &[0xabu8; 32], 0, QuoteTimestamp::NoRtc, 999_999)
+            .is_ok());
     }
 }

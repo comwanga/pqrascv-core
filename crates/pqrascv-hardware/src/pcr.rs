@@ -60,7 +60,7 @@ pub enum PcrSemantic {
     Initrd,
     /// Boot configuration, device tree, or kernel command line.
     Config,
-    /// Secure-world image (TrustZone, OP-TEE, Intel TXT ACM).
+    /// Secure-world image (`TrustZone`, OP-TEE, Intel TXT ACM).
     SecureWorld,
     /// Application-layer measurement (device-specific use).
     Application,
@@ -155,10 +155,14 @@ impl PcrMeasurement {
             return Err(SlotSemanticMismatch {
                 index,
                 semantic,
-                expected_index: semantic.canonical_slot() as u8,
+                expected_index: u8::try_from(semantic.canonical_slot()).unwrap_or(0),
             });
         }
-        Ok(Self { index, semantic, digest })
+        Ok(Self {
+            index,
+            semantic,
+            digest,
+        })
     }
 
     /// Constructs a measurement without checking slot/semantic consistency.
@@ -168,7 +172,11 @@ impl PcrMeasurement {
     /// The deviation must be noted in the backend's documentation.
     #[must_use]
     pub fn new_unchecked(index: u8, semantic: PcrSemantic, digest: TypedDigest) -> Self {
-        Self { index, semantic, digest }
+        Self {
+            index,
+            semantic,
+            digest,
+        }
     }
 
     /// Returns `true` if the digest uses the canonical SHA3-256 algorithm.
@@ -208,7 +216,9 @@ impl TypedPcrBank {
     /// Creates an empty bank.
     #[must_use]
     pub fn new() -> Self {
-        Self { measurements: Vec::new() }
+        Self {
+            measurements: Vec::new(),
+        }
     }
 
     /// Adds a measurement to the bank.
@@ -233,7 +243,7 @@ impl TypedPcrBank {
     /// Returns `true` if all present measurements use the canonical algorithm.
     #[must_use]
     pub fn all_normalized(&self) -> bool {
-        self.measurements.iter().all(|m| m.is_normalized())
+        self.measurements.iter().all(PcrMeasurement::is_normalized)
     }
 
     /// Returns the number of measured slots.

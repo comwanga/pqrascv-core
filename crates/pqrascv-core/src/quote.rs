@@ -35,9 +35,27 @@ use crate::{
 /// Current PQ-RASCV wire protocol version.
 pub const PROTOCOL_VERSION: u16 = 1;
 
+/// Maximum accepted CBOR size for a quote (64 KiB).
+/// Rejects oversized inputs before allocating, protecting embedded verifiers.
+pub const MAX_QUOTE_CBOR_SIZE: usize = 65_536;
+
 // ────────────────────────────────────────────────────────────────────────────
 // QuoteBody — the signed payload
 // ────────────────────────────────────────────────────────────────────────────
+
+/// Timestamp field in a [`QuoteBody`].
+///
+/// Devices with a real-time clock use `Rtc(unix_secs)`. Devices without one
+/// use `NoRtc`. The verifier's `allow_rtcless_devices` policy flag controls
+/// whether `NoRtc` quotes are accepted — there is no silent bypass.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "t", content = "v")]
+pub enum QuoteTimestamp {
+    /// Unix seconds from a real-time clock.
+    Rtc(u64),
+    /// Device has no real-time clock.
+    NoRtc,
+}
 
 /// The portion of [`AttestationQuote`] covered by the ML-DSA-65 signature.
 ///
@@ -48,8 +66,8 @@ pub const PROTOCOL_VERSION: u16 = 1;
 pub struct QuoteBody {
     /// Protocol version (currently `1`).
     pub version: u16,
-    /// Unix timestamp (seconds) at quote generation time; `0` if no RTC available.
-    pub timestamp: u64,
+    /// Timestamp at quote generation time.
+    pub timestamp: QuoteTimestamp,
     /// 32-byte verifier-supplied nonce (replay protection).
     pub nonce: [u8; 32],
     /// Platform measurements from the Root-of-Trust.
@@ -108,7 +126,13 @@ impl AttestationQuote {
     }
 
     /// Deserializes an [`AttestationQuote`] from CBOR bytes.
+    ///
+    /// Rejects inputs larger than [`MAX_QUOTE_CBOR_SIZE`] before allocating,
+    /// protecting embedded verifiers from memory-exhaustion attacks.
     pub fn from_cbor(bytes: &[u8]) -> Result<Self, PqRascvError> {
+        if bytes.len() > MAX_QUOTE_CBOR_SIZE {
+            return Err(PqRascvError::DeserializationFailed);
+        }
         ciborium::from_reader(bytes).map_err(|_| PqRascvError::DeserializationFailed)
     }
 }
@@ -165,7 +189,8 @@ impl Challenge {
 /// - `verifying_key`: 1952-byte encoded verifying key (public).
 /// - `nonce`: 32-byte verifier challenge from [`Challenge`].
 /// - `provenance`: in-toto / SLSA attestation.
-/// - `timestamp`: Unix seconds (`0` on platforms without a real-time clock).
+/// - `timestamp`: [`QuoteTimestamp::Rtc`] with Unix seconds, or
+///   [`QuoteTimestamp::NoRtc`] on platforms without a real-time clock.
 ///
 /// # Security
 ///
@@ -179,7 +204,7 @@ pub fn generate_quote<R: RoT, C: CryptoBackend>(
     verifying_key: &[u8],
     nonce: &[u8; 32],
     provenance: InTotoAttestation,
-    timestamp: u64,
+    timestamp: QuoteTimestamp,
 ) -> Result<AttestationQuote, PqRascvError> {
     let measurements = rot.measure()?;
     let pub_key_id = pub_key_id(verifying_key);
@@ -236,7 +261,7 @@ mod tests {
             &vk,
             &nonce,
             test_provenance(),
-            1_700_000_000,
+            QuoteTimestamp::Rtc(1_700_000_000),
         )
         .unwrap();
 
@@ -260,7 +285,7 @@ mod tests {
             &vk,
             &[0x01u8; 32],
             test_provenance(),
-            0,
+            QuoteTimestamp::NoRtc,
         )
         .unwrap();
 
@@ -283,7 +308,7 @@ mod tests {
             &vk,
             &[0x99u8; 32],
             test_provenance(),
-            0,
+            QuoteTimestamp::NoRtc,
         )
         .unwrap();
 
@@ -291,5 +316,11 @@ mod tests {
         MlDsaBackend
             .verify(&body_cbor, &vk, &quote.signature)
             .expect("signature must verify");
+    }
+
+    #[test]
+    fn from_cbor_rejects_oversized_input() {
+        let oversized = vec![0u8; MAX_QUOTE_CBOR_SIZE + 1];
+        assert!(AttestationQuote::from_cbor(&oversized).is_err());
     }
 }

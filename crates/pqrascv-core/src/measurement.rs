@@ -10,7 +10,7 @@
 //!
 //! | Backend | Feature flag | Platform |
 //! |---------|-------------|---------|
-//! | [`SoftwareRoT`] | *(default)* | any (SHA3-256 over supplied regions) |
+//! | [`SoftwareRoT`] | `software-rot-unsafe` | **testing only** — not a real security boundary |
 //! | `TpmRoT` | `hardware-tpm` | TPM 2.0 devices |
 //! | `DiceRoT` | `dice` | DICE-compliant firmware |
 
@@ -25,12 +25,51 @@ pub const PCR_COUNT: usize = 8;
 /// Size of each PCR value in bytes (SHA3-256).
 pub const PCR_SIZE: usize = 32;
 
+// PCR slot semantic constants.
+// All backends must use these indices consistently so policy rules are portable.
+/// PCR slot 0: firmware / boot image measurement.
+pub const PCR_FIRMWARE: usize = 0;
+/// PCR slot 1: configuration / device tree measurement.
+pub const PCR_CONFIG: usize = 1;
+/// PCR slot 2: bootloader measurement.
+pub const PCR_BOOTLOADER: usize = 2;
+/// PCR slot 3: secure-world / `TrustZone` image measurement.
+pub const PCR_SECURE_WORLD: usize = 3;
+/// PCR slots 4–7: reserved for application-defined use.
+pub const PCR_APP_BASE: usize = 4;
+
+/// Hash algorithm used to produce PCR digests.
+///
+/// All backends normalize to SHA3-256 before storing values in [`PcrBank`].
+/// The TPM backend reads SHA-256 PCRs from hardware and then wraps each
+/// raw digest through `SHA3-256(raw_pcr_value)` so that policy rules can
+/// compare values across backends without algorithm confusion.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum PcrAlgorithm {
+    /// SHA3-256 (FIPS 202) — the canonical algorithm for all backends.
+    Sha3_256,
+}
+
 /// An array of PCR (Platform Configuration Register) values.
 ///
-/// Each register is a 32-byte SHA3-256 hash of the corresponding measurement.
-/// What each index means is up to you — this crate doesn't define per-slot semantics.
-#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct PcrBank(pub [[u8; PCR_SIZE]; PCR_COUNT]);
+/// All digests are normalized to SHA3-256 regardless of the underlying
+/// hardware algorithm. See [`PcrAlgorithm`] for details.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PcrBank {
+    /// The 8 PCR digest values, each 32 bytes.
+    pub digests: [[u8; PCR_SIZE]; PCR_COUNT],
+    /// Hash algorithm used for all entries (always `Sha3_256` after normalization).
+    pub algorithm: PcrAlgorithm,
+}
+
+impl Default for PcrBank {
+    fn default() -> Self {
+        Self {
+            digests: [[0u8; PCR_SIZE]; PCR_COUNT],
+            algorithm: PcrAlgorithm::Sha3_256,
+        }
+    }
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 // Measurements struct
@@ -92,24 +131,28 @@ pub trait RoT {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// SoftwareRoT — default backend
+// SoftwareRoT — TEST-ONLY backend
 // ────────────────────────────────────────────────────────────────────────────
 
 /// Software-based [`RoT`] that hashes supplied byte regions with SHA3-256.
 ///
-/// This backend is the default for platforms without hardware security
-/// modules.  It is suitable for development, testing, and environments
-/// where a pure-software measurement chain is acceptable.
+/// # ⚠ SECURITY WARNING — NOT FOR PRODUCTION USE
 ///
-/// # Usage
+/// `SoftwareRoT` is gated behind the `software-rot-unsafe` feature flag
+/// because it provides **no real attestation security**. The caller supplies
+/// the bytes to be measured, so compromised firmware can trivially pass its
+/// own expected-clean bytes and produce a cryptographically valid quote for
+/// code that is not actually running.
 ///
-/// ```
-/// use pqrascv_core::measurement::{SoftwareRoT, RoT};
+/// Use this backend only for:
+/// - Unit and integration tests
+/// - CI pipelines without hardware
+/// - Local development
 ///
-/// let rot = SoftwareRoT::new(b"my-firmware-image", None, 0);
-/// let measurements = rot.measure().unwrap();
-/// assert_ne!(measurements.firmware_hash, [0u8; 32]);
-/// ```
+/// For production, use [`TpmRoT`](crate::backends::tpm::TpmRoT) or
+/// [`DiceRoT`](crate::backends::dice::DiceRoT), which root measurements in
+/// hardware that executes before and outside the attested code.
+#[cfg(feature = "software-rot-unsafe")]
 pub struct SoftwareRoT<'a> {
     /// Raw bytes of the firmware / binary image to measure.
     firmware: &'a [u8],
@@ -121,6 +164,7 @@ pub struct SoftwareRoT<'a> {
     pcr_regions: &'a [&'a [u8]],
 }
 
+#[cfg(feature = "software-rot-unsafe")]
 impl<'a> SoftwareRoT<'a> {
     /// Constructs a new [`SoftwareRoT`].
     ///
@@ -148,6 +192,7 @@ impl<'a> SoftwareRoT<'a> {
     }
 }
 
+#[cfg(feature = "software-rot-unsafe")]
 impl RoT for SoftwareRoT<'_> {
     fn measure(&self) -> Result<Measurements, PqRascvError> {
         use sha3::{Digest, Sha3_256};
@@ -171,7 +216,7 @@ impl RoT for SoftwareRoT<'_> {
         for (i, region) in self.pcr_regions.iter().enumerate().take(PCR_COUNT) {
             let mut h = Sha3_256::new();
             h.update(region);
-            pcrs.0[i] = h.finalize().into();
+            pcrs.digests[i] = h.finalize().into();
         }
 
         Ok(Measurements {
@@ -187,7 +232,7 @@ impl RoT for SoftwareRoT<'_> {
 // Tests
 // ────────────────────────────────────────────────────────────────────────────
 
-#[cfg(test)]
+#[cfg(all(test, feature = "software-rot-unsafe"))]
 mod tests {
     use super::*;
 
@@ -217,10 +262,9 @@ mod tests {
         let regions: &[&[u8]] = &[b"pcr0", b"pcr1"];
         let rot = SoftwareRoT::new(b"fw", None, 0).with_pcr_regions(regions);
         let m = rot.measure().unwrap();
-        // We supplied two regions, so PCR 0 and 1 should be filled in.
-        assert_ne!(m.pcrs.0[0], [0u8; 32]);
-        assert_ne!(m.pcrs.0[1], [0u8; 32]);
-        // PCR 2 and above were never touched, so they stay zero.
-        assert_eq!(m.pcrs.0[2], [0u8; 32]);
+        assert_ne!(m.pcrs.digests[0], [0u8; 32]);
+        assert_ne!(m.pcrs.digests[1], [0u8; 32]);
+        assert_eq!(m.pcrs.digests[2], [0u8; 32]);
+        assert_eq!(m.pcrs.algorithm, PcrAlgorithm::Sha3_256);
     }
 }
