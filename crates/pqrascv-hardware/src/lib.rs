@@ -54,18 +54,26 @@ extern crate alloc;
 pub mod backend;
 pub mod baseline;
 pub mod boot_chain;
+pub mod continuous_attestation;
 pub mod counter;
 pub mod digest;
 pub mod drift;
 pub mod ek_framework;
+pub mod ima_integration;
 pub mod pcr;
 pub mod platform_profiles;
 pub mod policy;
 pub mod profiles;
+pub mod runtime_attestation;
+pub mod runtime_drift;
 pub mod runtime_integrity;
 pub mod secure_boot;
 pub mod tpm_structures;
 pub mod tpm_verify;
+pub mod transparency_log;
+pub mod trust_domains;
+pub mod verifier_timeline;
+pub mod workload_integrity;
 
 // ── Convenience re-exports ────────────────────────────────────────────────
 
@@ -76,18 +84,28 @@ pub use backend::{
 };
 pub use baseline::{ExpectedPcr, PcrBaseline, PolicyVersion};
 pub use boot_chain::BootChainEvidence;
+pub use continuous_attestation::{AttestationSession, SessionError};
 pub use counter::CounterEvidence;
 pub use digest::{DigestAlgorithm, TypedDigest};
 pub use drift::{DriftDetectionEngine, DriftPolicyMode, DriftReport, DriftSeverity};
+pub use ima_integration::{ImaEvidence, ImaMeasurement, ImaParseError};
 pub use pcr::{PcrMeasurement, PcrSemantic, SlotSemanticMismatch, TypedPcrBank};
 pub use platform_profiles::{
     PlatformClass, PlatformProfile, PlatformVendor, PlatformVerificationReport,
-    VerificationDecisionReason,
+    RuntimeVerificationReport,
 };
 pub use policy::{
     HardwarePolicyContext, HardwarePolicyEngine, HardwarePolicyError, HardwarePolicyRule,
 };
 pub use profiles::sovereign_bitcoin_node_profile;
+pub use runtime_attestation::{
+    RuntimeAttestationEvidence, RuntimeMeasurement, RuntimeMeasurementDomain, RuntimePolicyEpoch,
+};
+pub use runtime_drift::{RuntimeDriftEngine, RuntimeDriftReport, RuntimeDriftSeverity};
 pub use runtime_integrity::RuntimeIntegrityEvidence;
 pub use secure_boot::{SecureBootEvidence, SecureBootState};
 pub use tpm_verify::{TpmQuoteVerifier, TpmVerifyError};
+pub use transparency_log::TransparencyEvent;
+pub use trust_domains::{TrustDomain, TrustEvaluation, VerificationDecisionReason};
+pub use verifier_timeline::{AttestationEvent, AttestationTimeline, TimelineValidationError};
+pub use workload_integrity::{WorkloadIdentity, WorkloadIntegrityEvidence};

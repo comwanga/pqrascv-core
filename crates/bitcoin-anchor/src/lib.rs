@@ -45,9 +45,11 @@ use alloc::vec::Vec;
 
 pub mod merkle;
 pub mod proof;
+pub mod timeline;
 
 pub use merkle::MerkleAggregator;
 pub use proof::{InclusionProof, SpvVerifier};
+pub use timeline::{TimelineInclusionProof, TimelineMerkleAggregator, TimelineSpvVerifier};
 
 // ── OP_RETURN constants ───────────────────────────────────────────────────
 

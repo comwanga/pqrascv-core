@@ -383,6 +383,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "pqrascv-bitcoin-anchor"
+version = "0.1.0"
+dependencies = [
+ "ciborium",
+ "serde",
+ "serde_bytes",
+ "sha2",
+ "sha3 0.10.9",
+]
+
+[[package]]
 name = "pqrascv-core"
 version = "0.1.0"
 dependencies = [
@@ -410,6 +421,7 @@ name = "pqrascv-hardware"
 version = "0.1.0"
 dependencies = [
  "ciborium",
+ "pqrascv-bitcoin-anchor",
  "serde",
  "serde_bytes",
  "sha2",
