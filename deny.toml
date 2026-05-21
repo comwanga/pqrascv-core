@@ -8,6 +8,8 @@ ignore = [
     # paste is unmaintained (RUSTSEC-2024-0436) but pulled in transitively by
     # tss-esapi (hardware-tpm feature only). No upstream fix exists yet.
     "RUSTSEC-2024-0436",
+    # rsa Marvin Attack: local TPM AK verification only, not exposed to network timing side-channels.
+    "RUSTSEC-2023-0071",
 ]
 
 [licenses]
