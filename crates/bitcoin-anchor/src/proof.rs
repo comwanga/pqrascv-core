@@ -116,11 +116,7 @@ impl SpvVerifier {
     /// # Returns
     ///
     /// The confirmed block height on success.
-    pub fn verify(
-        &self,
-        proof: &InclusionProof,
-        quote_hash: &[u8; 32],
-    ) -> Result<u32, SpvError> {
+    pub fn verify(&self, proof: &InclusionProof, quote_hash: &[u8; 32]) -> Result<u32, SpvError> {
         // 1. Confirmation count.
         let confirmations = self
             .chain_tip_height
@@ -134,8 +130,8 @@ impl SpvVerifier {
         }
 
         // 2. Block header Merkle root extraction.
-        let header_merkle_root = extract_block_merkle_root(&proof.block_header)
-            .ok_or(SpvError::InvalidBlockHeader)?;
+        let header_merkle_root =
+            extract_block_merkle_root(&proof.block_header).ok_or(SpvError::InvalidBlockHeader)?;
         if header_merkle_root != proof.tx_merkle_path.block_merkle_root {
             return Err(SpvError::MerkleRootMismatch);
         }

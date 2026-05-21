@@ -3,10 +3,10 @@
 //! Provides the data structures required to track and version firmware
 //! baselines, manage lifecycle evolution, and prevent malicious rollbacks.
 
-use alloc::string::String;
-use alloc::vec::Vec;
 use crate::digest::TypedDigest;
 use crate::pcr::PcrSemantic;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 /// Versioning semantics for a policy or baseline.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

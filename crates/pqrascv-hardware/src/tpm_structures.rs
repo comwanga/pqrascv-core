@@ -47,7 +47,9 @@ impl TryFrom<u16> for TpmAlgId {
             0x0027 => Ok(Self::Sha3_256),
             0x0028 => Ok(Self::Sha3_384),
             0x0029 => Ok(Self::Sha3_512),
-            0x0004 => Err(TpmParseError::UnsupportedAlgorithm("SHA-1 explicitly rejected")),
+            0x0004 => Err(TpmParseError::UnsupportedAlgorithm(
+                "SHA-1 explicitly rejected",
+            )),
             _ => Err(TpmParseError::UnsupportedAlgorithm("unknown algorithm")),
         }
     }
@@ -221,12 +223,14 @@ impl<'a> TpmsAttest<'a> {
     /// Parses a raw `TPMS_ATTEST` structure.
     pub fn parse(buf: &mut TpmBuffer<'a>) -> Result<Self, TpmParseError> {
         let magic = buf.read_u32()?;
-        if magic != 0xFF54_4347 { // TPM_GENERATED_VALUE
+        if magic != 0xFF54_4347 {
+            // TPM_GENERATED_VALUE
             return Err(TpmParseError::InvalidMagic);
         }
 
         let attest_type = buf.read_u16()?;
-        if attest_type != 0x8018 { // TPM_ST_ATTEST_QUOTE
+        if attest_type != 0x8018 {
+            // TPM_ST_ATTEST_QUOTE
             return Err(TpmParseError::InvalidType);
         }
 
@@ -255,7 +259,10 @@ impl<'a> TpmsAttest<'a> {
             restart_count,
             safe,
             firmware_version,
-            attested: TpmsQuoteInfo { pcr_select, pcr_digest },
+            attested: TpmsQuoteInfo {
+                pcr_select,
+                pcr_digest,
+            },
         })
     }
 }
@@ -276,14 +283,16 @@ pub struct TpmsPcrSelection {
 impl TpmlPcrSelection {
     pub fn parse(buf: &mut TpmBuffer<'_>) -> Result<Self, TpmParseError> {
         let count = buf.read_u32()?;
-        if count > 16 { // TPM_PT_PCR_COUNT max is typically 24, but banks are few
+        if count > 16 {
+            // TPM_PT_PCR_COUNT max is typically 24, but banks are few
             return Err(TpmParseError::TooManyPcrSelections);
         }
         let mut selections = Vec::with_capacity(count as usize);
         for _ in 0..count {
             let hash = buf.read_alg_id()?;
             let size = buf.read_u8()? as usize;
-            if size > 4 { // PCR count is max 32 for PC Client
+            if size > 4 {
+                // PCR count is max 32 for PC Client
                 return Err(TpmParseError::TooManyPcrSelections);
             }
             let select_bytes = buf.read_bytes(size)?;
@@ -300,8 +309,15 @@ impl TpmlPcrSelection {
 
 #[derive(Debug, Clone)]
 pub enum TpmtSignature<'a> {
-    Rsapss { hash: TpmAlgId, sig: &'a [u8] },
-    Ecdsa { hash: TpmAlgId, r: &'a [u8], s: &'a [u8] },
+    Rsapss {
+        hash: TpmAlgId,
+        sig: &'a [u8],
+    },
+    Ecdsa {
+        hash: TpmAlgId,
+        r: &'a [u8],
+        s: &'a [u8],
+    },
 }
 
 impl<'a> TpmtSignature<'a> {
@@ -320,7 +336,9 @@ impl<'a> TpmtSignature<'a> {
                 let s = buf.read_byte_buffer()?;
                 Ok(Self::Ecdsa { hash, r, s })
             }
-            _ => Err(TpmParseError::UnsupportedAlgorithm("signature algorithm not supported")),
+            _ => Err(TpmParseError::UnsupportedAlgorithm(
+                "signature algorithm not supported",
+            )),
         }
     }
 }
@@ -356,10 +374,10 @@ impl<'a> TpmtPublic<'a> {
     pub fn parse(buf: &mut TpmBuffer<'a>) -> Result<Self, TpmParseError> {
         let type_alg = buf.read_alg_id()?;
         let name_alg = buf.read_alg_id()?;
-        
+
         // objectAttributes (TPMA_OBJECT)
         let _object_attributes = buf.read_u32()?;
-        
+
         // authPolicy (TPM2B_DIGEST)
         let _auth_policy = buf.read_byte_buffer()?;
 
@@ -370,10 +388,14 @@ impl<'a> TpmtPublic<'a> {
                 let _scheme = buf.read_u16()?; // scheme
                 let _key_bits = buf.read_u16()?; // keyBits
                 let exponent = buf.read_u32()?; // exponent
-                
+
                 // TPM2B_PUBLIC_KEY_RSA
                 let unique = buf.read_byte_buffer()?;
-                Ok(Self::Rsa { name_alg, public_exponent: exponent, unique })
+                Ok(Self::Rsa {
+                    name_alg,
+                    public_exponent: exponent,
+                    unique,
+                })
             }
             TpmAlgId::Ecc => {
                 // TPMS_ECC_PARMS
@@ -381,13 +403,20 @@ impl<'a> TpmtPublic<'a> {
                 let _scheme = buf.read_u16()?;
                 let curve = TpmEccCurve::try_from(buf.read_u16()?)?;
                 let _kdf = buf.read_u16()?;
-                
+
                 // TPMS_ECC_POINT
                 let x = buf.read_byte_buffer()?;
                 let y = buf.read_byte_buffer()?;
-                Ok(Self::Ecc { name_alg, curve, x, y })
+                Ok(Self::Ecc {
+                    name_alg,
+                    curve,
+                    x,
+                    y,
+                })
             }
-            _ => Err(TpmParseError::UnsupportedAlgorithm("unsupported public key type")),
+            _ => Err(TpmParseError::UnsupportedAlgorithm(
+                "unsupported public key type",
+            )),
         }
     }
 }

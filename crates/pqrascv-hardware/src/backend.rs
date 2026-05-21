@@ -22,11 +22,7 @@
 extern crate alloc;
 use alloc::vec::Vec;
 
-use crate::{
-    counter::CounterEvidence,
-    digest::TypedDigest,
-    pcr::TypedPcrBank,
-};
+use crate::{counter::CounterEvidence, digest::TypedDigest, pcr::TypedPcrBank};
 
 // ── HardwareBackendType ───────────────────────────────────────────────────
 
@@ -66,9 +62,7 @@ impl HardwareBackendType {
     #[must_use]
     pub fn is_hardware_rooted(self) -> bool {
         match self {
-            Self::Tpm2 | Self::Dice | Self::IntelTdx | Self::AmdSevSnp | Self::NitroEnclave => {
-                true
-            }
+            Self::Tpm2 | Self::Dice | Self::IntelTdx | Self::AmdSevSnp | Self::NitroEnclave => true,
             #[cfg(feature = "unsafe-test-backend")]
             Self::TestOnly => false,
         }

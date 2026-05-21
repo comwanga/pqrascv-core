@@ -67,8 +67,8 @@ impl TpmQuoteVerifier {
         };
 
         // 1. Parse TPM2B_ATTEST
-        let attest = TpmsAttest::parse_tpm2b(&evidence.quote_blob)
-            .map_err(TpmVerifyError::ParseError)?;
+        let attest =
+            TpmsAttest::parse_tpm2b(&evidence.quote_blob).map_err(TpmVerifyError::ParseError)?;
 
         // 2. Nonce verification
         if attest.extra_data != expected_nonce {
@@ -78,11 +78,14 @@ impl TpmQuoteVerifier {
 
         // 3. Clock state
         if !attest.safe || !evidence.clock_info.safe {
-            report.warnings.push("TPM clock is in an unsafe state".into());
+            report
+                .warnings
+                .push("TPM clock is in an unsafe state".into());
         }
 
         // 4. PCR Digest Recomputation
-        let expected_pcr_digest = Self::recompute_pcr_digest(&attest.attested.pcr_select.selections, pcr_bank)?;
+        let expected_pcr_digest =
+            Self::recompute_pcr_digest(&attest.attested.pcr_select.selections, pcr_bank)?;
         if attest.attested.pcr_digest != expected_pcr_digest {
             return Err(TpmVerifyError::PcrDigestRecomputationMismatch);
         }
@@ -99,10 +102,12 @@ impl TpmQuoteVerifier {
             report.ak_valid = true;
             report.quote_valid = true;
         }
-        
+
         #[cfg(not(feature = "tpm-crypto"))]
         {
-            report.warnings.push("tpm-crypto feature disabled; signature not verified".into());
+            report
+                .warnings
+                .push("tpm-crypto feature disabled; signature not verified".into());
             // structural and semantic checks passed
             report.ak_valid = true;
             report.quote_valid = true;
@@ -135,12 +140,14 @@ impl TpmQuoteVerifier {
         for (byte_idx, &byte) in selection.pcr_select.iter().enumerate() {
             for bit_idx in 0..8 {
                 if (byte & (1 << bit_idx)) != 0 {
-                    let pcr_index = u8::try_from(byte_idx * 8 + bit_idx)
-                        .map_err(|_| TpmVerifyError::ParseError(TpmParseError::TooManyPcrSelections))?;
-                    
-                    let measurement = bank.get_by_index(pcr_index)
+                    let pcr_index = u8::try_from(byte_idx * 8 + bit_idx).map_err(|_| {
+                        TpmVerifyError::ParseError(TpmParseError::TooManyPcrSelections)
+                    })?;
+
+                    let measurement = bank
+                        .get_by_index(pcr_index)
                         .ok_or(TpmVerifyError::MissingPcrInBank(pcr_index))?;
-                    
+
                     // Note: for strictness, the verifier expects the bank to contain the exact
                     // digests. The `TypedDigest` in the bank must match the size of the requested hash.
                     concatenated.extend_from_slice(&measurement.digest.value);
@@ -177,19 +184,33 @@ impl TpmQuoteVerifier {
         let attest_bytes = &quote_blob[2..];
 
         match (sig, ak) {
-            (TpmtSignature::Rsapss { hash, sig: sig_bytes }, TpmtPublic::Rsa { public_exponent, unique, .. }) => {
+            (
+                TpmtSignature::Rsapss {
+                    hash,
+                    sig: sig_bytes,
+                },
+                TpmtPublic::Rsa {
+                    public_exponent,
+                    unique,
+                    ..
+                },
+            ) => {
                 let hashed_attest = Self::hash_buffer(*hash, attest_bytes)?;
-                
-                use rsa::{RsaPublicKey, BigUint};
+
                 use rsa::pss::VerifyingKey;
+                use rsa::{BigUint, RsaPublicKey};
                 use signature::Verifier;
 
                 let n = BigUint::from_bytes_be(unique);
-                let e = if *public_exponent == 0 { 65537 } else { *public_exponent };
+                let e = if *public_exponent == 0 {
+                    65537
+                } else {
+                    *public_exponent
+                };
                 let e_big = BigUint::from(e);
-                
-                let rsa_pub = RsaPublicKey::new(n, e_big)
-                    .map_err(|_| TpmVerifyError::InvalidPublicKey)?;
+
+                let rsa_pub =
+                    RsaPublicKey::new(n, e_big).map_err(|_| TpmVerifyError::InvalidPublicKey)?;
 
                 match hash {
                     TpmAlgId::Sha256 => {
@@ -216,9 +237,9 @@ impl TpmQuoteVerifier {
                     return Err(TpmVerifyError::UnsupportedEccCurve);
                 }
 
-                use p256::ecdsa::{VerifyingKey, Signature};
-                use signature::Verifier;
+                use p256::ecdsa::{Signature, VerifyingKey};
                 use p256::EncodedPoint;
+                use signature::Verifier;
 
                 // TPM provides X and Y coordinates. We construct an uncompressed point.
                 let mut point_bytes = Vec::with_capacity(1 + x.len() + y.len());
@@ -298,18 +319,31 @@ impl core::fmt::Display for TpmVerifyError {
         match self {
             Self::ParseError(e) => write!(f, "TPM structure parsing failed: {e}"),
             Self::NonceMismatch => f.write_str("TPM extraData does not match expected nonce"),
-            Self::PcrDigestRecomputationMismatch => f.write_str("recomputed PCR digest does not match quote pcrDigest"),
+            Self::PcrDigestRecomputationMismatch => {
+                f.write_str("recomputed PCR digest does not match quote pcrDigest")
+            }
             Self::EmptyPcrSelection => f.write_str("TPML_PCR_SELECTION is empty"),
-            Self::UnsupportedMultipleBanks => f.write_str("multiple PCR banks in selection is unsupported"),
-            Self::MissingPcrInBank(idx) => write!(f, "PCR {idx} is selected in quote but missing from evidence bank"),
+            Self::UnsupportedMultipleBanks => {
+                f.write_str("multiple PCR banks in selection is unsupported")
+            }
+            Self::MissingPcrInBank(idx) => write!(
+                f,
+                "PCR {idx} is selected in quote but missing from evidence bank"
+            ),
             Self::UnsupportedHashAlgorithm => f.write_str("unsupported hash algorithm in quote"),
             Self::UnsupportedEccCurve => f.write_str("unsupported ECC curve"),
             Self::InvalidPublicKey => f.write_str("invalid AK public key"),
             Self::InvalidSignature => f.write_str("invalid quote signature format"),
-            Self::SignatureVerificationFailed => f.write_str("cryptographic signature verification failed"),
-            Self::AlgorithmMismatch => f.write_str("AK public key type does not match signature type"),
+            Self::SignatureVerificationFailed => {
+                f.write_str("cryptographic signature verification failed")
+            }
+            Self::AlgorithmMismatch => {
+                f.write_str("AK public key type does not match signature type")
+            }
             Self::PcrSemanticAbsent(s) => write!(f, "required PCR semantic {s:?} is absent"),
-            Self::PcrValueMismatch { semantic, .. } => write!(f, "PCR value mismatch for semantic {semantic:?}"),
+            Self::PcrValueMismatch { semantic, .. } => {
+                write!(f, "PCR value mismatch for semantic {semantic:?}")
+            }
         }
     }
 }

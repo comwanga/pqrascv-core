@@ -3,12 +3,12 @@
 //! Provides platform-aware verification semantics, transitioning away
 //! from opaque PCR comparisons toward explicit platform profiling.
 
+use crate::baseline::{ExpectedPcr, PcrBaseline};
+use crate::drift::{DriftDetectionEngine, DriftPolicyMode, DriftReport, DriftSeverity};
+use crate::pcr::PcrSemantic;
+use crate::secure_boot::{SecureBootEvidence, SecureBootState};
 use alloc::string::String;
 use alloc::vec::Vec;
-use crate::baseline::{ExpectedPcr, PcrBaseline};
-use crate::drift::{DriftReport, DriftPolicyMode, DriftSeverity, DriftDetectionEngine};
-use crate::secure_boot::{SecureBootEvidence, SecureBootState};
-use crate::pcr::PcrSemantic;
 
 /// High-level classification of the platform being verified.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -68,7 +68,7 @@ impl PlatformProfile {
         let drift_reports = DriftDetectionEngine::detect_drift(self, actual_pcrs, upgrade_baseline);
         let warnings = Vec::new();
         let mut decision_reason = VerificationDecisionReason::Success;
-        
+
         // 1. Secure Boot checks
         let secure_boot_valid = if self.secure_boot_required {
             if let Some(sb) = secure_boot {
@@ -106,13 +106,17 @@ impl PlatformProfile {
         }
 
         // Apply drift policy to determine if measured boot is valid
-        if has_critical_drift && !DriftDetectionEngine::is_drift_permissible(drift_mode, DriftSeverity::Critical) {
+        if has_critical_drift
+            && !DriftDetectionEngine::is_drift_permissible(drift_mode, DriftSeverity::Critical)
+        {
             measured_boot_valid = false;
             if decision_reason == VerificationDecisionReason::Success {
                 decision_reason = VerificationDecisionReason::CriticalDriftDetected;
             }
         }
-        if has_warning_drift && !DriftDetectionEngine::is_drift_permissible(drift_mode, DriftSeverity::Warning) {
+        if has_warning_drift
+            && !DriftDetectionEngine::is_drift_permissible(drift_mode, DriftSeverity::Warning)
+        {
             measured_boot_valid = false;
             if decision_reason == VerificationDecisionReason::Success {
                 decision_reason = VerificationDecisionReason::CriticalDriftDetected;
@@ -120,7 +124,10 @@ impl PlatformProfile {
         }
 
         // Check for missing kernel measurement explicitly if expected
-        let has_kernel_expected = self.expected_pcrs.iter().any(|m| m.semantic == PcrSemantic::Kernel);
+        let has_kernel_expected = self
+            .expected_pcrs
+            .iter()
+            .any(|m| m.semantic == PcrSemantic::Kernel);
         if has_kernel_expected && actual_pcrs.get(PcrSemantic::Kernel).is_none() {
             measured_boot_valid = false;
             if decision_reason == VerificationDecisionReason::Success {

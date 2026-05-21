@@ -5,8 +5,8 @@
 //! be delegated to a PKI crate, but this module provides the trait and types.
 
 extern crate alloc;
-use alloc::vec::Vec;
 use alloc::string::String;
+use alloc::vec::Vec;
 
 // ── EkCertChain ───────────────────────────────────────────────────────────
 
@@ -23,7 +23,10 @@ pub struct EkCertChain {
 impl EkCertChain {
     #[must_use]
     pub fn new(ek_cert: Vec<u8>, intermediates: Vec<Vec<u8>>) -> Self {
-        Self { ek_cert, intermediates }
+        Self {
+            ek_cert,
+            intermediates,
+        }
     }
 }
 

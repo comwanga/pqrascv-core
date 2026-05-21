@@ -3,10 +3,10 @@
 //! Handles operational anomaly detection by identifying when a platform's
 //! measurements deviate from the expected baseline.
 
+use crate::baseline::PcrBaseline;
 use crate::digest::TypedDigest;
 use crate::pcr::PcrSemantic;
 use crate::platform_profiles::PlatformProfile;
-use crate::baseline::PcrBaseline;
 use alloc::vec::Vec;
 
 /// Severity of the detected measurement drift.
@@ -59,7 +59,9 @@ impl DriftDetectionEngine {
             | (DriftPolicyMode::Audit, DriftSeverity::Informational | DriftSeverity::Warning)
             | (DriftPolicyMode::Enforcing, DriftSeverity::Informational) => true,
             (DriftPolicyMode::Audit, DriftSeverity::Critical)
-            | (DriftPolicyMode::Enforcing, DriftSeverity::Warning | DriftSeverity::Critical) => false,
+            | (DriftPolicyMode::Enforcing, DriftSeverity::Warning | DriftSeverity::Critical) => {
+                false
+            }
         }
     }
 
@@ -77,7 +79,6 @@ impl DriftDetectionEngine {
         for expected in &profile.expected_pcrs {
             if let Some(actual_measurement) = actual_pcrs.get(expected.semantic) {
                 if actual_measurement.digest != expected.expected_digest {
-
                     // Check if it is an authorized transition (upgrade)
                     let is_upgrade = if let Some(upgrade) = upgrade_baseline {
                         let profile_baseline = PcrBaseline {
@@ -89,7 +90,11 @@ impl DriftDetectionEngine {
                         };
 
                         if upgrade.is_valid_successor(&profile_baseline) {
-                            if let Some(upgrade_expected) = upgrade.measurements.iter().find(|m| m.semantic == expected.semantic) {
+                            if let Some(upgrade_expected) = upgrade
+                                .measurements
+                                .iter()
+                                .find(|m| m.semantic == expected.semantic)
+                            {
                                 upgrade_expected.expected_digest == actual_measurement.digest
                             } else {
                                 false

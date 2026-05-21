@@ -265,8 +265,8 @@ pub fn validate_chain(
     trust_anchor: &TrustAnchor,
     now_secs: u64,
 ) -> Result<CertChain, PqRascvError> {
-    use crate::crypto::MlDsaBackend;
     use crate::crypto::CryptoBackend;
+    use crate::crypto::MlDsaBackend;
 
     // Build the full chain: root_key → intermediates → device_cert
     // Verify each cert is signed by the key above it.

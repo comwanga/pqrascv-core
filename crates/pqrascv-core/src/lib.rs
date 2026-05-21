@@ -155,10 +155,10 @@ pub use quote::QuoteTimestamp;
 pub use quote::{generate_quote, AttestationQuote, Challenge};
 
 #[cfg(feature = "alloc")]
-pub use nonce::{ClockEvidence, InMemoryNonceLedger, NonceLedger, NonceHandle};
+pub use nonce::{ClockEvidence, InMemoryNonceLedger, NonceHandle, NonceLedger};
 
 #[cfg(feature = "alloc")]
 pub use policy::{HardwareBackendKind, PolicyEngineV2, PolicyRule};
 
 #[cfg(feature = "alloc")]
-pub use pki::{CertChain, DeviceCertificate, TrustAnchor, validate_chain};
+pub use pki::{validate_chain, CertChain, DeviceCertificate, TrustAnchor};

@@ -194,10 +194,7 @@ impl PolicyEngineV2 {
         Ok(())
     }
 
-    fn evaluate_rule(
-        rule: &PolicyRule,
-        ctx: &PolicyContext<'_>,
-    ) -> Result<(), PqRascvError> {
+    fn evaluate_rule(rule: &PolicyRule, ctx: &PolicyContext<'_>) -> Result<(), PqRascvError> {
         match rule {
             PolicyRule::EnforceProtocolVersion { expected } => {
                 if ctx.protocol_version != *expected {

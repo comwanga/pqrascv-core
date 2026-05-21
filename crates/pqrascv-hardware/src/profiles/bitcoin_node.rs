@@ -1,9 +1,9 @@
 //! Platform profile for a sovereign Bitcoin Node.
 
-use crate::platform_profiles::{PlatformProfile, PlatformVendor, PlatformClass};
 use crate::baseline::ExpectedPcr;
+use crate::digest::{DigestAlgorithm, TypedDigest};
 use crate::pcr::PcrSemantic;
-use crate::digest::{TypedDigest, DigestAlgorithm};
+use crate::platform_profiles::{PlatformClass, PlatformProfile, PlatformVendor};
 use alloc::string::ToString;
 use alloc::vec;
 

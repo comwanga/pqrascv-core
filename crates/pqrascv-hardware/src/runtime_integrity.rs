@@ -6,8 +6,8 @@
 //! **WARNING**: Measured Boot provides boot-time guarantees. This module
 //! is prepared for future runtime semantics but does not yet claim runtime trust.
 
-use alloc::vec::Vec;
 use crate::digest::TypedDigest;
+use alloc::vec::Vec;
 
 /// Evidence of runtime integrity subsystems.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
