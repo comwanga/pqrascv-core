@@ -31,6 +31,8 @@ confidence-threshold = 0.8
 multiple-versions = "warn"
 # Disallow wildcard version requirements (e.g. "*").
 wildcards = "deny"
+# Allow wildcard requirements for local path/git dependencies.
+allow-wildcard-paths = true
 deny = []
 
 [sources]
