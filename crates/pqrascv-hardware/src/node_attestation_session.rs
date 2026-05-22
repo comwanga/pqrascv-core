@@ -42,7 +42,7 @@ impl NodeAttestationSession {
         }
     }
 
-    /// Renews the session by updating the last_verified timestamp.
+    /// Renews the session by updating the `last_verified` timestamp.
     ///
     /// The new timestamp must be strictly greater than the previous to ensure monotonicity.
     pub fn renew(&mut self, now_secs: u64) -> Result<(), &'static str> {

@@ -17,7 +17,7 @@ pub enum BitcoinNodeProfile {
     AirgappedAuditNode,
     /// A node dedicated to monitoring the chainstate and mempool (e.g. LN watchtower).
     WatchtowerNode,
-    /// A constrained node running on embedded hardware or IoT devices.
+    /// A constrained node running on embedded hardware or `IoT` devices.
     MinimalEmbeddedNode,
 }
 
@@ -37,11 +37,6 @@ impl BitcoinNodeProfile {
         ];
 
         match self {
-            Self::SovereignMainnetNode => {
-                rules.push(HardwarePolicyRule::RequireSecureBootState(
-                    crate::secure_boot::SecureBootState::Enabled,
-                ));
-            }
             Self::FederationVerifierNode => {
                 rules.push(HardwarePolicyRule::RequireSecureBootState(
                     crate::secure_boot::SecureBootState::Enabled,
@@ -50,16 +45,14 @@ impl BitcoinNodeProfile {
                 rules.push(HardwarePolicyRule::RequireFederatedNodeVerification);
                 rules.push(HardwarePolicyRule::RequireNodeTransparencyAnchoring);
             }
-            Self::AirgappedAuditNode => {
+            Self::SovereignMainnetNode | Self::AirgappedAuditNode => {
                 rules.push(HardwarePolicyRule::RequireSecureBootState(
                     crate::secure_boot::SecureBootState::Enabled,
                 ));
             }
-            Self::WatchtowerNode => {
+            Self::WatchtowerNode | Self::MinimalEmbeddedNode => {
                 // Watchtowers may not enforce strict hardware binding if running in cloud,
                 // but we assume hardware isolation here for maximal security.
-            }
-            Self::MinimalEmbeddedNode => {
                 // Embedded nodes might lack advanced hardware features, but they still
                 // verify workload integrity.
             }

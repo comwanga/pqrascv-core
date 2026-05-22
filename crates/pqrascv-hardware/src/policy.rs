@@ -943,16 +943,16 @@ impl HardwarePolicyEngine {
                     || evidence.executable_hash.algorithm != id.expected_binary_hash.algorithm
                 {
                     return Err(HardwarePolicyError::BitcoinBinaryMismatch {
-                        expected: id.expected_binary_hash.clone(),
-                        got: evidence.executable_hash.clone(),
+                        expected: id.expected_binary_hash,
+                        got: evidence.executable_hash,
                     });
                 }
                 if evidence.config_hash.value != id.expected_config_hash.value
                     || evidence.config_hash.algorithm != id.expected_config_hash.algorithm
                 {
                     return Err(HardwarePolicyError::UnauthorizedConfigMutation {
-                        expected: id.expected_config_hash.clone(),
-                        got: evidence.config_hash.clone(),
+                        expected: id.expected_config_hash,
+                        got: evidence.config_hash,
                     });
                 }
             }
@@ -1418,15 +1418,13 @@ impl core::fmt::Display for HardwarePolicyError {
             Self::BitcoinBinaryMismatch { expected, got } => {
                 write!(
                     f,
-                    "bitcoin core binary mismatch: expected {:?}, got {:?}",
-                    expected, got
+                    "bitcoin core binary mismatch: expected {expected:?}, got {got:?}"
                 )
             }
             Self::UnauthorizedConfigMutation { expected, got } => {
                 write!(
                     f,
-                    "unauthorized bitcoin.conf mutation: expected {:?}, got {:?}",
-                    expected, got
+                    "unauthorized bitcoin.conf mutation: expected {expected:?}, got {got:?}"
                 )
             }
             Self::BitcoinRuntimeStateMissing => {

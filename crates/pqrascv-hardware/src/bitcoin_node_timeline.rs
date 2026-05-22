@@ -78,6 +78,7 @@ impl BitcoinNodeEvent {
     /// Computes the cryptographic hash of the event for timeline anchoring.
     #[must_use]
     pub fn event_hash(&self) -> TypedDigest {
+        use sha2::{Digest, Sha256};
         // In a real implementation, this would serialize the variant and hash it.
         // For demonstration, we just create a dummy hash based on the sequence number.
         let mut buf = Vec::new();
@@ -89,21 +90,21 @@ impl BitcoinNodeEvent {
             Self::RuntimeIntegrityVerified {
                 executable_hash, ..
             } => buf.extend_from_slice(&executable_hash.value),
-            Self::BinaryUpdated { new_hash, .. } => buf.extend_from_slice(&new_hash.value),
-            Self::ConfigChanged { new_hash, .. } => buf.extend_from_slice(&new_hash.value),
+            Self::BinaryUpdated { new_hash, .. } | Self::ConfigChanged { new_hash, .. } => {
+                buf.extend_from_slice(&new_hash.value);
+            }
             Self::VerifierConsensusReached { consensus_hash, .. } => {
-                buf.extend_from_slice(&consensus_hash.value)
+                buf.extend_from_slice(&consensus_hash.value);
             }
             Self::GovernancePolicyUpdated { epoch_id, .. } => {
-                buf.extend_from_slice(&epoch_id.to_be_bytes())
+                buf.extend_from_slice(&epoch_id.to_be_bytes());
             }
             Self::TransparencyAnchored { anchor_hash, .. } => {
-                buf.extend_from_slice(&anchor_hash.value)
+                buf.extend_from_slice(&anchor_hash.value);
             }
         }
 
         // Simple SHA-256 placeholder
-        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(&buf);
         let result = hasher.finalize();
