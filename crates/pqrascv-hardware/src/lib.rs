@@ -66,6 +66,37 @@ pub mod deployment_reference;
 pub mod digest;
 pub mod distributed_consensus;
 pub mod drift;
+
+// Phase 3.1 Live Evidence Modules
+#[cfg(feature = "live-evidence")]
+pub mod attestation_transport;
+#[cfg(feature = "live-evidence")]
+pub mod bitcoin_process_monitor;
+#[cfg(feature = "live-evidence")]
+pub mod evidence_cache;
+#[cfg(feature = "live-evidence")]
+pub mod evidence_pipeline;
+#[cfg(feature = "live-evidence")]
+pub mod freshness;
+#[cfg(feature = "live-evidence")]
+pub mod linux_ima_collector;
+#[cfg(feature = "live-evidence")]
+pub mod live_node_observer;
+#[cfg(feature = "live-evidence")]
+pub mod live_tpm;
+#[cfg(feature = "live-evidence")]
+pub mod secure_boot_collector;
+
+// Phase 3.2 Incremental Runtime Integrity & PQ Transport
+pub mod checkpointing;
+pub mod delta_attestation;
+pub mod federation_transport;
+pub mod pq_transport;
+pub mod retention_policy;
+pub mod runtime_stream;
+pub mod stream_reconciliation;
+pub mod timeline_compaction;
+
 pub mod ek_framework;
 pub mod governance;
 pub mod ima_integration;

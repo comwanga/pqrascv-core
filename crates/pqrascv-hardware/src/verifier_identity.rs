@@ -45,17 +45,25 @@ pub enum VerifierCapability {
 /// The stable identity of a verifier within the federated trust network.
 ///
 /// Identity is established by a `VerifierCertificate` from a recognized
-/// issuer. The `public_key` field is an opaque byte representation of the
-/// verifier's public key (DER, SPKI, or application-defined encoding).
+/// issuer. The `public_key` field carries the verifier's ML-DSA signing
+/// key (or equivalent) used for signature verification. The separate
+/// `ml_kem_public_key` field carries the verifier's ML-KEM encapsulation
+/// key used specifically for PQ-secure federation transport session setup.
+/// This eliminates implicit PKI trust: keys are bound to the certified
+/// identity, not to any out-of-band static keyring.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct VerifierIdentity {
     /// Globally unique verifier identifier (e.g. a UUID or DID).
     pub verifier_id: String,
     /// Human-readable organization name for audit display.
     pub organization: String,
-    /// Raw public key bytes (opaque; encoding is application-defined).
+    /// ML-DSA (or equivalent) signing/verification public key bytes.
     #[serde(with = "serde_bytes")]
     pub public_key: Vec<u8>,
+    /// ML-KEM encapsulation public key used for PQ federation transport.
+    /// `None` if this verifier does not participate in PQ transport sessions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ml_kem_public_key: Option<Vec<u8>>,
     /// Set of capabilities declared for this verifier.
     pub capabilities: Vec<VerifierCapability>,
 }
@@ -65,6 +73,14 @@ impl VerifierIdentity {
     #[must_use]
     pub fn has_capability(&self, cap: VerifierCapability) -> bool {
         self.capabilities.contains(&cap)
+    }
+
+    /// Returns the ML-KEM encapsulation public key bytes, if present.
+    ///
+    /// Returns `None` if the verifier does not participate in PQ transport.
+    #[must_use]
+    pub fn ml_kem_key(&self) -> Option<&[u8]> {
+        self.ml_kem_public_key.as_deref()
     }
 
     /// Validates the structural integrity of the identity.
@@ -320,6 +336,7 @@ mod tests {
             verifier_id: "v1".into(),
             organization: "ACME".into(),
             public_key: vec![0xab, 0xcd],
+            ml_kem_public_key: None,
             capabilities: vec![VerifierCapability::HardwareVerification],
         };
         assert!(id.validate_structure().is_ok());
@@ -340,6 +357,7 @@ mod tests {
             verifier_id: "v1".into(),
             organization: "ACME".into(),
             public_key: vec![1],
+            ml_kem_public_key: None,
             capabilities: vec![
                 VerifierCapability::HardwareVerification,
                 VerifierCapability::PolicyAuthority,
@@ -348,5 +366,26 @@ mod tests {
         assert!(id.has_capability(VerifierCapability::HardwareVerification));
         assert!(id.has_capability(VerifierCapability::PolicyAuthority));
         assert!(!id.has_capability(VerifierCapability::BitcoinAnchoring));
+    }
+
+    #[test]
+    fn ml_kem_key_accessor() {
+        let id_no_kem = VerifierIdentity {
+            verifier_id: "v1".into(),
+            organization: "ACME".into(),
+            public_key: vec![1],
+            ml_kem_public_key: None,
+            capabilities: vec![VerifierCapability::HardwareVerification],
+        };
+        assert!(id_no_kem.ml_kem_key().is_none());
+
+        let id_with_kem = VerifierIdentity {
+            ml_kem_public_key: Some(vec![0xde, 0xad, 0xbe, 0xef]),
+            ..id_no_kem
+        };
+        assert_eq!(
+            id_with_kem.ml_kem_key(),
+            Some([0xde, 0xad, 0xbe, 0xef].as_slice())
+        );
     }
 }

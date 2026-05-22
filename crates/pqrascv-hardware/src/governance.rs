@@ -306,6 +306,7 @@ mod tests {
                 verifier_id: "new-v".into(),
                 organization: "NewOrg".into(),
                 public_key: vec![0xab],
+                ml_kem_public_key: None,
                 capabilities: vec![
                     crate::verifier_identity::VerifierCapability::HardwareVerification,
                 ],

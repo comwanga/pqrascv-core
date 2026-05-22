@@ -161,6 +161,7 @@ mod tests {
                     verifier_id: alloc::format!("v{i}"),
                     organization: "Org".into(),
                     public_key: vec![1],
+                    ml_kem_public_key: None,
                     capabilities: vec![],
                 })
                 .collect(),
