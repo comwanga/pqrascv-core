@@ -32,3 +32,9 @@ name = "federation_fuzz"
 path = "fuzz_targets/federation_fuzz.rs"
 test = false
 doc  = false
+
+[[bin]]
+name = "bitcoin_node_fuzz"
+path = "fuzz_targets/bitcoin_node_fuzz.rs"
+test = false
+doc  = false

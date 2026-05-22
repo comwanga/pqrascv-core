@@ -45,11 +45,13 @@ use alloc::vec::Vec;
 
 pub mod federation;
 pub mod merkle;
+pub mod node_anchor;
 pub mod proof;
 pub mod timeline;
 
 pub use federation::FederationBatchAggregator;
 pub use merkle::MerkleAggregator;
+pub use node_anchor::NodeAttestationAnchor;
 pub use proof::{InclusionProof, SpvVerifier};
 pub use timeline::{TimelineInclusionProof, TimelineMerkleAggregator, TimelineSpvVerifier};
 

@@ -51,17 +51,25 @@
 
 extern crate alloc;
 
+pub mod attested_node_report;
 pub mod backend;
 pub mod baseline;
+pub mod bitcoin_node_identity;
+pub mod bitcoin_node_timeline;
+pub mod bitcoin_policy_profiles;
+pub mod bitcoin_runtime_monitor;
+pub mod bitcoin_workload_integrity;
 pub mod boot_chain;
 pub mod continuous_attestation;
 pub mod counter;
+pub mod deployment_reference;
 pub mod digest;
 pub mod distributed_consensus;
 pub mod drift;
 pub mod ek_framework;
 pub mod governance;
 pub mod ima_integration;
+pub mod node_attestation_session;
 pub mod pcr;
 pub mod platform_profiles;
 pub mod policy;
@@ -79,6 +87,7 @@ pub mod transparency_log;
 pub mod trust_domains;
 pub mod verifier_federation;
 pub mod verifier_identity;
+pub mod verifier_orchestrator;
 pub mod verifier_timeline;
 pub mod verifier_transparency;
 pub mod workload_integrity;

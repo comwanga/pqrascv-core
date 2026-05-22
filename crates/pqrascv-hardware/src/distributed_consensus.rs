@@ -83,7 +83,7 @@ impl ConsensusDecision {
 ///
 /// Created by [`ConsensusEvaluation::evaluate`]. Contains the full vote
 /// record for auditability and replay.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ConsensusEvaluation {
     /// Attestation reference (quote ID, nonce, etc.).
     pub attestation_id: String,
