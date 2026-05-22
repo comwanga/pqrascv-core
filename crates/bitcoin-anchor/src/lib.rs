@@ -43,10 +43,12 @@
 extern crate alloc;
 use alloc::vec::Vec;
 
+pub mod federation;
 pub mod merkle;
 pub mod proof;
 pub mod timeline;
 
+pub use federation::FederationBatchAggregator;
 pub use merkle::MerkleAggregator;
 pub use proof::{InclusionProof, SpvVerifier};
 pub use timeline::{TimelineInclusionProof, TimelineMerkleAggregator, TimelineSpvVerifier};

@@ -29,15 +29,19 @@ use crate::{
     continuous_attestation::AttestationSession,
     counter::CounterEvidence,
     digest::TypedDigest,
+    distributed_consensus::{ConsensusDecision, ConsensusEvaluation},
     drift::{DriftPolicyMode, DriftSeverity},
     ima_integration::ImaEvidence,
     pcr::{PcrSemantic, TypedPcrBank},
     platform_profiles::{PlatformProfile, RuntimeVerificationReport},
+    policy_federation::FederatedPolicyEpoch,
     runtime_attestation::RuntimeAttestationEvidence,
     runtime_drift::{RuntimeDriftEngine, RuntimeDriftReport, RuntimeDriftSeverity},
     secure_boot::{SecureBootEvidence, SecureBootState},
+    timeline_reconciliation::TimelineReconciliationReport,
     transparency_log::TransparencyEvent,
     trust_domains::{TrustDomain, TrustEvaluation, VerificationDecisionReason},
+    verifier_federation::VerifierFederation,
     verifier_timeline::AttestationTimeline,
 };
 use pqrascv_bitcoin_anchor::{TimelineInclusionProof, TimelineSpvVerifier};
@@ -156,6 +160,42 @@ pub enum HardwarePolicyRule {
 
     /// Reject evidence if the policy epoch does not match the expected epoch.
     RequirePolicyEpoch(u64),
+
+    // ── Phase 2.9 Federated Trust Rules ──────────────────────────────────
+
+    /// Reject if no valid [`VerifierFederation`] is present in context.
+    ///
+    /// Maps to [`TrustDomain::HardwareIdentity`].
+    RequireVerifierFederation,
+
+    /// Reject if the consensus evaluation did not reach quorum or was not
+    /// found to be [`ConsensusDecision::Trusted`].
+    ///
+    /// `min_votes` is an additional lower bound on participation count,
+    /// independent of the federation's own quorum policy.
+    /// Maps to [`TrustDomain::HardwareIdentity`].
+    RequireConsensusQuorum {
+        /// Minimum number of votes that must have been cast.
+        min_votes: usize,
+    },
+
+    /// Reject if verifier transparency logs are inconsistent across the
+    /// federation (e.g., events are missing or hashes conflict).
+    ///
+    /// Maps to [`TrustDomain::Transparency`].
+    RequireTransparencyConsensus,
+
+    /// Reject if the current federated policy epoch has not been approved
+    /// by quorum (i.e., `quorum_reached == false`).
+    ///
+    /// Maps to [`TrustDomain::ContinuousAttestation`].
+    RequireFederatedPolicyApproval,
+
+    /// Reject if the cross-verifier timeline reconciliation report detected
+    /// any conflicts or missing events.
+    ///
+    /// Maps to [`TrustDomain::Transparency`].
+    RequireTimelineConsistency,
 }
 
 // ── HardwarePolicyContext ─────────────────────────────────────────────────
@@ -194,6 +234,17 @@ pub struct HardwarePolicyContext<'a> {
     pub spv_verifier: Option<&'a TimelineSpvVerifier>,
     /// Optional transparency event for verifying anchoring.
     pub transparency_event: Option<&'a TransparencyEvent>,
+
+    // ── Phase 2.9 Federated Trust Fields ─────────────────────────────────
+
+    /// Optional verifier federation for quorum-based evaluation.
+    pub federation: Option<&'a VerifierFederation>,
+    /// Optional distributed consensus evaluation result.
+    pub consensus_evaluation: Option<&'a ConsensusEvaluation>,
+    /// Optional federated policy epoch (for approval checking).
+    pub federated_epoch: Option<&'a FederatedPolicyEpoch>,
+    /// Optional cross-verifier timeline reconciliation report.
+    pub timeline_reconciliation: Option<&'a TimelineReconciliationReport>,
 }
 
 // ── HardwarePolicyEngine ──────────────────────────────────────────────────
@@ -409,6 +460,8 @@ impl HardwarePolicyEngine {
                     | HardwarePolicyRule::RequireBackendType(_)
                     | HardwarePolicyRule::RequireHardwareMonotonicCounter
                     | HardwarePolicyRule::RequireNonceBinding
+                    | HardwarePolicyRule::RequireVerifierFederation
+                    | HardwarePolicyRule::RequireConsensusQuorum { .. }
             ),
             TrustDomain::MeasuredBoot => matches!(
                 rule,
@@ -431,17 +484,22 @@ impl HardwarePolicyEngine {
                 HardwarePolicyRule::RequireValidBaselineTransition { .. }
             ),
             TrustDomain::Provenance => matches!(rule, HardwarePolicyRule::RequireBootChain { .. }),
-            TrustDomain::Transparency => {
-                matches!(rule, HardwarePolicyRule::RequireTransparencyAnchoring)
-            }
+            TrustDomain::Transparency => matches!(
+                rule,
+                HardwarePolicyRule::RequireTransparencyAnchoring
+                    | HardwarePolicyRule::RequireTransparencyConsensus
+                    | HardwarePolicyRule::RequireTimelineConsistency
+            ),
             TrustDomain::ContinuousAttestation => matches!(
                 rule,
                 HardwarePolicyRule::RequireContinuousAttestation { .. }
                     | HardwarePolicyRule::RequireSequenceMonotonicity
                     | HardwarePolicyRule::RequirePolicyEpoch(_)
+                    | HardwarePolicyRule::RequireFederatedPolicyApproval
             ),
         }
     }
+
 
     /// Validates that there are no conflicting rules in the policy engine.
     ///
@@ -768,6 +826,55 @@ impl HardwarePolicyEngine {
                     });
                 }
             }
+
+            // ── Phase 2.9 Federated Trust Rules ──────────────────────────
+
+            HardwarePolicyRule::RequireVerifierFederation => {
+                if ctx.federation.is_none() {
+                    return Err(HardwarePolicyError::VerifierFederationMissing);
+                }
+            }
+            HardwarePolicyRule::RequireConsensusQuorum { min_votes } => {
+                let eval = ctx
+                    .consensus_evaluation
+                    .ok_or(HardwarePolicyError::VerifierFederationMissing)?;
+                if eval.participating < *min_votes {
+                    return Err(HardwarePolicyError::ConsensusQuorumFailed {
+                        decision: eval.final_decision.clone(),
+                    });
+                }
+                if !eval.final_decision.is_trusted() {
+                    return Err(HardwarePolicyError::ConsensusQuorumFailed {
+                        decision: eval.final_decision.clone(),
+                    });
+                }
+            }
+            HardwarePolicyRule::RequireTransparencyConsensus => {
+                let report = ctx
+                    .timeline_reconciliation
+                    .ok_or(HardwarePolicyError::TransparencyConsensusFailed)?;
+                if report.conflicts_detected {
+                    return Err(HardwarePolicyError::TransparencyConsensusFailed);
+                }
+            }
+            HardwarePolicyRule::RequireFederatedPolicyApproval => {
+                let epoch = ctx
+                    .federated_epoch
+                    .ok_or(HardwarePolicyError::FederatedPolicyApprovalMissing)?;
+                if !epoch.quorum_reached {
+                    return Err(HardwarePolicyError::FederatedEpochQuorumNotReached {
+                        epoch_id: epoch.epoch_id,
+                    });
+                }
+            }
+            HardwarePolicyRule::RequireTimelineConsistency => {
+                let report = ctx
+                    .timeline_reconciliation
+                    .ok_or(HardwarePolicyError::TimelineConflictDetected)?;
+                if report.conflicts_detected || report.missing_events {
+                    return Err(HardwarePolicyError::TimelineConflictDetected);
+                }
+            }
         }
         Ok(())
     }
@@ -935,6 +1042,21 @@ pub enum HardwarePolicyError {
     SpvVerificationFailed(pqrascv_bitcoin_anchor::proof::SpvError),
     /// Policy epoch mismatch.
     PolicyEpochMismatch { expected: u64, got: u64 },
+
+    // ── Phase 2.9 Federated Trust Errors ─────────────────────────────────
+
+    /// No verifier federation was provided in the policy context.
+    VerifierFederationMissing,
+    /// The consensus evaluation did not reach quorum or was not Trusted.
+    ConsensusQuorumFailed { decision: ConsensusDecision },
+    /// Verifier transparency logs are inconsistent; consensus failed.
+    TransparencyConsensusFailed,
+    /// The federated policy epoch context is missing.
+    FederatedPolicyApprovalMissing,
+    /// The federated policy epoch has not been approved by quorum.
+    FederatedEpochQuorumNotReached { epoch_id: u64 },
+    /// Cross-verifier timeline reconciliation detected conflicts.
+    TimelineConflictDetected,
 }
 
 impl HardwarePolicyError {
@@ -982,6 +1104,16 @@ impl HardwarePolicyError {
             | Self::TransparencySerializationFailed
             | Self::SpvVerificationFailed(_) => VerificationDecisionReason::RuntimeMeasurementGap,
             Self::PolicyEpochMismatch { .. } => VerificationDecisionReason::PolicyEpochMismatch,
+            // Phase 2.9
+            Self::VerifierFederationMissing
+            | Self::ConsensusQuorumFailed { .. }
+            | Self::FederatedPolicyApprovalMissing
+            | Self::FederatedEpochQuorumNotReached { .. } => {
+                VerificationDecisionReason::VerifierFederationAbsent
+            }
+            Self::TransparencyConsensusFailed | Self::TimelineConflictDetected => {
+                VerificationDecisionReason::TimelineInconsistencyDetected
+            }
         }
     }
 }
@@ -1098,6 +1230,25 @@ impl core::fmt::Display for HardwarePolicyError {
             Self::PolicyEpochMismatch { expected, got } => {
                 write!(f, "policy epoch mismatch: expected {expected}, got {got}")
             }
+            // Phase 2.9
+            Self::VerifierFederationMissing => {
+                f.write_str("verifier federation is missing from context")
+            }
+            Self::ConsensusQuorumFailed { decision } => {
+                write!(f, "consensus quorum failed: decision={decision:?}")
+            }
+            Self::TransparencyConsensusFailed => {
+                f.write_str("verifier transparency logs are inconsistent")
+            }
+            Self::FederatedPolicyApprovalMissing => {
+                f.write_str("federated policy epoch context is missing")
+            }
+            Self::FederatedEpochQuorumNotReached { epoch_id } => {
+                write!(f, "federated policy epoch {epoch_id} has not reached quorum")
+            }
+            Self::TimelineConflictDetected => {
+                f.write_str("cross-verifier timeline conflict detected")
+            }
         }
     }
 }
@@ -1140,6 +1291,10 @@ mod tests {
             transparency_proof: None,
             spv_verifier: None,
             transparency_event: None,
+            federation: None,
+            consensus_evaluation: None,
+            federated_epoch: None,
+            timeline_reconciliation: None,
         }
     }
 

@@ -101,6 +101,10 @@ fuzz_target!(|data: &[u8]| {
         transparency_proof: None,
         spv_verifier: None,
         transparency_event: None,
+        federation: None,
+        consensus_evaluation: None,
+        federated_epoch: None,
+        timeline_reconciliation: None,
     };
 
     // Build some rules using the input bytes
