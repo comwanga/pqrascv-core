@@ -214,8 +214,7 @@ mod tests {
     fn identical_timelines_no_conflict() {
         let ta = make_timeline(&[(0, 0xaa), (1, 0xbb), (2, 0xcc)]);
         let tb = make_timeline(&[(0, 0xaa), (1, 0xbb), (2, 0xcc)]);
-        let report =
-            TimelineReconciler::reconcile("r1".into(), "va".into(), &ta, "vb".into(), &tb);
+        let report = TimelineReconciler::reconcile("r1".into(), "va".into(), &ta, "vb".into(), &tb);
         assert!(!report.conflicts_detected);
         assert!(!report.missing_events);
         assert!(report.conflict_details.is_empty());
@@ -225,8 +224,7 @@ mod tests {
     fn missing_event_in_b() {
         let ta = make_timeline(&[(0, 0xaa), (1, 0xbb), (2, 0xcc)]);
         let tb = make_timeline(&[(0, 0xaa), (2, 0xcc)]); // seq 1 missing in b
-        let report =
-            TimelineReconciler::reconcile("r2".into(), "va".into(), &ta, "vb".into(), &tb);
+        let report = TimelineReconciler::reconcile("r2".into(), "va".into(), &ta, "vb".into(), &tb);
         assert!(report.conflicts_detected);
         assert!(report.missing_events);
         let missing: Vec<_> = report
@@ -246,8 +244,7 @@ mod tests {
     fn conflicting_event_hash() {
         let ta = make_timeline(&[(0, 0xaa), (1, 0x11)]);
         let tb = make_timeline(&[(0, 0xaa), (1, 0x22)]); // seq 1 has different hash
-        let report =
-            TimelineReconciler::reconcile("r3".into(), "va".into(), &ta, "vb".into(), &tb);
+        let report = TimelineReconciler::reconcile("r3".into(), "va".into(), &ta, "vb".into(), &tb);
         assert!(report.conflicts_detected);
         assert!(!report.missing_events);
         let conflicting: Vec<_> = report
@@ -267,8 +264,7 @@ mod tests {
     fn divergent_history_marker_emitted() {
         let ta = make_timeline(&[(0, 0xaa), (1, 0x11)]);
         let tb = make_timeline(&[(0, 0xaa), (1, 0x22)]);
-        let report =
-            TimelineReconciler::reconcile("r4".into(), "va".into(), &ta, "vb".into(), &tb);
+        let report = TimelineReconciler::reconcile("r4".into(), "va".into(), &ta, "vb".into(), &tb);
         let divergent: Vec<_> = report
             .conflict_details
             .iter()
@@ -279,15 +275,17 @@ mod tests {
                 )
             })
             .collect();
-        assert!(!divergent.is_empty(), "DivergentHistory marker should be present");
+        assert!(
+            !divergent.is_empty(),
+            "DivergentHistory marker should be present"
+        );
     }
 
     #[test]
     fn both_empty_no_conflict() {
         let ta = AttestationTimeline::new("device1".into());
         let tb = AttestationTimeline::new("device1".into());
-        let report =
-            TimelineReconciler::reconcile("r5".into(), "va".into(), &ta, "vb".into(), &tb);
+        let report = TimelineReconciler::reconcile("r5".into(), "va".into(), &ta, "vb".into(), &tb);
         assert!(!report.conflicts_detected);
     }
 }

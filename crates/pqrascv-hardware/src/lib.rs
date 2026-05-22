@@ -107,9 +107,7 @@ pub use platform_profiles::{
 pub use policy::{
     HardwarePolicyContext, HardwarePolicyEngine, HardwarePolicyError, HardwarePolicyRule,
 };
-pub use policy_federation::{
-    FederatedPolicyEpoch, FederatedPolicyError, FederatedPolicyRegistry,
-};
+pub use policy_federation::{FederatedPolicyEpoch, FederatedPolicyError, FederatedPolicyRegistry};
 pub use profiles::sovereign_bitcoin_node_profile;
 pub use reputation::VerifierReputation;
 pub use runtime_attestation::{
@@ -119,7 +117,7 @@ pub use runtime_drift::{RuntimeDriftEngine, RuntimeDriftReport, RuntimeDriftSeve
 pub use runtime_integrity::RuntimeIntegrityEvidence;
 pub use secure_boot::{SecureBootEvidence, SecureBootState};
 pub use timeline_reconciliation::{
-    TimelineConflict, TimelineConflictType, TimelineReconciliationReport, TimelineReconciler,
+    TimelineConflict, TimelineConflictType, TimelineReconciler, TimelineReconciliationReport,
 };
 pub use tpm_verify::{TpmQuoteVerifier, TpmVerifyError};
 pub use transparency_log::TransparencyEvent;

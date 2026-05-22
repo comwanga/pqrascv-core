@@ -60,11 +60,21 @@ impl AttestationEvent {
     #[must_use]
     pub fn sequence_number(&self) -> u64 {
         match *self {
-            Self::BootVerified { sequence_number, .. }
-            | Self::RuntimeMeasurementReceived { sequence_number, .. }
-            | Self::RuntimeDriftDetected { sequence_number, .. }
-            | Self::PolicyEpochChanged { sequence_number, .. }
-            | Self::AttestationExpired { sequence_number, .. } => sequence_number,
+            Self::BootVerified {
+                sequence_number, ..
+            }
+            | Self::RuntimeMeasurementReceived {
+                sequence_number, ..
+            }
+            | Self::RuntimeDriftDetected {
+                sequence_number, ..
+            }
+            | Self::PolicyEpochChanged {
+                sequence_number, ..
+            }
+            | Self::AttestationExpired {
+                sequence_number, ..
+            } => sequence_number,
         }
     }
 

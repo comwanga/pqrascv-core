@@ -185,7 +185,9 @@ mod tests {
     fn make_federation(n: usize, policy: QuorumPolicy) -> VerifierFederation {
         VerifierFederation {
             federation_id: "fed-1".into(),
-            members: (0..n).map(|i| make_member(&alloc::format!("v{i}"))).collect(),
+            members: (0..n)
+                .map(|i| make_member(&alloc::format!("v{i}")))
+                .collect(),
             quorum_policy: policy,
         }
     }
@@ -269,7 +271,9 @@ mod tests {
     #[test]
     fn members_with_capability_filter() {
         let mut fed = make_federation(3, QuorumPolicy::Majority);
-        fed.members[0].capabilities.push(VerifierCapability::PolicyAuthority);
+        fed.members[0]
+            .capabilities
+            .push(VerifierCapability::PolicyAuthority);
         let policy_holders = fed.members_with_capability(VerifierCapability::PolicyAuthority);
         assert_eq!(policy_holders.len(), 1);
         assert_eq!(policy_holders[0].verifier_id, "v0");

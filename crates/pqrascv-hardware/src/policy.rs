@@ -162,7 +162,6 @@ pub enum HardwarePolicyRule {
     RequirePolicyEpoch(u64),
 
     // ── Phase 2.9 Federated Trust Rules ──────────────────────────────────
-
     /// Reject if no valid [`VerifierFederation`] is present in context.
     ///
     /// Maps to [`TrustDomain::HardwareIdentity`].
@@ -236,7 +235,6 @@ pub struct HardwarePolicyContext<'a> {
     pub transparency_event: Option<&'a TransparencyEvent>,
 
     // ── Phase 2.9 Federated Trust Fields ─────────────────────────────────
-
     /// Optional verifier federation for quorum-based evaluation.
     pub federation: Option<&'a VerifierFederation>,
     /// Optional distributed consensus evaluation result.
@@ -499,7 +497,6 @@ impl HardwarePolicyEngine {
             ),
         }
     }
-
 
     /// Validates that there are no conflicting rules in the policy engine.
     ///
@@ -828,7 +825,6 @@ impl HardwarePolicyEngine {
             }
 
             // ── Phase 2.9 Federated Trust Rules ──────────────────────────
-
             HardwarePolicyRule::RequireVerifierFederation => {
                 if ctx.federation.is_none() {
                     return Err(HardwarePolicyError::VerifierFederationMissing);
@@ -1044,7 +1040,6 @@ pub enum HardwarePolicyError {
     PolicyEpochMismatch { expected: u64, got: u64 },
 
     // ── Phase 2.9 Federated Trust Errors ─────────────────────────────────
-
     /// No verifier federation was provided in the policy context.
     VerifierFederationMissing,
     /// The consensus evaluation did not reach quorum or was not Trusted.
@@ -1244,7 +1239,10 @@ impl core::fmt::Display for HardwarePolicyError {
                 f.write_str("federated policy epoch context is missing")
             }
             Self::FederatedEpochQuorumNotReached { epoch_id } => {
-                write!(f, "federated policy epoch {epoch_id} has not reached quorum")
+                write!(
+                    f,
+                    "federated policy epoch {epoch_id} has not reached quorum"
+                )
             }
             Self::TimelineConflictDetected => {
                 f.write_str("cross-verifier timeline conflict detected")

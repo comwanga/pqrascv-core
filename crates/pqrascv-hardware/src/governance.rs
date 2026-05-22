@@ -33,27 +33,18 @@ use crate::verifier_identity::VerifierIdentity;
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum GovernanceAction {
     /// Admit a new verifier to the federation.
-    AddVerifier {
-        verifier: VerifierIdentity,
-    },
+    AddVerifier { verifier: VerifierIdentity },
     /// Remove a verifier from the federation by ID.
-    RemoveVerifier {
-        verifier_id: String,
-    },
+    RemoveVerifier { verifier_id: String },
     /// Replace the policy authority verifier.
     RotatePolicyAuthority {
         old_authority: String,
         new_authority: String,
     },
     /// Permanently revoke a verifier and record the reason.
-    RevokeVerifier {
-        verifier_id: String,
-        reason: String,
-    },
+    RevokeVerifier { verifier_id: String, reason: String },
     /// Change the federation's quorum policy.
-    UpdateQuorumPolicy {
-        new_policy: QuorumPolicy,
-    },
+    UpdateQuorumPolicy { new_policy: QuorumPolicy },
 }
 
 // ── GovernanceRecord ──────────────────────────────────────────────────────
@@ -137,7 +128,9 @@ impl GovernanceLog {
 
         // Replay protection: reject duplicate nonces
         if self.seen_nonces.contains(&record.nonce) {
-            return Err(GovernanceError::ReplayDetected { nonce: record.nonce });
+            return Err(GovernanceError::ReplayDetected {
+                nonce: record.nonce,
+            });
         }
 
         // Chain integrity: if the log is non-empty and the record declares a
@@ -313,7 +306,9 @@ mod tests {
                 verifier_id: "new-v".into(),
                 organization: "NewOrg".into(),
                 public_key: vec![0xab],
-                capabilities: vec![crate::verifier_identity::VerifierCapability::HardwareVerification],
+                capabilities: vec![
+                    crate::verifier_identity::VerifierCapability::HardwareVerification,
+                ],
             },
         };
         let record = GovernanceRecord {

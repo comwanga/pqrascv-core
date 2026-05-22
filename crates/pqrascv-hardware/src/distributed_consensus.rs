@@ -192,7 +192,10 @@ mod tests {
         let eval = ConsensusEvaluation::evaluate("a1".into(), vec![], &fed);
         assert!(matches!(
             eval.final_decision,
-            ConsensusDecision::QuorumFailed { participating: 0, required: 3 }
+            ConsensusDecision::QuorumFailed {
+                participating: 0,
+                required: 3
+            }
         ));
     }
 
@@ -241,11 +244,7 @@ mod tests {
     #[test]
     fn unanimous_one_untrusted_fails() {
         let fed = make_federation(3, QuorumPolicy::Unanimous);
-        let votes = vec![
-            trusted_vote("v0"),
-            trusted_vote("v1"),
-            untrusted_vote("v2"),
-        ];
+        let votes = vec![trusted_vote("v0"), trusted_vote("v1"), untrusted_vote("v2")];
         let eval = ConsensusEvaluation::evaluate("a5".into(), votes, &fed);
         // trusted_count=2 < 3, untrusted_count=1 < 3 → Inconclusive
         assert_eq!(eval.final_decision, ConsensusDecision::Inconclusive);

@@ -188,7 +188,10 @@ pub enum FederatedPolicyError {
 impl core::fmt::Display for FederatedPolicyError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::QuorumNotReached { approvals, required } => write!(
+            Self::QuorumNotReached {
+                approvals,
+                required,
+            } => write!(
                 f,
                 "epoch quorum not reached: {approvals} approvals, {required} required"
             ),
@@ -243,7 +246,10 @@ mod tests {
         // 2 approvals < 3 required
         assert!(matches!(
             epoch.try_finalize(&fed).unwrap_err(),
-            FederatedPolicyError::QuorumNotReached { approvals: 2, required: 3 }
+            FederatedPolicyError::QuorumNotReached {
+                approvals: 2,
+                required: 3
+            }
         ));
         epoch.add_approval("v2".into()).unwrap();
         assert!(epoch.try_finalize(&fed).is_ok());
@@ -307,7 +313,10 @@ mod tests {
         let e_old = FederatedPolicyEpoch::new(3, 2000, Some(5)); // id 3 < 5
         assert!(matches!(
             reg.propose(e_old).unwrap_err(),
-            FederatedPolicyError::NonMonotonicEpoch { previous: 5, proposed: 3 }
+            FederatedPolicyError::NonMonotonicEpoch {
+                previous: 5,
+                proposed: 3
+            }
         ));
     }
 

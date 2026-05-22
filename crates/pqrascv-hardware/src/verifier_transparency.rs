@@ -136,7 +136,11 @@ mod tests {
     use super::*;
     use crate::digest::DigestAlgorithm;
 
-    fn make_event(verifier_id: &str, ts: u64, event_type: VerifierEventType) -> VerifierTransparencyEvent {
+    fn make_event(
+        verifier_id: &str,
+        ts: u64,
+        event_type: VerifierEventType,
+    ) -> VerifierTransparencyEvent {
         VerifierTransparencyEvent {
             verifier_id: verifier_id.into(),
             event_hash: TypedDigest {
@@ -153,10 +157,18 @@ mod tests {
         let mut log = VerifierTransparencyLog::new("v1".into());
         assert_eq!(log.event_count(), 0);
 
-        log.append(make_event("v1", 100, VerifierEventType::AttestationVerified))
-            .unwrap();
-        log.append(make_event("v1", 200, VerifierEventType::QuorumParticipation))
-            .unwrap();
+        log.append(make_event(
+            "v1",
+            100,
+            VerifierEventType::AttestationVerified,
+        ))
+        .unwrap();
+        log.append(make_event(
+            "v1",
+            200,
+            VerifierEventType::QuorumParticipation,
+        ))
+        .unwrap();
         assert_eq!(log.event_count(), 2);
     }
 
