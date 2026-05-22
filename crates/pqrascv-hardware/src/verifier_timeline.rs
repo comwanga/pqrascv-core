@@ -10,21 +10,37 @@ use alloc::vec::Vec;
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AttestationEvent {
     /// Initial boot measurement verification completed successfully.
-    BootVerified { timestamp: u64 },
+    BootVerified {
+        timestamp: u64,
+        sequence_number: u64,
+        event_hash: crate::digest::TypedDigest,
+    },
     /// A new runtime attestation measurement block was received.
     RuntimeMeasurementReceived {
         timestamp: u64,
         sequence_number: u64,
+        event_hash: crate::digest::TypedDigest,
     },
     /// System runtime drift was detected.
     RuntimeDriftDetected {
         timestamp: u64,
+        sequence_number: u64,
+        event_hash: crate::digest::TypedDigest,
         severity: crate::drift::DriftSeverity,
     },
     /// The active policy epoch changed.
-    PolicyEpochChanged { timestamp: u64, new_epoch: u64 },
+    PolicyEpochChanged {
+        timestamp: u64,
+        sequence_number: u64,
+        event_hash: crate::digest::TypedDigest,
+        new_epoch: u64,
+    },
     /// Attestation lease expired before new evidence was received.
-    AttestationExpired { timestamp: u64 },
+    AttestationExpired {
+        timestamp: u64,
+        sequence_number: u64,
+        event_hash: crate::digest::TypedDigest,
+    },
 }
 
 impl AttestationEvent {
@@ -32,11 +48,45 @@ impl AttestationEvent {
     #[must_use]
     pub fn timestamp(&self) -> u64 {
         match *self {
-            Self::BootVerified { timestamp }
+            Self::BootVerified { timestamp, .. }
             | Self::RuntimeMeasurementReceived { timestamp, .. }
             | Self::RuntimeDriftDetected { timestamp, .. }
             | Self::PolicyEpochChanged { timestamp, .. }
-            | Self::AttestationExpired { timestamp } => timestamp,
+            | Self::AttestationExpired { timestamp, .. } => timestamp,
+        }
+    }
+
+    /// Returns the sequence number associated with the event.
+    #[must_use]
+    pub fn sequence_number(&self) -> u64 {
+        match *self {
+            Self::BootVerified {
+                sequence_number, ..
+            }
+            | Self::RuntimeMeasurementReceived {
+                sequence_number, ..
+            }
+            | Self::RuntimeDriftDetected {
+                sequence_number, ..
+            }
+            | Self::PolicyEpochChanged {
+                sequence_number, ..
+            }
+            | Self::AttestationExpired {
+                sequence_number, ..
+            } => sequence_number,
+        }
+    }
+
+    /// Returns the event hash digest associated with the event.
+    #[must_use]
+    pub fn event_hash(&self) -> &crate::digest::TypedDigest {
+        match self {
+            Self::BootVerified { event_hash, .. }
+            | Self::RuntimeMeasurementReceived { event_hash, .. }
+            | Self::RuntimeDriftDetected { event_hash, .. }
+            | Self::PolicyEpochChanged { event_hash, .. }
+            | Self::AttestationExpired { event_hash, .. } => event_hash,
         }
     }
 }
@@ -83,6 +133,12 @@ impl AttestationTimeline {
             device_id,
             events: Vec::new(),
         }
+    }
+
+    /// Returns a slice of events in the timeline.
+    #[must_use]
+    pub fn events(&self) -> &[AttestationEvent] {
+        &self.events
     }
 
     /// Appends an event to the timeline.

@@ -57,6 +57,15 @@ pub enum VerificationDecisionReason {
     RuntimeMeasurementGap,
     /// The policy epoch sent by the prover does not match the verifier epoch.
     PolicyEpochMismatch,
+    // --- Phase 2.9 Federated Trust Additions ---
+    /// No valid verifier federation is present in the evaluation context.
+    VerifierFederationAbsent,
+    /// The distributed consensus vote did not reach the required quorum.
+    ConsensusQuorumFailed,
+    /// The federated policy epoch has not been approved by quorum.
+    FederatedPolicyNotApproved,
+    /// Cross-verifier timeline reconciliation detected inconsistencies.
+    TimelineInconsistencyDetected,
 }
 
 /// Structured outcome of evaluation for a single trust domain.

@@ -26,3 +26,9 @@ name = "policy_eval"
 path = "fuzz_targets/policy_eval.rs"
 test = false
 doc  = false
+
+[[bin]]
+name = "federation_fuzz"
+path = "fuzz_targets/federation_fuzz.rs"
+test = false
+doc  = false
