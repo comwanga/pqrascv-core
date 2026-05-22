@@ -26,13 +26,21 @@ use crate::{
     backend::HardwareBackendType,
     baseline::PcrBaseline,
     boot_chain::BootChainEvidence,
+    continuous_attestation::AttestationSession,
     counter::CounterEvidence,
     digest::TypedDigest,
-    drift::DriftPolicyMode,
+    drift::{DriftPolicyMode, DriftSeverity},
+    ima_integration::ImaEvidence,
     pcr::{PcrSemantic, TypedPcrBank},
-    platform_profiles::{PlatformProfile, VerificationDecisionReason},
+    platform_profiles::{PlatformProfile, RuntimeVerificationReport},
+    runtime_attestation::RuntimeAttestationEvidence,
+    runtime_drift::{RuntimeDriftEngine, RuntimeDriftReport, RuntimeDriftSeverity},
     secure_boot::{SecureBootEvidence, SecureBootState},
+    transparency_log::TransparencyEvent,
+    trust_domains::{TrustDomain, TrustEvaluation, VerificationDecisionReason},
+    verifier_timeline::AttestationTimeline,
 };
+use pqrascv_bitcoin_anchor::{TimelineInclusionProof, TimelineSpvVerifier};
 
 // ── HardwarePolicyRule ────────────────────────────────────────────────────
 
@@ -123,6 +131,31 @@ pub enum HardwarePolicyRule {
         current: PcrBaseline,
         previous: PcrBaseline,
     },
+
+    /// Reject evidence if the runtime measurements do not match the expected whitelist
+    /// or rolling upgrade list.
+    RequireRuntimeIntegrity {
+        whitelist: Vec<TypedDigest>,
+        rolling_upgrades: Vec<TypedDigest>,
+    },
+
+    /// Reject evidence if the Linux IMA/Appraisal subsystems are disabled.
+    RequireIma,
+
+    /// Reject evidence if the continuous attestation session lease/window has expired.
+    RequireContinuousAttestation {
+        expiration_window_secs: u64,
+        now_secs: u64,
+    },
+
+    /// Reject evidence if the continuous attestation sequence is non-monotonic or has gaps.
+    RequireSequenceMonotonicity,
+
+    /// Reject evidence if the attestation timeline cannot be verified as anchored in Bitcoin blocks.
+    RequireTransparencyAnchoring,
+
+    /// Reject evidence if the policy epoch does not match the expected epoch.
+    RequirePolicyEpoch(u64),
 }
 
 // ── HardwarePolicyContext ─────────────────────────────────────────────────
@@ -145,8 +178,22 @@ pub struct HardwarePolicyContext<'a> {
     pub secure_boot: Option<&'a SecureBootEvidence>,
     /// Optional Boot Chain evidence.
     pub boot_chain: Option<&'a BootChainEvidence>,
-    /// Optional Runtime Integrity evidence.
+    /// Legacy static Runtime Integrity evidence.
     pub runtime_integrity: Option<&'a crate::runtime_integrity::RuntimeIntegrityEvidence>,
+    /// Optional dynamic Runtime Attestation Evidence.
+    pub runtime_attestation: Option<&'a RuntimeAttestationEvidence>,
+    /// Optional Linux IMA evidence.
+    pub ima_evidence: Option<&'a ImaEvidence>,
+    /// Optional stateful attestation session.
+    pub session: Option<&'a AttestationSession>,
+    /// Optional verifier timeline.
+    pub timeline: Option<&'a AttestationTimeline>,
+    /// Optional transparency log inclusion proof.
+    pub transparency_proof: Option<&'a TimelineInclusionProof>,
+    /// Optional SPV verifier for timeline checking.
+    pub spv_verifier: Option<&'a TimelineSpvVerifier>,
+    /// Optional transparency event for verifying anchoring.
+    pub transparency_event: Option<&'a TransparencyEvent>,
 }
 
 // ── HardwarePolicyEngine ──────────────────────────────────────────────────
@@ -213,6 +260,189 @@ impl HardwarePolicyEngine {
         Ok(())
     }
 
+    /// Evaluates the policy rules and returns a structured `RuntimeVerificationReport`
+    /// containing independent evaluation outcomes for each of the 8 trust domains.
+    #[must_use]
+    #[allow(clippy::too_many_lines)]
+    pub fn evaluate_runtime_report(
+        &self,
+        ctx: &HardwarePolicyContext<'_>,
+    ) -> RuntimeVerificationReport {
+        let domains = [
+            TrustDomain::HardwareIdentity,
+            TrustDomain::MeasuredBoot,
+            TrustDomain::SecureBoot,
+            TrustDomain::RuntimeIntegrity,
+            TrustDomain::SupplyChain,
+            TrustDomain::Provenance,
+            TrustDomain::Transparency,
+            TrustDomain::ContinuousAttestation,
+        ];
+
+        let mut evaluations = alloc::vec::Vec::new();
+        let mut overall_warnings = alloc::vec::Vec::new();
+        let mut overall_trusted = true;
+
+        if let Err(conflict_err) = self.detect_conflicts() {
+            for domain in &domains {
+                evaluations.push(TrustEvaluation {
+                    domain: *domain,
+                    trusted: false,
+                    reasons: alloc::vec![VerificationDecisionReason::UnsupportedRuntimePolicy],
+                    warnings: alloc::vec![alloc::format!(
+                        "Policy conflict detected: {conflict_err}",
+                    )],
+                });
+            }
+            return RuntimeVerificationReport {
+                trusted: false,
+                evaluations,
+                warnings: alloc::vec![alloc::format!("Policy conflict: {conflict_err}")],
+            };
+        }
+
+        for domain in &domains {
+            let mut domain_trusted = true;
+            let mut reasons = alloc::vec::Vec::new();
+            let mut warnings = alloc::vec::Vec::new();
+
+            for rule in &self.rules {
+                if Self::rule_belongs_to_domain(rule, *domain) {
+                    match Self::evaluate_rule(rule, ctx) {
+                        Ok(()) => {
+                            if let HardwarePolicyRule::RequirePlatformProfile {
+                                profile,
+                                drift_mode,
+                                upgrade_baseline,
+                            } = rule
+                            {
+                                let report = profile.verify(
+                                    ctx.pcr_bank,
+                                    ctx.secure_boot,
+                                    *drift_mode,
+                                    upgrade_baseline.as_ref(),
+                                );
+                                for warn in &report.warnings {
+                                    warnings.push(warn.clone());
+                                }
+                                for drift in &report.drift_reports {
+                                    if drift.severity == DriftSeverity::Informational
+                                        || drift.severity == DriftSeverity::Warning
+                                    {
+                                        warnings.push(alloc::format!(
+                                            "Drift detected in PCR semantic {:?}: {:?}",
+                                            drift.semantic,
+                                            drift.severity
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            domain_trusted = false;
+                            reasons.push(err.decision_reason());
+                            warnings.push(alloc::format!("{err}"));
+
+                            match &err {
+                                HardwarePolicyError::PlatformProfileMismatch { .. } => {
+                                    if let HardwarePolicyRule::RequirePlatformProfile {
+                                        profile,
+                                        drift_mode,
+                                        upgrade_baseline,
+                                    } = rule
+                                    {
+                                        let report = profile.verify(
+                                            ctx.pcr_bank,
+                                            ctx.secure_boot,
+                                            *drift_mode,
+                                            upgrade_baseline.as_ref(),
+                                        );
+                                        for warn in &report.warnings {
+                                            warnings.push(warn.clone());
+                                        }
+                                    }
+                                }
+                                HardwarePolicyError::CriticalRuntimeDriftDetected(report) => {
+                                    warnings.push(alloc::format!(
+                                        "Critical runtime drift: WORKLOAD={}, EXPECTED={:?}, ACTUAL={:?}, SEVERITY={:?}",
+                                        report.workload,
+                                        report.expected,
+                                        report.actual,
+                                        report.severity
+                                    ));
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !domain_trusted {
+                overall_trusted = false;
+            }
+
+            for w in &warnings {
+                overall_warnings.push(w.clone());
+            }
+
+            evaluations.push(TrustEvaluation {
+                domain: *domain,
+                trusted: domain_trusted,
+                reasons,
+                warnings,
+            });
+        }
+
+        RuntimeVerificationReport {
+            trusted: overall_trusted,
+            evaluations,
+            warnings: overall_warnings,
+        }
+    }
+
+    fn rule_belongs_to_domain(rule: &HardwarePolicyRule, domain: TrustDomain) -> bool {
+        match domain {
+            TrustDomain::HardwareIdentity => matches!(
+                rule,
+                HardwarePolicyRule::RequireHardwareRootedBackend
+                    | HardwarePolicyRule::RequireBackendType(_)
+                    | HardwarePolicyRule::RequireHardwareMonotonicCounter
+                    | HardwarePolicyRule::RequireNonceBinding
+            ),
+            TrustDomain::MeasuredBoot => matches!(
+                rule,
+                HardwarePolicyRule::RequireMeasuredBoot
+                    | HardwarePolicyRule::RequireNormalizedPcrs
+                    | HardwarePolicyRule::RequirePcrValue { .. }
+                    | HardwarePolicyRule::RequirePlatformProfile { .. }
+            ),
+            TrustDomain::SecureBoot => matches!(
+                rule,
+                HardwarePolicyRule::RequireSecureBootState(_)
+                    | HardwarePolicyRule::RequirePlatformProfile { .. }
+            ),
+            TrustDomain::RuntimeIntegrity => matches!(
+                rule,
+                HardwarePolicyRule::RequireRuntimeIntegrity { .. } | HardwarePolicyRule::RequireIma
+            ),
+            TrustDomain::SupplyChain => matches!(
+                rule,
+                HardwarePolicyRule::RequireValidBaselineTransition { .. }
+            ),
+            TrustDomain::Provenance => matches!(rule, HardwarePolicyRule::RequireBootChain { .. }),
+            TrustDomain::Transparency => {
+                matches!(rule, HardwarePolicyRule::RequireTransparencyAnchoring)
+            }
+            TrustDomain::ContinuousAttestation => matches!(
+                rule,
+                HardwarePolicyRule::RequireContinuousAttestation { .. }
+                    | HardwarePolicyRule::RequireSequenceMonotonicity
+                    | HardwarePolicyRule::RequirePolicyEpoch(_)
+            ),
+        }
+    }
+
     /// Validates that there are no conflicting rules in the policy engine.
     ///
     /// Conflicting rules include:
@@ -225,6 +455,7 @@ impl HardwarePolicyEngine {
         let mut required_sb_state = None;
         let mut pcr_expectations = alloc::vec::Vec::new();
         let mut required_profile: Option<String> = None;
+        let mut required_epoch = None;
 
         for rule in &self.rules {
             match rule {
@@ -272,6 +503,17 @@ impl HardwarePolicyEngine {
                         }
                     }
                     required_profile = Some(profile.profile_id.clone());
+                }
+                HardwarePolicyRule::RequirePolicyEpoch(epoch) => {
+                    if let Some(prev) = required_epoch {
+                        if prev != *epoch {
+                            return Err(PolicyConflictError::ConflictingPolicyEpochs {
+                                epoch_a: prev,
+                                epoch_b: *epoch,
+                            });
+                        }
+                    }
+                    required_epoch = Some(*epoch);
                 }
                 _ => {}
             }
@@ -428,6 +670,104 @@ impl HardwarePolicyEngine {
                     return Err(HardwarePolicyError::BaselineRollbackDetected);
                 }
             }
+            HardwarePolicyRule::RequireRuntimeIntegrity {
+                whitelist,
+                rolling_upgrades,
+            } => {
+                let runtime_att = ctx
+                    .runtime_attestation
+                    .ok_or(HardwarePolicyError::RuntimeAttestationEvidenceMissing)?;
+                let drift_reports = RuntimeDriftEngine::detect_drift(
+                    &runtime_att.measurements,
+                    whitelist,
+                    rolling_upgrades,
+                );
+                for report in drift_reports {
+                    if report.severity == RuntimeDriftSeverity::Critical {
+                        return Err(HardwarePolicyError::CriticalRuntimeDriftDetected(report));
+                    }
+                }
+            }
+            HardwarePolicyRule::RequireIma => {
+                let ima = ctx
+                    .ima_evidence
+                    .ok_or(HardwarePolicyError::ImaEvidenceMissing)?;
+                if !ima.ima_enabled {
+                    return Err(HardwarePolicyError::ImaDisabled);
+                }
+                if !ima.appraisal_enabled {
+                    return Err(HardwarePolicyError::ImaAppraisalDisabled);
+                }
+            }
+            HardwarePolicyRule::RequireContinuousAttestation {
+                expiration_window_secs,
+                now_secs,
+            } => {
+                let session = ctx
+                    .session
+                    .ok_or(HardwarePolicyError::ContinuousAttestationSessionMissing)?;
+                if !session.active {
+                    return Err(HardwarePolicyError::ContinuousAttestationSessionInactive);
+                }
+                if *now_secs < session.last_seen
+                    || *now_secs - session.last_seen > *expiration_window_secs
+                {
+                    return Err(HardwarePolicyError::ContinuousAttestationExpired {
+                        last_seen: session.last_seen,
+                        now: *now_secs,
+                        window: *expiration_window_secs,
+                    });
+                }
+            }
+            HardwarePolicyRule::RequireSequenceMonotonicity => {
+                let evidence = ctx
+                    .runtime_attestation
+                    .ok_or(HardwarePolicyError::RuntimeAttestationEvidenceMissing)?;
+                let session = ctx
+                    .session
+                    .ok_or(HardwarePolicyError::ContinuousAttestationSessionMissing)?;
+                if evidence.sequence_number <= session.sequence_number {
+                    return Err(HardwarePolicyError::ReplayDetected {
+                        got: evidence.sequence_number,
+                        expected: session.sequence_number + 1,
+                    });
+                }
+                if evidence.sequence_number != session.sequence_number + 1 {
+                    return Err(HardwarePolicyError::SequenceGapDetected {
+                        got: evidence.sequence_number,
+                        expected: session.sequence_number + 1,
+                    });
+                }
+            }
+            HardwarePolicyRule::RequireTransparencyAnchoring => {
+                let proof = ctx
+                    .transparency_proof
+                    .ok_or(HardwarePolicyError::TransparencyProofMissing)?;
+                let verifier = ctx
+                    .spv_verifier
+                    .ok_or(HardwarePolicyError::SpvVerifierMissing)?;
+                let event = ctx
+                    .transparency_event
+                    .ok_or(HardwarePolicyError::TransparencyEventMissing)?;
+
+                let event_hash = event
+                    .canonical_hash()
+                    .map_err(|_| HardwarePolicyError::TransparencySerializationFailed)?;
+                verifier
+                    .verify(proof, &event_hash)
+                    .map_err(HardwarePolicyError::SpvVerificationFailed)?;
+            }
+            HardwarePolicyRule::RequirePolicyEpoch(expected_epoch) => {
+                let evidence = ctx
+                    .runtime_attestation
+                    .ok_or(HardwarePolicyError::RuntimeAttestationEvidenceMissing)?;
+                if evidence.policy_epoch != *expected_epoch {
+                    return Err(HardwarePolicyError::PolicyEpochMismatch {
+                        expected: *expected_epoch,
+                        got: evidence.policy_epoch,
+                    });
+                }
+            }
         }
         Ok(())
     }
@@ -459,6 +799,8 @@ pub enum PolicyConflictError {
         profile_a: String,
         profile_b: String,
     },
+    /// Two or more rules require conflicting policy epochs.
+    ConflictingPolicyEpochs { epoch_a: u64, epoch_b: u64 },
 }
 
 impl core::fmt::Display for PolicyConflictError {
@@ -488,6 +830,10 @@ impl core::fmt::Display for PolicyConflictError {
             } => write!(
                 f,
                 "conflicting platform profiles required: {profile_a} vs {profile_b}"
+            ),
+            Self::ConflictingPolicyEpochs { epoch_a, epoch_b } => write!(
+                f,
+                "conflicting policy epochs required: {epoch_a} vs {epoch_b}"
             ),
         }
     }
@@ -553,9 +899,95 @@ pub enum HardwarePolicyError {
     BaselineRollbackDetected,
     /// Policy evaluation failed due to conflicts.
     PolicyConflict(PolicyConflictError),
+    /// Runtime attestation evidence is missing when required.
+    RuntimeAttestationEvidenceMissing,
+    /// Critical runtime drift detected.
+    CriticalRuntimeDriftDetected(RuntimeDriftReport),
+    /// IMA evidence is missing.
+    ImaEvidenceMissing,
+    /// IMA is disabled.
+    ImaDisabled,
+    /// IMA appraisal is disabled.
+    ImaAppraisalDisabled,
+    /// Continuous attestation session is missing.
+    ContinuousAttestationSessionMissing,
+    /// Continuous attestation session is inactive.
+    ContinuousAttestationSessionInactive,
+    /// Continuous attestation has expired.
+    ContinuousAttestationExpired {
+        last_seen: u64,
+        now: u64,
+        window: u64,
+    },
+    /// Replay detected during sequence monotonicity check.
+    ReplayDetected { got: u64, expected: u64 },
+    /// Sequence gap detected during sequence monotonicity check.
+    SequenceGapDetected { got: u64, expected: u64 },
+    /// Transparency proof is missing.
+    TransparencyProofMissing,
+    /// SPV verifier is missing.
+    SpvVerifierMissing,
+    /// Transparency event is missing.
+    TransparencyEventMissing,
+    /// Serialization of transparency event failed.
+    TransparencySerializationFailed,
+    /// SPV verification failed.
+    SpvVerificationFailed(pqrascv_bitcoin_anchor::proof::SpvError),
+    /// Policy epoch mismatch.
+    PolicyEpochMismatch { expected: u64, got: u64 },
+}
+
+impl HardwarePolicyError {
+    #[must_use]
+    pub fn decision_reason(&self) -> VerificationDecisionReason {
+        match self {
+            Self::BackendNotHardwareRooted(_) | Self::WrongBackendType { .. } => {
+                VerificationDecisionReason::UnsupportedVendor
+            }
+            Self::UnnormalizedPcrs
+            | Self::PcrSemanticAbsent(_)
+            | Self::PcrValueMismatch { .. }
+            | Self::MeasuredBootIncomplete(_)
+            | Self::BootChainFirmwareMismatch { .. }
+            | Self::BootChainBootloaderMismatch { .. }
+            | Self::BootChainKernelMismatch { .. }
+            | Self::BootChainEvidenceMissing => VerificationDecisionReason::CriticalDriftDetected,
+            Self::CounterNotHardwareBacked(_)
+            | Self::CounterTooLow { .. }
+            | Self::NonceBindingUnsupported => VerificationDecisionReason::UnsupportedVendor,
+            Self::SecureBootStateMismatch { .. } | Self::SecureBootEvidenceMissing => {
+                VerificationDecisionReason::SecureBootDisabled
+            }
+            Self::PlatformProfileMismatch { reason } => *reason,
+            Self::BaselineRollbackDetected => VerificationDecisionReason::BaselineRollbackDetected,
+            Self::PolicyConflict(_) => VerificationDecisionReason::InvalidPlatformProfile,
+            Self::RuntimeAttestationEvidenceMissing
+            | Self::ImaEvidenceMissing
+            | Self::ImaDisabled
+            | Self::ImaAppraisalDisabled => VerificationDecisionReason::RuntimeIntegrityUnavailable,
+            Self::CriticalRuntimeDriftDetected(_) => {
+                VerificationDecisionReason::CriticalRuntimeDrift
+            }
+            Self::ContinuousAttestationSessionMissing
+            | Self::ContinuousAttestationSessionInactive
+            | Self::ContinuousAttestationExpired { .. } => {
+                VerificationDecisionReason::ContinuousAttestationExpired
+            }
+            Self::ReplayDetected { .. } | Self::SequenceGapDetected { .. } => {
+                VerificationDecisionReason::InvalidAttestationSequence
+            }
+            Self::TransparencyProofMissing
+            | Self::SpvVerifierMissing
+            | Self::TransparencyEventMissing
+            | Self::TransparencySerializationFailed
+            | Self::SpvVerificationFailed(_) => VerificationDecisionReason::RuntimeMeasurementGap,
+            Self::PolicyEpochMismatch { .. } => VerificationDecisionReason::PolicyEpochMismatch,
+        }
+    }
 }
 
 impl core::fmt::Display for HardwarePolicyError {
+    #[allow(clippy::too_many_lines)]
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::BackendNotHardwareRooted(t) => {
@@ -613,6 +1045,59 @@ impl core::fmt::Display for HardwarePolicyError {
             }
             Self::BaselineRollbackDetected => f.write_str("baseline rollback detected"),
             Self::PolicyConflict(err) => write!(f, "policy conflict: {err}"),
+            Self::RuntimeAttestationEvidenceMissing => {
+                f.write_str("runtime attestation evidence is missing")
+            }
+            Self::CriticalRuntimeDriftDetected(report) => {
+                write!(
+                    f,
+                    "critical runtime drift detected: actual digest {:x?} does not match whitelist for workload {}",
+                    report.actual, report.workload
+                )
+            }
+            Self::ImaEvidenceMissing => f.write_str("IMA evidence is missing"),
+            Self::ImaDisabled => f.write_str("IMA is disabled"),
+            Self::ImaAppraisalDisabled => f.write_str("IMA appraisal is disabled"),
+            Self::ContinuousAttestationSessionMissing => {
+                f.write_str("continuous attestation session is missing")
+            }
+            Self::ContinuousAttestationSessionInactive => {
+                f.write_str("continuous attestation session is inactive")
+            }
+            Self::ContinuousAttestationExpired {
+                last_seen,
+                now,
+                window,
+            } => {
+                write!(
+                    f,
+                    "continuous attestation session expired: last seen at {last_seen}, now {now}, window {window}s"
+                )
+            }
+            Self::ReplayDetected { got, expected } => {
+                write!(
+                    f,
+                    "replay detected: sequence number got {got}, expected {expected}"
+                )
+            }
+            Self::SequenceGapDetected { got, expected } => {
+                write!(
+                    f,
+                    "sequence gap detected: sequence number got {got}, expected {expected}"
+                )
+            }
+            Self::TransparencyProofMissing => f.write_str("transparency proof is missing"),
+            Self::SpvVerifierMissing => f.write_str("SPV verifier is missing"),
+            Self::TransparencyEventMissing => f.write_str("transparency event is missing"),
+            Self::TransparencySerializationFailed => {
+                f.write_str("transparency event serialization failed")
+            }
+            Self::SpvVerificationFailed(err) => {
+                write!(f, "SPV verification failed: {err:?}")
+            }
+            Self::PolicyEpochMismatch { expected, got } => {
+                write!(f, "policy epoch mismatch: expected {expected}, got {got}")
+            }
         }
     }
 }
@@ -648,6 +1133,13 @@ mod tests {
             secure_boot: None,
             boot_chain: None,
             runtime_integrity: None,
+            runtime_attestation: None,
+            ima_evidence: None,
+            session: None,
+            timeline: None,
+            transparency_proof: None,
+            spv_verifier: None,
+            transparency_event: None,
         }
     }
 
@@ -1065,5 +1557,398 @@ mod tests {
             },
         ]);
         assert!(engine_valid.evaluate(&ctx).is_ok());
+    }
+
+    #[test]
+    fn test_ima_rules() {
+        let bank = measured_boot_bank();
+        let fw = sha3(0xab);
+
+        let engine = HardwarePolicyEngine::new(alloc::vec![HardwarePolicyRule::RequireIma]);
+
+        // 1. Missing IMA evidence
+        {
+            let ctx = good_ctx(&bank, &fw);
+            assert!(matches!(
+                engine.evaluate(&ctx),
+                Err(HardwarePolicyError::ImaEvidenceMissing)
+            ));
+        }
+
+        // 2. IMA disabled
+        {
+            let mut ctx = good_ctx(&bank, &fw);
+            let ima = ImaEvidence {
+                ima_enabled: false,
+                appraisal_enabled: false,
+                measurements: alloc::vec![],
+            };
+            ctx.ima_evidence = Some(&ima);
+            assert!(matches!(
+                engine.evaluate(&ctx),
+                Err(HardwarePolicyError::ImaDisabled)
+            ));
+        }
+
+        // 3. IMA appraisal disabled
+        {
+            let mut ctx = good_ctx(&bank, &fw);
+            let ima = ImaEvidence {
+                ima_enabled: true,
+                appraisal_enabled: false,
+                measurements: alloc::vec![],
+            };
+            ctx.ima_evidence = Some(&ima);
+            assert!(matches!(
+                engine.evaluate(&ctx),
+                Err(HardwarePolicyError::ImaAppraisalDisabled)
+            ));
+        }
+
+        // 4. IMA fully enabled
+        {
+            let mut ctx = good_ctx(&bank, &fw);
+            let ima = ImaEvidence {
+                ima_enabled: true,
+                appraisal_enabled: true,
+                measurements: alloc::vec![],
+            };
+            ctx.ima_evidence = Some(&ima);
+            assert!(engine.evaluate(&ctx).is_ok());
+        }
+    }
+
+    #[test]
+    fn test_continuous_attestation_rules() {
+        let bank = measured_boot_bank();
+        let fw = sha3(0xab);
+
+        let engine = HardwarePolicyEngine::new(alloc::vec![
+            HardwarePolicyRule::RequireContinuousAttestation {
+                expiration_window_secs: 60,
+                now_secs: 1000,
+            }
+        ]);
+
+        // 1. Session missing
+        {
+            let ctx = good_ctx(&bank, &fw);
+            assert!(matches!(
+                engine.evaluate(&ctx),
+                Err(HardwarePolicyError::ContinuousAttestationSessionMissing)
+            ));
+        }
+
+        // 2. Session inactive
+        {
+            let mut ctx = good_ctx(&bank, &fw);
+            let session = AttestationSession {
+                session_id: "session-1".to_string(),
+                device_id: "device-1".to_string(),
+                started_at: 900,
+                last_seen: 950,
+                sequence_number: 1,
+                active: false,
+            };
+            ctx.session = Some(&session);
+            assert!(matches!(
+                engine.evaluate(&ctx),
+                Err(HardwarePolicyError::ContinuousAttestationSessionInactive)
+            ));
+        }
+
+        // 3. Session expired (last_seen = 900, now = 1000, window = 60, drift = 100 > 60)
+        {
+            let mut ctx = good_ctx(&bank, &fw);
+            let session = AttestationSession {
+                session_id: "session-1".to_string(),
+                device_id: "device-1".to_string(),
+                started_at: 900,
+                last_seen: 900,
+                sequence_number: 1,
+                active: true,
+            };
+            ctx.session = Some(&session);
+            assert!(matches!(
+                engine.evaluate(&ctx),
+                Err(HardwarePolicyError::ContinuousAttestationExpired { .. })
+            ));
+        }
+
+        // 4. Valid active session (last_seen = 950, now = 1000, window = 60, drift = 50 <= 60)
+        {
+            let mut ctx = good_ctx(&bank, &fw);
+            let session = AttestationSession {
+                session_id: "session-1".to_string(),
+                device_id: "device-1".to_string(),
+                started_at: 900,
+                last_seen: 950,
+                sequence_number: 1,
+                active: true,
+            };
+            ctx.session = Some(&session);
+            assert!(engine.evaluate(&ctx).is_ok());
+        }
+    }
+
+    #[test]
+    fn test_sequence_monotonicity_rules() {
+        let bank = measured_boot_bank();
+        let fw = sha3(0xab);
+
+        let engine =
+            HardwarePolicyEngine::new(alloc::vec![HardwarePolicyRule::RequireSequenceMonotonicity]);
+
+        // 1. Runtime attestation evidence or session missing
+        {
+            let ctx = good_ctx(&bank, &fw);
+            assert!(matches!(
+                engine.evaluate(&ctx),
+                Err(HardwarePolicyError::RuntimeAttestationEvidenceMissing)
+            ));
+        }
+
+        {
+            let mut ctx = good_ctx(&bank, &fw);
+            let evidence = RuntimeAttestationEvidence {
+                measurements: alloc::vec![],
+                sequence_number: 2,
+                policy_epoch: 1,
+            };
+            ctx.runtime_attestation = Some(&evidence);
+            assert!(matches!(
+                engine.evaluate(&ctx),
+                Err(HardwarePolicyError::ContinuousAttestationSessionMissing)
+            ));
+        }
+
+        // 2. Replay detected (sequence_number <= session.sequence_number)
+        {
+            let mut ctx = good_ctx(&bank, &fw);
+            let evidence = RuntimeAttestationEvidence {
+                measurements: alloc::vec![],
+                sequence_number: 2,
+                policy_epoch: 1,
+            };
+            let session = AttestationSession {
+                session_id: "session-1".to_string(),
+                device_id: "device-1".to_string(),
+                started_at: 900,
+                last_seen: 950,
+                sequence_number: 2, // same as evidence
+                active: true,
+            };
+            ctx.runtime_attestation = Some(&evidence);
+            ctx.session = Some(&session);
+            assert!(matches!(
+                engine.evaluate(&ctx),
+                Err(HardwarePolicyError::ReplayDetected { .. })
+            ));
+        }
+
+        // 3. Sequence gap detected (sequence_number != session.sequence_number + 1)
+        {
+            let mut ctx = good_ctx(&bank, &fw);
+            let evidence = RuntimeAttestationEvidence {
+                measurements: alloc::vec![],
+                sequence_number: 4,
+                policy_epoch: 1,
+            };
+            let session = AttestationSession {
+                session_id: "session-1".to_string(),
+                device_id: "device-1".to_string(),
+                started_at: 900,
+                last_seen: 950,
+                sequence_number: 2,
+                active: true,
+            };
+            ctx.runtime_attestation = Some(&evidence);
+            ctx.session = Some(&session);
+            assert!(matches!(
+                engine.evaluate(&ctx),
+                Err(HardwarePolicyError::SequenceGapDetected { .. })
+            ));
+        }
+
+        // 4. Monotonic succession (sequence_number == session.sequence_number + 1)
+        {
+            let mut ctx = good_ctx(&bank, &fw);
+            let evidence = RuntimeAttestationEvidence {
+                measurements: alloc::vec![],
+                sequence_number: 3,
+                policy_epoch: 1,
+            };
+            let session = AttestationSession {
+                session_id: "session-1".to_string(),
+                device_id: "device-1".to_string(),
+                started_at: 900,
+                last_seen: 950,
+                sequence_number: 2,
+                active: true,
+            };
+            ctx.runtime_attestation = Some(&evidence);
+            ctx.session = Some(&session);
+            assert!(engine.evaluate(&ctx).is_ok());
+        }
+    }
+
+    #[test]
+    fn test_policy_epoch_rules() {
+        let bank = measured_boot_bank();
+        let fw = sha3(0xab);
+
+        let engine =
+            HardwarePolicyEngine::new(alloc::vec![HardwarePolicyRule::RequirePolicyEpoch(2)]);
+
+        // Mismatched epoch
+        {
+            let mut ctx = good_ctx(&bank, &fw);
+            let evidence = RuntimeAttestationEvidence {
+                measurements: alloc::vec![],
+                sequence_number: 1,
+                policy_epoch: 1,
+            };
+            ctx.runtime_attestation = Some(&evidence);
+            assert!(matches!(
+                engine.evaluate(&ctx),
+                Err(HardwarePolicyError::PolicyEpochMismatch {
+                    expected: 2,
+                    got: 1
+                })
+            ));
+        }
+
+        // Matching epoch
+        {
+            let mut ctx = good_ctx(&bank, &fw);
+            let evidence = RuntimeAttestationEvidence {
+                measurements: alloc::vec![],
+                sequence_number: 1,
+                policy_epoch: 2,
+            };
+            ctx.runtime_attestation = Some(&evidence);
+            assert!(engine.evaluate(&ctx).is_ok());
+        }
+    }
+
+    #[test]
+    fn test_transparency_anchoring_rules() {
+        use pqrascv_bitcoin_anchor::{
+            proof::TxMerklePath,
+            timeline::{TimelineInclusionProof, TimelineMerkleAggregator, TimelineSpvVerifier},
+        };
+
+        let bank = measured_boot_bank();
+        let fw = sha3(0xab);
+        let mut ctx = good_ctx(&bank, &fw);
+
+        let engine = HardwarePolicyEngine::new(alloc::vec![
+            HardwarePolicyRule::RequireTransparencyAnchoring
+        ]);
+
+        // 1. Missing proofs/verifier/event
+        assert!(matches!(
+            engine.evaluate(&ctx),
+            Err(HardwarePolicyError::TransparencyProofMissing)
+        ));
+
+        let event = TransparencyEvent {
+            timestamp: 1000,
+            device_id: "device-1".to_string(),
+            event_hash: sha3(0xee),
+        };
+        ctx.transparency_event = Some(&event);
+
+        let mut aggregator = TimelineMerkleAggregator::new();
+        let event_hash = event.canonical_hash().unwrap();
+        aggregator.add_event_hash(event_hash);
+        let timeline_merkle_root = aggregator.root().unwrap();
+        let event_merkle_path = aggregator.inclusion_proof(0).unwrap();
+
+        let root = [0xabu8; 32];
+        let mut block_header = alloc::vec![0u8; 80];
+        block_header[36..68].copy_from_slice(&root);
+
+        let proof = TimelineInclusionProof {
+            block_height: 90,
+            block_header: block_header.clone(),
+            tx_merkle_path: TxMerklePath {
+                txid: root,
+                steps: alloc::vec![],
+                block_merkle_root: root,
+            },
+            timeline_merkle_root,
+            event_merkle_path,
+        };
+        ctx.transparency_proof = Some(&proof);
+
+        let verifier = TimelineSpvVerifier::new(6, 100);
+        ctx.spv_verifier = Some(&verifier);
+
+        // All present and correct -> passes
+        assert!(engine.evaluate(&ctx).is_ok());
+
+        // Mismatched confirmations
+        let weak_verifier = TimelineSpvVerifier::new(20, 100);
+        ctx.spv_verifier = Some(&weak_verifier);
+        assert!(matches!(
+            engine.evaluate(&ctx),
+            Err(HardwarePolicyError::SpvVerificationFailed(_))
+        ));
+    }
+
+    #[test]
+    fn test_evaluate_runtime_report() {
+        let mut bank = TypedPcrBank::new();
+        bank.push(PcrMeasurement::new(0, PcrSemantic::Firmware, sha3(0x01)).unwrap());
+        bank.push(PcrMeasurement::new(1, PcrSemantic::Bootloader, sha3(0x02)).unwrap());
+        bank.push(PcrMeasurement::new(2, PcrSemantic::Kernel, sha3(0x03)).unwrap());
+        bank.push(PcrMeasurement::new(3, PcrSemantic::Initrd, sha3(0x04)).unwrap());
+
+        let fw = sha3(0x01);
+        let mut ctx = good_ctx(&bank, &fw);
+
+        let sb = SecureBootEvidence {
+            state: SecureBootState::Enabled,
+            db_hash: None,
+            dbx_hash: None,
+            mok_hash: None,
+        };
+        ctx.secure_boot = Some(&sb);
+
+        // Create engine with a platform profile rule + IMA rule
+        let profile = crate::profiles::sovereign_bitcoin_node_profile();
+        let engine = HardwarePolicyEngine::new(alloc::vec![
+            HardwarePolicyRule::RequirePlatformProfile {
+                profile,
+                drift_mode: DriftPolicyMode::Enforcing,
+                upgrade_baseline: None,
+            },
+            HardwarePolicyRule::RequireIma,
+        ]);
+
+        let report = engine.evaluate_runtime_report(&ctx);
+        // overall is not trusted because IMA is missing
+        assert!(!report.trusted);
+
+        // Check that trust domains are evaluated independently
+        let ima_eval = report
+            .evaluations
+            .iter()
+            .find(|e| e.domain == TrustDomain::RuntimeIntegrity)
+            .unwrap();
+        assert!(!ima_eval.trusted);
+        assert_eq!(
+            ima_eval.reasons,
+            alloc::vec![VerificationDecisionReason::RuntimeIntegrityUnavailable]
+        );
+
+        let mb_eval = report
+            .evaluations
+            .iter()
+            .find(|e| e.domain == TrustDomain::MeasuredBoot)
+            .unwrap();
+        // MeasuredBoot domain passes platform profile PCR checks (even though IMA runtime check fails!)
+        assert!(mb_eval.trusted);
     }
 }

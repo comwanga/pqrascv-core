@@ -795,6 +795,7 @@ version = "0.1.0"
 dependencies = [
  "ciborium",
  "p256",
+ "pqrascv-bitcoin-anchor",
  "rsa",
  "serde",
  "serde_bytes",

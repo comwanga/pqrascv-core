@@ -6,13 +6,13 @@
 
 use libfuzzer_sys::fuzz_target;
 use pqrascv_hardware::{
-    policy::{HardwarePolicyEngine, HardwarePolicyRule, HardwarePolicyContext},
     backend::HardwareBackendType,
     counter::CounterEvidence,
-    pcr::{TypedPcrBank, PcrMeasurement, PcrSemantic},
-    digest::{TypedDigest, DigestAlgorithm},
-    secure_boot::{SecureBootState, SecureBootEvidence},
+    digest::{DigestAlgorithm, TypedDigest},
     drift::DriftPolicyMode,
+    pcr::{PcrMeasurement, PcrSemantic, TypedPcrBank},
+    policy::{HardwarePolicyContext, HardwarePolicyEngine, HardwarePolicyRule},
+    secure_boot::{SecureBootEvidence, SecureBootState},
 };
 
 fuzz_target!(|data: &[u8]| {
@@ -25,7 +25,7 @@ fuzz_target!(|data: &[u8]| {
     let sb_byte = data[1];
     let drift_byte = data[2];
     let counter_val = u64::from(data[3]);
-    
+
     let backend_type = match backend_byte % 6 {
         0 => HardwareBackendType::Tpm2,
         1 => HardwareBackendType::Dice,
@@ -65,9 +65,13 @@ fuzz_target!(|data: &[u8]| {
         };
         let mut digest_val = [0u8; 32];
         digest_val.copy_from_slice(&data[offset + 1..offset + 33]);
-        
+
         let pcr_index = semantic.canonical_slot() as u8;
-        if let Ok(m) = PcrMeasurement::new(pcr_index, semantic, TypedDigest::new(DigestAlgorithm::Sha3_256, digest_val)) {
+        if let Ok(m) = PcrMeasurement::new(
+            pcr_index,
+            semantic,
+            TypedDigest::new(DigestAlgorithm::Sha3_256, digest_val),
+        ) {
             bank.push(m);
         }
         offset += 34;
@@ -90,6 +94,13 @@ fuzz_target!(|data: &[u8]| {
         secure_boot: Some(&secure_boot),
         boot_chain: None,
         runtime_integrity: None,
+        runtime_attestation: None,
+        ima_evidence: None,
+        session: None,
+        timeline: None,
+        transparency_proof: None,
+        spv_verifier: None,
+        transparency_event: None,
     };
 
     // Build some rules using the input bytes
@@ -102,7 +113,7 @@ fuzz_target!(|data: &[u8]| {
     ];
 
     let engine = HardwarePolicyEngine::new(rules);
-    
+
     // Check conflicts - must not panic
     let _ = engine.detect_conflicts();
 

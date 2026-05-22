@@ -7,6 +7,7 @@ use crate::baseline::{ExpectedPcr, PcrBaseline};
 use crate::drift::{DriftDetectionEngine, DriftPolicyMode, DriftReport, DriftSeverity};
 use crate::pcr::PcrSemantic;
 use crate::secure_boot::{SecureBootEvidence, SecureBootState};
+use crate::trust_domains::VerificationDecisionReason;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -149,26 +150,7 @@ impl PlatformProfile {
     }
 }
 
-/// Explicit reasoning for an attestation verification decision.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum VerificationDecisionReason {
-    /// Verification passed all checks.
-    Success,
-    /// Secure Boot is required but was disabled or in setup mode.
-    SecureBootDisabled,
-    /// An unauthorized firmware or policy rollback was detected.
-    BaselineRollbackDetected,
-    /// The firmware generation reported is completely unknown.
-    UnknownFirmwareGeneration,
-    /// Measurement drift exceeding permissible bounds was detected.
-    CriticalDriftDetected,
-    /// An expected OS Kernel measurement was missing from the evidence.
-    MissingKernelMeasurement,
-    /// The supplied Platform Profile is malformed or invalid.
-    InvalidPlatformProfile,
-    /// The hardware vendor is not supported by the current policy.
-    UnsupportedVendor,
-}
+// VerificationDecisionReason is imported from trust_domains to avoid duplication.
 
 /// Explanatory report resulting from a platform-aware attestation evaluation.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -188,4 +170,15 @@ pub struct PlatformVerificationReport {
     pub warnings: Vec<String>,
     /// Explicit reasoning for the final attestation decision.
     pub decision_reason: VerificationDecisionReason,
+}
+
+/// Detailed runtime verification report detailing trust domain evaluations.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RuntimeVerificationReport {
+    /// Overall decision: true if all evaluated trust domains are trusted.
+    pub trusted: bool,
+    /// Detailed evaluations for each trust domain.
+    pub evaluations: Vec<crate::trust_domains::TrustEvaluation>,
+    /// Accumulated warnings.
+    pub warnings: Vec<String>,
 }
