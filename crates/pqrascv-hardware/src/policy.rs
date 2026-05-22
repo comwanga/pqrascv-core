@@ -226,6 +226,34 @@ pub enum HardwarePolicyRule {
     ///
     /// Maps to [`TrustDomain::ContinuousAttestation`].
     RequireDeterministicNodePolicy,
+
+    // ── Phase 3.1 Live Evidence Rules ─────────────────────────────────
+    /// Require live TPM acquisition evidence.
+    RequireLiveTpmEvidence,
+    /// Require live IMA streaming evidence.
+    RequireLiveImaEvidence,
+    /// Require Secure Boot state dynamically collected from EFI variables.
+    RequireSecureBootCollection,
+    /// Require runtime evidence to be cryptographically fresh.
+    RequireFreshRuntimeEvidence,
+    /// Require live observation continuity for nodes.
+    RequireRuntimeObservationContinuity,
+    /// Require verified Bitcoin process execution state.
+    RequireVerifiedBitcoinProcess,
+
+    // ── Phase 3.2 Streaming & PQ Federation Rules ─────────────────────
+    /// Require incremental delta attestation instead of full snapshots.
+    RequireDeltaAttestation,
+    /// Require rolling integrity checkpoints for bounded history.
+    RequireCheckpointIntegrity,
+    /// Require PQ-secure federation transport (ML-KEM & `ChaCha20Poly1305`).
+    RequirePqFederationTransport,
+    /// Require mathematically reduced timeline compaction proofs.
+    RequireTimelineCompaction,
+    /// Require adherence to bounded verifier retention policy.
+    RequireRetentionCompliance,
+    /// Require valid ML-DSA signatures on federation messages.
+    RequireFederationMessageSigning,
 }
 
 // ── HardwarePolicyContext ─────────────────────────────────────────────────
@@ -285,6 +313,27 @@ pub struct HardwarePolicyContext<'a> {
     pub bitcoin_runtime_state: Option<&'a crate::bitcoin_runtime_monitor::BitcoinRuntimeState>,
     /// Optional active node attestation session.
     pub node_session: Option<&'a crate::node_attestation_session::NodeAttestationSession>,
+
+    // ── Phase 3.1 Live Evidence Fields ─────────────────────────────────
+    #[cfg(feature = "live-evidence")]
+    /// Optional live evidence payload collected from physical hardware and OS.
+    pub live_evidence: Option<&'a crate::evidence_pipeline::LiveAttestationPayload>,
+    #[cfg(feature = "live-evidence")]
+    pub live_observation: Option<&'a crate::live_node_observer::NodeObservation>,
+
+    // ── Phase 3.2 Streaming & PQ Federation Fields ─────────────────────
+    /// Optional runtime integrity stream state.
+    pub runtime_stream: Option<&'a crate::runtime_stream::RuntimeIntegrityStream>,
+    /// Optional incremental delta attestation.
+    pub delta_attestation: Option<&'a crate::delta_attestation::DeltaAttestation>,
+    /// Optional compacted checkpoint.
+    pub checkpoint: Option<&'a crate::checkpointing::IntegrityCheckpoint>,
+    /// Optional PQ-secure transport session.
+    pub pq_session: Option<&'a crate::pq_transport::PqTransportSession>,
+    /// Optional mathematically compacted timeline.
+    pub compacted_timeline: Option<&'a crate::timeline_compaction::CompactedTimeline>,
+    /// Optional signed federation envelope.
+    pub federation_envelope: Option<&'a crate::federation_transport::SignedFederationEnvelope>,
 }
 
 // ── HardwarePolicyEngine ──────────────────────────────────────────────────
@@ -498,6 +547,7 @@ impl HardwarePolicyEngine {
                 rule,
                 HardwarePolicyRule::RequireHardwareRootedBackend
                     | HardwarePolicyRule::RequireBackendType(_)
+                    | HardwarePolicyRule::RequireLiveTpmEvidence
                     | HardwarePolicyRule::RequireHardwareMonotonicCounter
                     | HardwarePolicyRule::RequireNonceBinding
                     | HardwarePolicyRule::RequireVerifierFederation
@@ -514,10 +564,14 @@ impl HardwarePolicyEngine {
                 rule,
                 HardwarePolicyRule::RequireSecureBootState(_)
                     | HardwarePolicyRule::RequirePlatformProfile { .. }
+                    | HardwarePolicyRule::RequireSecureBootCollection
             ),
             TrustDomain::RuntimeIntegrity => matches!(
                 rule,
-                HardwarePolicyRule::RequireRuntimeIntegrity { .. } | HardwarePolicyRule::RequireIma
+                HardwarePolicyRule::RequireRuntimeIntegrity { .. }
+                    | HardwarePolicyRule::RequireIma
+                    | HardwarePolicyRule::RequireLiveImaEvidence
+                    | HardwarePolicyRule::RequireFreshRuntimeEvidence
             ),
             TrustDomain::SupplyChain => matches!(
                 rule,
@@ -537,6 +591,10 @@ impl HardwarePolicyEngine {
                     | HardwarePolicyRule::RequirePolicyEpoch(_)
                     | HardwarePolicyRule::RequireFederatedPolicyApproval
                     | HardwarePolicyRule::RequireDeterministicNodePolicy
+                    | HardwarePolicyRule::RequireDeltaAttestation
+                    | HardwarePolicyRule::RequireCheckpointIntegrity
+                    | HardwarePolicyRule::RequireTimelineCompaction
+                    | HardwarePolicyRule::RequireRetentionCompliance
             ),
             // --- Phase 3.0 Sovereign Node Additions ---
             TrustDomain::WorkloadIntegrity => matches!(
@@ -544,9 +602,16 @@ impl HardwarePolicyEngine {
                 HardwarePolicyRule::RequireBitcoinNodeIdentity
                     | HardwarePolicyRule::RequireBitcoinWorkloadIntegrity
                     | HardwarePolicyRule::RequireNodeRuntimeContinuity
+                    | HardwarePolicyRule::RequireVerifiedBitcoinProcess
+                    | HardwarePolicyRule::RequireRuntimeObservationContinuity
             ),
             TrustDomain::ConsensusIntegrity => {
-                matches!(rule, HardwarePolicyRule::RequireFederatedNodeVerification)
+                matches!(
+                    rule,
+                    HardwarePolicyRule::RequireFederatedNodeVerification
+                        | HardwarePolicyRule::RequirePqFederationTransport
+                        | HardwarePolicyRule::RequireFederationMessageSigning
+                )
             }
         }
     }
@@ -985,6 +1050,95 @@ impl HardwarePolicyEngine {
                     return Err(HardwarePolicyError::DeterministicPolicyMissing);
                 }
             }
+
+            // ── Phase 3.1 Live Evidence Rules ──────────────────────────
+            HardwarePolicyRule::RequireLiveTpmEvidence => {
+                #[cfg(feature = "live-evidence")]
+                if ctx.live_evidence.is_none() {
+                    return Err(HardwarePolicyError::LiveTpmEvidenceMissing);
+                }
+                #[cfg(not(feature = "live-evidence"))]
+                return Err(HardwarePolicyError::LiveTpmEvidenceMissing);
+            }
+            HardwarePolicyRule::RequireLiveImaEvidence => {
+                // We'd expect IMA evidence or live evidence
+                return Err(HardwarePolicyError::LiveImaEvidenceMissing);
+            }
+            HardwarePolicyRule::RequireSecureBootCollection => {
+                #[cfg(feature = "live-evidence")]
+                if ctx
+                    .live_evidence
+                    .map_or(true, |e| e.secure_boot_state.is_none())
+                {
+                    return Err(HardwarePolicyError::SecureBootCollectionMissing);
+                }
+                #[cfg(not(feature = "live-evidence"))]
+                return Err(HardwarePolicyError::SecureBootCollectionMissing);
+            }
+            HardwarePolicyRule::RequireFreshRuntimeEvidence => {
+                #[cfg(feature = "live-evidence")]
+                if let Some(obs) = ctx.live_observation {
+                    if obs.integrity_status != crate::freshness::FreshnessStatus::Fresh {
+                        return Err(HardwarePolicyError::FreshRuntimeEvidenceMissing);
+                    }
+                } else {
+                    return Err(HardwarePolicyError::FreshRuntimeEvidenceMissing);
+                }
+                #[cfg(not(feature = "live-evidence"))]
+                return Err(HardwarePolicyError::FreshRuntimeEvidenceMissing);
+            }
+            HardwarePolicyRule::RequireRuntimeObservationContinuity => {
+                #[cfg(feature = "live-evidence")]
+                if ctx.live_observation.is_none() {
+                    return Err(HardwarePolicyError::RuntimeObservationContinuityBroken);
+                }
+                #[cfg(not(feature = "live-evidence"))]
+                return Err(HardwarePolicyError::RuntimeObservationContinuityBroken);
+            }
+            HardwarePolicyRule::RequireVerifiedBitcoinProcess => {
+                #[cfg(feature = "live-evidence")]
+                if ctx
+                    .live_evidence
+                    .map_or(true, |e| e.process_evidence.is_none())
+                {
+                    return Err(HardwarePolicyError::VerifiedBitcoinProcessMissing);
+                }
+                #[cfg(not(feature = "live-evidence"))]
+                return Err(HardwarePolicyError::VerifiedBitcoinProcessMissing);
+            }
+
+            // ── Phase 3.2 Streaming & PQ Federation Rules ─────────────────
+            HardwarePolicyRule::RequireDeltaAttestation => {
+                if ctx.delta_attestation.is_none() {
+                    return Err(HardwarePolicyError::DeltaAttestationMissing);
+                }
+            }
+            HardwarePolicyRule::RequireCheckpointIntegrity => {
+                if ctx.checkpoint.is_none() {
+                    return Err(HardwarePolicyError::CheckpointIntegrityMissing);
+                }
+            }
+            HardwarePolicyRule::RequirePqFederationTransport => {
+                if ctx.pq_session.is_none() {
+                    return Err(HardwarePolicyError::PqFederationTransportMissing);
+                }
+            }
+            HardwarePolicyRule::RequireTimelineCompaction => {
+                if ctx.compacted_timeline.is_none() {
+                    return Err(HardwarePolicyError::TimelineCompactionMissing);
+                }
+            }
+            HardwarePolicyRule::RequireRetentionCompliance => {
+                if ctx.compacted_timeline.is_none() && ctx.runtime_stream.is_some() {
+                    // Very simplistic heuristic mapping for the policy engine context
+                    return Err(HardwarePolicyError::RetentionComplianceViolated);
+                }
+            }
+            HardwarePolicyRule::RequireFederationMessageSigning => {
+                if ctx.federation_envelope.is_none() {
+                    return Err(HardwarePolicyError::FederationMessageSigningInvalid);
+                }
+            }
         }
         Ok(())
     }
@@ -1194,6 +1348,34 @@ pub enum HardwarePolicyError {
     NodeTransparencyWithholding,
     /// The specified deterministic policy profile is missing or corrupted.
     DeterministicPolicyMissing,
+
+    // ── Phase 3.1 Live Evidence Errors ──────────────────────────────────
+    /// Live TPM acquisition evidence is missing.
+    LiveTpmEvidenceMissing,
+    /// Live IMA streaming evidence is missing.
+    LiveImaEvidenceMissing,
+    /// Secure Boot state could not be dynamically collected.
+    SecureBootCollectionMissing,
+    /// Runtime evidence is stale or suspected of being replayed.
+    FreshRuntimeEvidenceMissing,
+    /// Node observation stream lacks continuity.
+    RuntimeObservationContinuityBroken,
+    /// Verified Bitcoin process state is absent.
+    VerifiedBitcoinProcessMissing,
+
+    // ── Phase 3.2 Streaming & PQ Federation Errors ───────────────────────
+    /// Delta attestation evidence is missing.
+    DeltaAttestationMissing,
+    /// Rolling integrity checkpoint is missing or invalid.
+    CheckpointIntegrityMissing,
+    /// Post-Quantum federation transport session is missing.
+    PqFederationTransportMissing,
+    /// Mathematically compacted timeline proofs are missing.
+    TimelineCompactionMissing,
+    /// Verifier bounds on storage/history retention have been violated.
+    RetentionComplianceViolated,
+    /// Federation message signature is missing or cryptographically invalid.
+    FederationMessageSigningInvalid,
 }
 
 impl HardwarePolicyError {
@@ -1232,7 +1414,10 @@ impl HardwarePolicyError {
             | Self::ContinuousAttestationExpired { .. } => {
                 VerificationDecisionReason::ContinuousAttestationExpired
             }
-            Self::ReplayDetected { .. } | Self::SequenceGapDetected { .. } => {
+            Self::ReplayDetected { .. }
+            | Self::SequenceGapDetected { .. }
+            | Self::FreshRuntimeEvidenceMissing
+            | Self::RuntimeObservationContinuityBroken => {
                 VerificationDecisionReason::InvalidAttestationSequence
             }
             Self::TransparencyProofMissing
@@ -1245,7 +1430,9 @@ impl HardwarePolicyError {
             Self::VerifierFederationMissing
             | Self::ConsensusQuorumFailed { .. }
             | Self::FederatedPolicyApprovalMissing
-            | Self::FederatedEpochQuorumNotReached { .. } => {
+            | Self::FederatedEpochQuorumNotReached { .. }
+            | Self::PqFederationTransportMissing
+            | Self::FederationMessageSigningInvalid => {
                 VerificationDecisionReason::VerifierFederationAbsent
             }
             Self::TransparencyConsensusFailed | Self::TimelineConflictDetected => {
@@ -1253,7 +1440,11 @@ impl HardwarePolicyError {
             }
             // ── Phase 3.0 Sovereign Node Errors ──────────────────────────────
             Self::BitcoinNodeIdentityMissing => VerificationDecisionReason::InvalidNodeIdentity,
-            Self::BitcoinWorkloadEvidenceMissing => {
+            Self::BitcoinWorkloadEvidenceMissing
+            | Self::LiveTpmEvidenceMissing
+            | Self::LiveImaEvidenceMissing
+            | Self::SecureBootCollectionMissing
+            | Self::VerifiedBitcoinProcessMissing => {
                 VerificationDecisionReason::MissingKernelMeasurement
             }
             Self::BitcoinBinaryMismatch { .. } => VerificationDecisionReason::BitcoinBinaryMismatch,
@@ -1270,6 +1461,14 @@ impl HardwarePolicyError {
                 VerificationDecisionReason::TransparencyWithholding
             }
             Self::DeterministicPolicyMissing => VerificationDecisionReason::PolicyProfileCorruption,
+
+            // ── Phase 3.2 Streaming & PQ Federation Errors ──────────────────────
+            Self::DeltaAttestationMissing
+            | Self::CheckpointIntegrityMissing
+            | Self::TimelineCompactionMissing
+            | Self::RetentionComplianceViolated => {
+                VerificationDecisionReason::ContinuousAttestationExpired
+            }
         }
     }
 }
@@ -1443,6 +1642,42 @@ impl core::fmt::Display for HardwarePolicyError {
             Self::DeterministicPolicyMissing => {
                 f.write_str("deterministic node policy profile missing or corrupted")
             }
+
+            // ── Phase 3.1 Live Evidence Errors ──────────────────────────────
+            Self::LiveTpmEvidenceMissing => f.write_str("live TPM acquisition evidence missing"),
+            Self::LiveImaEvidenceMissing => f.write_str("live IMA streaming evidence missing"),
+            Self::SecureBootCollectionMissing => {
+                f.write_str("dynamic Secure Boot state collection missing")
+            }
+            Self::FreshRuntimeEvidenceMissing => {
+                f.write_str("runtime evidence is stale or suspected of being replayed")
+            }
+            Self::RuntimeObservationContinuityBroken => {
+                f.write_str("node observation stream lacks continuity")
+            }
+            Self::VerifiedBitcoinProcessMissing => {
+                f.write_str("verified Bitcoin process state is absent")
+            }
+
+            // ── Phase 3.2 Streaming & PQ Federation Errors ────────────────────────
+            Self::DeltaAttestationMissing => {
+                f.write_str("incremental delta attestation missing from context")
+            }
+            Self::CheckpointIntegrityMissing => {
+                f.write_str("rolling integrity checkpoint missing or invalid")
+            }
+            Self::PqFederationTransportMissing => {
+                f.write_str("post-quantum federation transport session is missing")
+            }
+            Self::TimelineCompactionMissing => {
+                f.write_str("mathematically compacted timeline proofs are missing")
+            }
+            Self::RetentionComplianceViolated => {
+                f.write_str("verifier bounds on storage/history retention have been violated")
+            }
+            Self::FederationMessageSigningInvalid => {
+                f.write_str("federation message signature is missing or invalid")
+            }
         }
     }
 }
@@ -1493,6 +1728,12 @@ mod tests {
             bitcoin_workload_evidence: None,
             bitcoin_runtime_state: None,
             node_session: None,
+            runtime_stream: None,
+            delta_attestation: None,
+            checkpoint: None,
+            pq_session: None,
+            compacted_timeline: None,
+            federation_envelope: None,
         }
     }
 

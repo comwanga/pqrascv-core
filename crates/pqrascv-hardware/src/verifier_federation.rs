@@ -178,6 +178,7 @@ mod tests {
             verifier_id: id.into(),
             organization: "Org".into(),
             public_key: vec![1, 2, 3],
+            ml_kem_public_key: None,
             capabilities: vec![VerifierCapability::HardwareVerification],
         }
     }

@@ -27,6 +27,10 @@ ciborium    = { version = "0.2",         default-features = false }
 # Post-Quantum Cryptography (RustCrypto — pinned to exact version; update only after security review)
 # Audit finding #7 fix: exact version pin prevents silent pre-release upgrades.
 ml-dsa      = { version = "=0.1.0-rc.8",  default-features = false, features = ["rand_core"] }
+ml-kem      = { version = "=0.3.2",  default-features = false }
+
+# Symmetric Encryption (AEAD)
+chacha20poly1305 = { version = "0.10",    default-features = false, features = ["alloc"] }
 
 # Hashing
 sha3        = { version = "0.10",        default-features = false }

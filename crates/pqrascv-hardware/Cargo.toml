@@ -16,6 +16,8 @@ std     = []
 unsafe-test-backend = []
 # Enables cryptographic AK signature verification (RSA-PSS, ECDSA P-256).
 # Requires std. Without this flag, only structural verification is available.
+# Enables live evidence acquisition (TPM, IMA, procfs). Linux only.
+live-evidence = ["std", "dep:tss-esapi"]
 tpm-crypto = ["std", "dep:p256", "dep:rsa", "dep:signature"]
 
 [dependencies]
@@ -26,8 +28,14 @@ sha2        = { workspace = true }
 zeroize     = { workspace = true }
 ciborium    = { workspace = true }
 pqrascv-bitcoin-anchor = { path = "../bitcoin-anchor", version = "0.1.0", default-features = false }
+ml-kem      = { workspace = true }
+ml-dsa      = { workspace = true }
+chacha20poly1305 = { workspace = true }
 
 # TPM cryptographic verification (tpm-crypto feature only)
 p256        = { version = "0.13", default-features = false, features = ["ecdsa", "pkcs8"], optional = true }
 rsa         = { version = "0.9",  default-features = false, features = ["sha2"],           optional = true }
 signature   = { version = "2",    default-features = false,                                optional = true }
+
+# Live Evidence Acquisition
+tss-esapi   = { workspace = true, optional = true }
