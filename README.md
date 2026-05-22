@@ -57,6 +57,17 @@ separately bolted-on components.
 
 ---
 
+## Phase 3.0: Sovereign Bitcoin Node Reference Architecture
+
+PQ-RASCV now ships with a complete reference architecture for **Sovereign Bitcoin Nodes**, extending its generalized hardware attestation into domain-specific continuous trust verification for Bitcoin infrastructure:
+
+- **Bitcoin Node Identity & Workload Integrity** — Verifies `bitcoind` binary hashes, `bitcoin.conf` states, and chainstate integrity directly bound to TPM/hardware measurements.
+- **Node Runtime Continuity** — Continuously monitors and attests to active node behavior (mempool status, connected peers, block tip height) detecting runtime drift.
+- **Distributed Verifier Consensus** — `VerifierOrchestrator` allows a federation of verifiers to vote on node trust state using deterministic quorum policies (Majority, Unanimous, Threshold).
+- **Transparency Anchoring** — `pqrascv-bitcoin-anchor` provides OP_RETURN serialization to commit final `AttestedNodeReport` hashes onto the Bitcoin blockchain or transparency logs, eliminating split-brain attestation.
+
+---
+
 ## Quick Start
 
 ```toml
@@ -280,9 +291,9 @@ Measurement latency on Cortex-M4 @ 168 MHz: < 1 ms (Software RoT, 64 KB firmware
 | ML-KEM-768 encapsulation | CBOR COSE signatures (RFC 9052) |
 | Software / TPM 2.0 / DICE backends | AMD SEV-SNP & Intel TDX backends |
 | SLSA v1 provenance + SBOM hash | `heapless` allocation-free quote assembly |
-| Reference verifier (`pqrascv-verifier`) | OP-TEE / TrustZone backend |
-| `no_std` on Cortex-M, RISC-V, WASM | CLI prover + verifier binary |
-| CI: cross-compile, swtpm, audit, MSRV | Stable 1.0 API |
+| Sovereign Bitcoin Node Architecture | OP-TEE / TrustZone backend |
+| Verifier Federation & Consensus | CLI prover + verifier binary |
+| Bitcoin Transparency Anchoring | Stable 1.0 API |
 
 ---
 
