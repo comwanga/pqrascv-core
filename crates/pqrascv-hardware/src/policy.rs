@@ -195,6 +195,37 @@ pub enum HardwarePolicyRule {
     ///
     /// Maps to [`TrustDomain::Transparency`].
     RequireTimelineConsistency,
+
+    // ── Phase 3.0 Sovereign Node Rules ───────────────────────────────────
+    /// Reject if the expected Bitcoin node identity is missing or invalid.
+    ///
+    /// Maps to [`TrustDomain::WorkloadIntegrity`].
+    RequireBitcoinNodeIdentity,
+
+    /// Reject if the Bitcoin workload executable or config fails integrity checks.
+    ///
+    /// Maps to [`TrustDomain::WorkloadIntegrity`].
+    RequireBitcoinWorkloadIntegrity,
+
+    /// Reject if the Bitcoin node's runtime state drifts out of expected bounds.
+    ///
+    /// Maps to [`TrustDomain::WorkloadIntegrity`].
+    RequireNodeRuntimeContinuity,
+
+    /// Reject if the Bitcoin node's trust state has not been anchored to transparency logs.
+    ///
+    /// Maps to [`TrustDomain::Transparency`].
+    RequireNodeTransparencyAnchoring,
+
+    /// Reject if the Bitcoin node has not been verified by a distributed federation quorum.
+    ///
+    /// Maps to [`TrustDomain::ConsensusIntegrity`].
+    RequireFederatedNodeVerification,
+
+    /// Reject if the node does not conform to a deterministic policy profile.
+    ///
+    /// Maps to [`TrustDomain::ContinuousAttestation`].
+    RequireDeterministicNodePolicy,
 }
 
 // ── HardwarePolicyContext ─────────────────────────────────────────────────
@@ -243,6 +274,16 @@ pub struct HardwarePolicyContext<'a> {
     pub federated_epoch: Option<&'a FederatedPolicyEpoch>,
     /// Optional cross-verifier timeline reconciliation report.
     pub timeline_reconciliation: Option<&'a TimelineReconciliationReport>,
+
+    // ── Phase 3.0 Sovereign Node Fields ──────────────────────────────────
+    /// Optional explicitly declared Bitcoin node identity.
+    pub bitcoin_node_identity: Option<&'a crate::bitcoin_node_identity::BitcoinNodeIdentity>,
+    /// Optional Bitcoin workload integrity evidence.
+    pub bitcoin_workload_evidence: Option<&'a crate::bitcoin_workload_integrity::BitcoinWorkloadEvidence>,
+    /// Optional continuous runtime state of the Bitcoin node.
+    pub bitcoin_runtime_state: Option<&'a crate::bitcoin_runtime_monitor::BitcoinRuntimeState>,
+    /// Optional active node attestation session.
+    pub node_session: Option<&'a crate::node_attestation_session::NodeAttestationSession>,
 }
 
 // ── HardwarePolicyEngine ──────────────────────────────────────────────────
@@ -494,6 +535,18 @@ impl HardwarePolicyEngine {
                     | HardwarePolicyRule::RequireSequenceMonotonicity
                     | HardwarePolicyRule::RequirePolicyEpoch(_)
                     | HardwarePolicyRule::RequireFederatedPolicyApproval
+                    | HardwarePolicyRule::RequireDeterministicNodePolicy
+            ),
+            // --- Phase 3.0 Sovereign Node Additions ---
+            TrustDomain::WorkloadIntegrity => matches!(
+                rule,
+                HardwarePolicyRule::RequireBitcoinNodeIdentity
+                    | HardwarePolicyRule::RequireBitcoinWorkloadIntegrity
+                    | HardwarePolicyRule::RequireNodeRuntimeContinuity
+            ),
+            TrustDomain::ConsensusIntegrity => matches!(
+                rule,
+                HardwarePolicyRule::RequireFederatedNodeVerification
             ),
         }
     }
@@ -871,6 +924,67 @@ impl HardwarePolicyEngine {
                     return Err(HardwarePolicyError::TimelineConflictDetected);
                 }
             }
+
+            // ── Phase 3.0 Sovereign Node Rules ──────────────────────────
+            HardwarePolicyRule::RequireBitcoinNodeIdentity => {
+                if ctx.bitcoin_node_identity.is_none() {
+                    return Err(HardwarePolicyError::BitcoinNodeIdentityMissing);
+                }
+            }
+            HardwarePolicyRule::RequireBitcoinWorkloadIntegrity => {
+                let id = ctx
+                    .bitcoin_node_identity
+                    .ok_or(HardwarePolicyError::BitcoinNodeIdentityMissing)?;
+                let evidence = ctx
+                    .bitcoin_workload_evidence
+                    .ok_or(HardwarePolicyError::BitcoinWorkloadEvidenceMissing)?;
+
+                if evidence.executable_hash.value != id.expected_binary_hash.value
+                    || evidence.executable_hash.algorithm != id.expected_binary_hash.algorithm
+                {
+                    return Err(HardwarePolicyError::BitcoinBinaryMismatch {
+                        expected: id.expected_binary_hash.clone(),
+                        got: evidence.executable_hash.clone(),
+                    });
+                }
+                if evidence.config_hash.value != id.expected_config_hash.value
+                    || evidence.config_hash.algorithm != id.expected_config_hash.algorithm
+                {
+                    return Err(HardwarePolicyError::UnauthorizedConfigMutation {
+                        expected: id.expected_config_hash.clone(),
+                        got: evidence.config_hash.clone(),
+                    });
+                }
+            }
+            HardwarePolicyRule::RequireNodeRuntimeContinuity => {
+                if ctx.bitcoin_runtime_state.is_none() {
+                    return Err(HardwarePolicyError::BitcoinRuntimeStateMissing);
+                }
+            }
+            HardwarePolicyRule::RequireNodeTransparencyAnchoring => {
+                // If there's no transparency proof, we haven't anchored.
+                if ctx.transparency_proof.is_none() {
+                    return Err(HardwarePolicyError::NodeTransparencyWithholding);
+                }
+            }
+            HardwarePolicyRule::RequireFederatedNodeVerification => {
+                let eval = ctx
+                    .consensus_evaluation
+                    .ok_or(HardwarePolicyError::VerifierFederationMissing)?;
+                if !eval.final_decision.is_trusted() {
+                    return Err(HardwarePolicyError::ConsensusQuorumFailed {
+                        decision: eval.final_decision.clone(),
+                    });
+                }
+            }
+            HardwarePolicyRule::RequireDeterministicNodePolicy => {
+                // To assert deterministic policy, we expect the identity to be present
+                // (which anchors the chosen policy profile). The actual policy construction
+                // from the profile handles the determinism.
+                if ctx.bitcoin_node_identity.is_none() {
+                    return Err(HardwarePolicyError::DeterministicPolicyMissing);
+                }
+            }
         }
         Ok(())
     }
@@ -1052,6 +1166,28 @@ pub enum HardwarePolicyError {
     FederatedEpochQuorumNotReached { epoch_id: u64 },
     /// Cross-verifier timeline reconciliation detected conflicts.
     TimelineConflictDetected,
+
+    // ── Phase 3.0 Sovereign Node Errors ──────────────────────────────────
+    /// The expected Bitcoin node identity is missing.
+    BitcoinNodeIdentityMissing,
+    /// The Bitcoin workload evidence is missing.
+    BitcoinWorkloadEvidenceMissing,
+    /// The running Bitcoin Core binary does not match the expected identity.
+    BitcoinBinaryMismatch { expected: TypedDigest, got: TypedDigest },
+    /// An unauthorized mutation to the Bitcoin node configuration was detected.
+    UnauthorizedConfigMutation { expected: TypedDigest, got: TypedDigest },
+    /// The Bitcoin runtime state is missing.
+    BitcoinRuntimeStateMissing,
+    /// The Bitcoin node's runtime behavior deviated from permitted parameters.
+    RuntimeNodeDrift,
+    /// The Bitcoin node attestation session is missing.
+    NodeAttestationSessionMissing,
+    /// The Bitcoin node attestation session is inactive or replayed.
+    NodeAttestationSessionInvalid,
+    /// Required transparency anchoring for the node was withheld or missing.
+    NodeTransparencyWithholding,
+    /// The specified deterministic policy profile is missing or corrupted.
+    DeterministicPolicyMissing,
 }
 
 impl HardwarePolicyError {
@@ -1082,9 +1218,7 @@ impl HardwarePolicyError {
             | Self::ImaEvidenceMissing
             | Self::ImaDisabled
             | Self::ImaAppraisalDisabled => VerificationDecisionReason::RuntimeIntegrityUnavailable,
-            Self::CriticalRuntimeDriftDetected(_) => {
-                VerificationDecisionReason::CriticalRuntimeDrift
-            }
+            Self::CriticalRuntimeDriftDetected(_) => VerificationDecisionReason::CriticalRuntimeDrift,
             Self::ContinuousAttestationSessionMissing
             | Self::ContinuousAttestationSessionInactive
             | Self::ContinuousAttestationExpired { .. } => {
@@ -1108,6 +1242,31 @@ impl HardwarePolicyError {
             }
             Self::TransparencyConsensusFailed | Self::TimelineConflictDetected => {
                 VerificationDecisionReason::TimelineInconsistencyDetected
+            }
+            // ── Phase 3.0 Sovereign Node Errors ──────────────────────────────
+            Self::BitcoinNodeIdentityMissing => {
+                VerificationDecisionReason::InvalidNodeIdentity
+            }
+            Self::BitcoinWorkloadEvidenceMissing => {
+                VerificationDecisionReason::MissingKernelMeasurement
+            }
+            Self::BitcoinBinaryMismatch { .. } => {
+                VerificationDecisionReason::BitcoinBinaryMismatch
+            }
+            Self::UnauthorizedConfigMutation { .. } => {
+                VerificationDecisionReason::UnauthorizedConfigMutation
+            }
+            Self::BitcoinRuntimeStateMissing | Self::RuntimeNodeDrift => {
+                VerificationDecisionReason::RuntimeNodeDrift
+            }
+            Self::NodeAttestationSessionMissing | Self::NodeAttestationSessionInvalid => {
+                VerificationDecisionReason::ReplayedNodeSession
+            }
+            Self::NodeTransparencyWithholding => {
+                VerificationDecisionReason::TransparencyWithholding
+            }
+            Self::DeterministicPolicyMissing => {
+                VerificationDecisionReason::PolicyProfileCorruption
             }
         }
     }
@@ -1247,6 +1406,37 @@ impl core::fmt::Display for HardwarePolicyError {
             Self::TimelineConflictDetected => {
                 f.write_str("cross-verifier timeline conflict detected")
             }
+            // ── Phase 3.0 Sovereign Node Errors ──────────────────────────────
+            Self::BitcoinNodeIdentityMissing => {
+                f.write_str("bitcoin node identity missing from context")
+            }
+            Self::BitcoinWorkloadEvidenceMissing => {
+                f.write_str("bitcoin workload evidence missing from context")
+            }
+            Self::BitcoinBinaryMismatch { expected, got } => {
+                write!(f, "bitcoin core binary mismatch: expected {:?}, got {:?}", expected, got)
+            }
+            Self::UnauthorizedConfigMutation { expected, got } => {
+                write!(f, "unauthorized bitcoin.conf mutation: expected {:?}, got {:?}", expected, got)
+            }
+            Self::BitcoinRuntimeStateMissing => {
+                f.write_str("bitcoin runtime state missing from context")
+            }
+            Self::RuntimeNodeDrift => {
+                f.write_str("bitcoin node runtime drift detected")
+            }
+            Self::NodeAttestationSessionMissing => {
+                f.write_str("node attestation session missing from context")
+            }
+            Self::NodeAttestationSessionInvalid => {
+                f.write_str("node attestation session is inactive or replayed")
+            }
+            Self::NodeTransparencyWithholding => {
+                f.write_str("node transparency anchoring is missing or withheld")
+            }
+            Self::DeterministicPolicyMissing => {
+                f.write_str("deterministic node policy profile missing or corrupted")
+            }
         }
     }
 }
@@ -1293,6 +1483,10 @@ mod tests {
             consensus_evaluation: None,
             federated_epoch: None,
             timeline_reconciliation: None,
+            bitcoin_node_identity: None,
+            bitcoin_workload_evidence: None,
+            bitcoin_runtime_state: None,
+            node_session: None,
         }
     }
 

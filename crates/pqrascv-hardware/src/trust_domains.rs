@@ -17,6 +17,9 @@ pub enum TrustDomain {
     Provenance,
     Transparency,
     ContinuousAttestation,
+    // --- Phase 3.0 Sovereign Node Additions ---
+    WorkloadIntegrity,
+    ConsensusIntegrity,
 }
 
 /// Explicit reasons why a verification decision succeeded or failed.
@@ -66,6 +69,25 @@ pub enum VerificationDecisionReason {
     FederatedPolicyNotApproved,
     /// Cross-verifier timeline reconciliation detected inconsistencies.
     TimelineInconsistencyDetected,
+    // --- Phase 3.0 Sovereign Node Additions ---
+    /// The running Bitcoin Core binary does not match the expected identity.
+    BitcoinBinaryMismatch,
+    /// An unauthorized mutation to the Bitcoin node configuration was detected.
+    UnauthorizedConfigMutation,
+    /// The node's event timeline diverged from the canonical history.
+    NodeTimelineDivergence,
+    /// The node identity presented is invalid or unregistered.
+    InvalidNodeIdentity,
+    /// The Bitcoin node's runtime behavior deviated from permitted parameters.
+    RuntimeNodeDrift,
+    /// The Bitcoin node attestation session has been replayed.
+    ReplayedNodeSession,
+    /// Required transparency anchoring for the node was withheld or missing.
+    TransparencyWithholding,
+    /// The specified policy profile is missing or corrupted.
+    PolicyProfileCorruption,
+    /// A policy rollback attack against the Bitcoin node was rejected.
+    PolicyRollbackRejected,
 }
 
 /// Structured outcome of evaluation for a single trust domain.
