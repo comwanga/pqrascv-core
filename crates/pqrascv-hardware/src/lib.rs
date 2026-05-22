@@ -62,6 +62,7 @@ pub mod bitcoin_workload_integrity;
 pub mod boot_chain;
 pub mod continuous_attestation;
 pub mod counter;
+pub mod deployment_reference;
 pub mod digest;
 pub mod distributed_consensus;
 pub mod drift;
@@ -86,11 +87,10 @@ pub mod transparency_log;
 pub mod trust_domains;
 pub mod verifier_federation;
 pub mod verifier_identity;
+pub mod verifier_orchestrator;
 pub mod verifier_timeline;
 pub mod verifier_transparency;
 pub mod workload_integrity;
-pub mod verifier_orchestrator;
-pub mod deployment_reference;
 
 // ── Convenience re-exports ────────────────────────────────────────────────
 

@@ -38,10 +38,7 @@ pub enum BitcoinNodeEvent {
         consensus_hash: TypedDigest,
     },
     /// The governance policy applied to this node was updated.
-    GovernancePolicyUpdated {
-        sequence_number: u64,
-        epoch_id: u64,
-    },
+    GovernancePolicyUpdated { sequence_number: u64, epoch_id: u64 },
     /// The node's trust state was successfully anchored to a transparency log or Bitcoin.
     TransparencyAnchored {
         sequence_number: u64,
@@ -86,21 +83,31 @@ impl BitcoinNodeEvent {
         let mut buf = Vec::new();
         buf.extend_from_slice(&self.sequence_number().to_be_bytes());
         match self {
-            Self::BootVerified { firmware_digest, .. } => buf.extend_from_slice(&firmware_digest.value),
-            Self::RuntimeIntegrityVerified { executable_hash, .. } => buf.extend_from_slice(&executable_hash.value),
+            Self::BootVerified {
+                firmware_digest, ..
+            } => buf.extend_from_slice(&firmware_digest.value),
+            Self::RuntimeIntegrityVerified {
+                executable_hash, ..
+            } => buf.extend_from_slice(&executable_hash.value),
             Self::BinaryUpdated { new_hash, .. } => buf.extend_from_slice(&new_hash.value),
             Self::ConfigChanged { new_hash, .. } => buf.extend_from_slice(&new_hash.value),
-            Self::VerifierConsensusReached { consensus_hash, .. } => buf.extend_from_slice(&consensus_hash.value),
-            Self::GovernancePolicyUpdated { epoch_id, .. } => buf.extend_from_slice(&epoch_id.to_be_bytes()),
-            Self::TransparencyAnchored { anchor_hash, .. } => buf.extend_from_slice(&anchor_hash.value),
+            Self::VerifierConsensusReached { consensus_hash, .. } => {
+                buf.extend_from_slice(&consensus_hash.value)
+            }
+            Self::GovernancePolicyUpdated { epoch_id, .. } => {
+                buf.extend_from_slice(&epoch_id.to_be_bytes())
+            }
+            Self::TransparencyAnchored { anchor_hash, .. } => {
+                buf.extend_from_slice(&anchor_hash.value)
+            }
         }
-        
+
         // Simple SHA-256 placeholder
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(&buf);
         let result = hasher.finalize();
-        
+
         TypedDigest {
             algorithm: DigestAlgorithm::Sha256,
             value: result.into(),

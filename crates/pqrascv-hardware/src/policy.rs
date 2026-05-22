@@ -279,7 +279,8 @@ pub struct HardwarePolicyContext<'a> {
     /// Optional explicitly declared Bitcoin node identity.
     pub bitcoin_node_identity: Option<&'a crate::bitcoin_node_identity::BitcoinNodeIdentity>,
     /// Optional Bitcoin workload integrity evidence.
-    pub bitcoin_workload_evidence: Option<&'a crate::bitcoin_workload_integrity::BitcoinWorkloadEvidence>,
+    pub bitcoin_workload_evidence:
+        Option<&'a crate::bitcoin_workload_integrity::BitcoinWorkloadEvidence>,
     /// Optional continuous runtime state of the Bitcoin node.
     pub bitcoin_runtime_state: Option<&'a crate::bitcoin_runtime_monitor::BitcoinRuntimeState>,
     /// Optional active node attestation session.
@@ -544,10 +545,9 @@ impl HardwarePolicyEngine {
                     | HardwarePolicyRule::RequireBitcoinWorkloadIntegrity
                     | HardwarePolicyRule::RequireNodeRuntimeContinuity
             ),
-            TrustDomain::ConsensusIntegrity => matches!(
-                rule,
-                HardwarePolicyRule::RequireFederatedNodeVerification
-            ),
+            TrustDomain::ConsensusIntegrity => {
+                matches!(rule, HardwarePolicyRule::RequireFederatedNodeVerification)
+            }
         }
     }
 
@@ -1173,9 +1173,15 @@ pub enum HardwarePolicyError {
     /// The Bitcoin workload evidence is missing.
     BitcoinWorkloadEvidenceMissing,
     /// The running Bitcoin Core binary does not match the expected identity.
-    BitcoinBinaryMismatch { expected: TypedDigest, got: TypedDigest },
+    BitcoinBinaryMismatch {
+        expected: TypedDigest,
+        got: TypedDigest,
+    },
     /// An unauthorized mutation to the Bitcoin node configuration was detected.
-    UnauthorizedConfigMutation { expected: TypedDigest, got: TypedDigest },
+    UnauthorizedConfigMutation {
+        expected: TypedDigest,
+        got: TypedDigest,
+    },
     /// The Bitcoin runtime state is missing.
     BitcoinRuntimeStateMissing,
     /// The Bitcoin node's runtime behavior deviated from permitted parameters.
@@ -1218,7 +1224,9 @@ impl HardwarePolicyError {
             | Self::ImaEvidenceMissing
             | Self::ImaDisabled
             | Self::ImaAppraisalDisabled => VerificationDecisionReason::RuntimeIntegrityUnavailable,
-            Self::CriticalRuntimeDriftDetected(_) => VerificationDecisionReason::CriticalRuntimeDrift,
+            Self::CriticalRuntimeDriftDetected(_) => {
+                VerificationDecisionReason::CriticalRuntimeDrift
+            }
             Self::ContinuousAttestationSessionMissing
             | Self::ContinuousAttestationSessionInactive
             | Self::ContinuousAttestationExpired { .. } => {
@@ -1244,15 +1252,11 @@ impl HardwarePolicyError {
                 VerificationDecisionReason::TimelineInconsistencyDetected
             }
             // ── Phase 3.0 Sovereign Node Errors ──────────────────────────────
-            Self::BitcoinNodeIdentityMissing => {
-                VerificationDecisionReason::InvalidNodeIdentity
-            }
+            Self::BitcoinNodeIdentityMissing => VerificationDecisionReason::InvalidNodeIdentity,
             Self::BitcoinWorkloadEvidenceMissing => {
                 VerificationDecisionReason::MissingKernelMeasurement
             }
-            Self::BitcoinBinaryMismatch { .. } => {
-                VerificationDecisionReason::BitcoinBinaryMismatch
-            }
+            Self::BitcoinBinaryMismatch { .. } => VerificationDecisionReason::BitcoinBinaryMismatch,
             Self::UnauthorizedConfigMutation { .. } => {
                 VerificationDecisionReason::UnauthorizedConfigMutation
             }
@@ -1265,9 +1269,7 @@ impl HardwarePolicyError {
             Self::NodeTransparencyWithholding => {
                 VerificationDecisionReason::TransparencyWithholding
             }
-            Self::DeterministicPolicyMissing => {
-                VerificationDecisionReason::PolicyProfileCorruption
-            }
+            Self::DeterministicPolicyMissing => VerificationDecisionReason::PolicyProfileCorruption,
         }
     }
 }
@@ -1414,17 +1416,23 @@ impl core::fmt::Display for HardwarePolicyError {
                 f.write_str("bitcoin workload evidence missing from context")
             }
             Self::BitcoinBinaryMismatch { expected, got } => {
-                write!(f, "bitcoin core binary mismatch: expected {:?}, got {:?}", expected, got)
+                write!(
+                    f,
+                    "bitcoin core binary mismatch: expected {:?}, got {:?}",
+                    expected, got
+                )
             }
             Self::UnauthorizedConfigMutation { expected, got } => {
-                write!(f, "unauthorized bitcoin.conf mutation: expected {:?}, got {:?}", expected, got)
+                write!(
+                    f,
+                    "unauthorized bitcoin.conf mutation: expected {:?}, got {:?}",
+                    expected, got
+                )
             }
             Self::BitcoinRuntimeStateMissing => {
                 f.write_str("bitcoin runtime state missing from context")
             }
-            Self::RuntimeNodeDrift => {
-                f.write_str("bitcoin node runtime drift detected")
-            }
+            Self::RuntimeNodeDrift => f.write_str("bitcoin node runtime drift detected"),
             Self::NodeAttestationSessionMissing => {
                 f.write_str("node attestation session missing from context")
             }

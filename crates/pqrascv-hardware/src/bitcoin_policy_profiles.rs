@@ -38,16 +38,22 @@ impl BitcoinNodeProfile {
 
         match self {
             Self::SovereignMainnetNode => {
-                rules.push(HardwarePolicyRule::RequireSecureBootState(crate::secure_boot::SecureBootState::Enabled));
+                rules.push(HardwarePolicyRule::RequireSecureBootState(
+                    crate::secure_boot::SecureBootState::Enabled,
+                ));
             }
             Self::FederationVerifierNode => {
-                rules.push(HardwarePolicyRule::RequireSecureBootState(crate::secure_boot::SecureBootState::Enabled));
+                rules.push(HardwarePolicyRule::RequireSecureBootState(
+                    crate::secure_boot::SecureBootState::Enabled,
+                ));
                 rules.push(HardwarePolicyRule::RequireVerifierFederation);
                 rules.push(HardwarePolicyRule::RequireFederatedNodeVerification);
                 rules.push(HardwarePolicyRule::RequireNodeTransparencyAnchoring);
             }
             Self::AirgappedAuditNode => {
-                rules.push(HardwarePolicyRule::RequireSecureBootState(crate::secure_boot::SecureBootState::Enabled));
+                rules.push(HardwarePolicyRule::RequireSecureBootState(
+                    crate::secure_boot::SecureBootState::Enabled,
+                ));
             }
             Self::WatchtowerNode => {
                 // Watchtowers may not enforce strict hardware binding if running in cloud,
