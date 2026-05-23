@@ -117,7 +117,6 @@ impl SpvVerifier {
     ///
     /// The confirmed block height on success.
     pub fn verify(&self, proof: &InclusionProof, quote_hash: &[u8; 32]) -> Result<u32, SpvError> {
-        // 1. Confirmation count.
         let confirmations = self
             .chain_tip_height
             .saturating_sub(proof.block_height)
@@ -129,24 +128,20 @@ impl SpvVerifier {
             });
         }
 
-        // 2. Block header Merkle root extraction.
         let header_merkle_root =
             extract_block_merkle_root(&proof.block_header).ok_or(SpvError::InvalidBlockHeader)?;
         if header_merkle_root != proof.tx_merkle_path.block_merkle_root {
             return Err(SpvError::MerkleRootMismatch);
         }
 
-        // 3. Tx Merkle path verification.
         if !proof.tx_merkle_path.verify() {
             return Err(SpvError::TxNotInBlock);
         }
 
-        // 4. PQ-RASCV Merkle root consistency.
         if proof.quote_merkle_path.root != proof.pqrascv_merkle_root {
             return Err(SpvError::MerkleRootMismatch);
         }
 
-        // 5. Quote Merkle path verification.
         // The leaf hash in the proof must match SHA256d(quote_hash).
         let expected_leaf = {
             let first: [u8; 32] = sha2::Sha256::digest(quote_hash).into();
@@ -226,7 +221,6 @@ mod tests {
 
     #[test]
     fn full_inclusion_proof_verifies() {
-        // Build a batch of 4 quotes.
         let quote_hashes: Vec<[u8; 32]> = (0u8..4).map(|i| [i; 32]).collect();
         let mut agg = MerkleAggregator::new();
         for h in &quote_hashes {
@@ -234,11 +228,9 @@ mod tests {
         }
         let pqrascv_root = agg.root().unwrap();
 
-        // Get inclusion proof for quote index 2.
         let quote_merkle_path = agg.inclusion_proof(2).unwrap();
         assert!(quote_merkle_path.verify());
 
-        // Build a fake Bitcoin block with the PQ-RASCV root as the tx hash.
         // In production, the tx Merkle path would be over actual Bitcoin txids.
         let fake_txid = pqrascv_root; // simplified for test
         let tx_path = TxMerklePath {

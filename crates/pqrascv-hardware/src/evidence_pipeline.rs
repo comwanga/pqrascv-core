@@ -49,10 +49,8 @@ impl EvidencePipeline {
     ) -> Result<LiveAttestationPayload, &'static str> {
         self.sequence_counter += 1;
 
-        // 1. Hardware Clock
         let (tpm_clock, _) = self.tpm.read_clock_info().unwrap_or((0, 0));
 
-        // 2. Hardware Cryptography
         let tpm_quote = self
             .tpm
             .acquire_quote(nonce, pcr_indices)
@@ -65,13 +63,10 @@ impl EvidencePipeline {
             }
         }
 
-        // 3. Firmware Configuration
         let secure_boot_state = SecureBootCollector::collect().ok();
 
-        // 4. Runtime Integrity (Process Level)
         let process_evidence = BitcoinProcessEvidence::collect().ok();
 
-        // 5. IMA Log Ingestion (Not currently attached to the payload struct,
         // but would typically stream into the PCR calculations or a separate log)
         // ...
 

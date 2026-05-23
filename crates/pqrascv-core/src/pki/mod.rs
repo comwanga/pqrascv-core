@@ -268,7 +268,6 @@ pub fn validate_chain(
     use crate::crypto::CryptoBackend;
     use crate::crypto::MlDsaBackend;
 
-    // Build the full chain: root_key → intermediates → device_cert
     // Verify each cert is signed by the key above it.
     let mut current_verifying_key: &[u8] = trust_anchor.root_key_bytes();
 

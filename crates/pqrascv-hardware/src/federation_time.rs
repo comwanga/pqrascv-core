@@ -77,7 +77,6 @@ mod tests {
             physical_timestamp: 1001,
             signature: vec![],
         };
-        // If logical counters are equal, fallback to physical time.
         assert!(a < c);
     }
 

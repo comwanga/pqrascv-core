@@ -44,6 +44,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 pub mod federation;
+pub mod federation_sync_anchor;
 pub mod governance_anchor;
 pub mod incremental_anchor;
 pub mod key_registry_anchor;
@@ -51,6 +52,7 @@ pub mod merkle;
 pub mod node_anchor;
 pub mod proof;
 pub mod recovery_anchor;
+
 pub mod timeline;
 
 pub use federation::FederationBatchAggregator;

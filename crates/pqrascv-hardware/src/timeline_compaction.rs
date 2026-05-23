@@ -112,12 +112,10 @@ impl CompactedTimeline {
     /// explicitly known to be pruned. Returns `true` if the sequence is known.
     #[must_use]
     pub fn verifies_sequence_lineage(&self, sequence: u64) -> bool {
-        // Check if it's explicitly pruned
         if self.pruned_sequences.binary_search(&sequence).is_ok() {
             return true;
         }
 
-        // Check if it's inside a retained checkpoint bound
         for cp in &self.retained_checkpoints {
             if sequence >= cp.start_sequence && sequence <= cp.end_sequence {
                 return true;

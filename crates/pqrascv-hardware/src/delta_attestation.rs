@@ -92,7 +92,6 @@ impl DeltaAttestation {
         ciborium::into_writer(&payload, &mut cbor_buf)
             .map_err(|_| "failed to canonicalize delta to CBOR")?;
 
-        // Calculate the rolling hash
         let rolling_hash = match algo {
             DigestAlgorithm::Sha256 => {
                 let mut hasher = Sha256::new();

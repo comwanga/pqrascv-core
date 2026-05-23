@@ -108,7 +108,6 @@ impl TimelineReconciler {
         let events_a = timeline_a.events();
         let events_b = timeline_b.events();
 
-        // Build sequence-indexed views
         let max_seq_a = events_a.iter().map(AttestationEvent::sequence_number).max();
         let max_seq_b = events_b.iter().map(AttestationEvent::sequence_number).max();
         let max_seq = match (max_seq_a, max_seq_b) {

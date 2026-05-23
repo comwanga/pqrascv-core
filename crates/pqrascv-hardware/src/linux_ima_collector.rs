@@ -51,8 +51,6 @@ impl LiveImaCollector {
     {
         // In a real implementation on Linux, this would open the file and stream lines.
         // It must check:
-        // if self.events_read >= MAX_EVENTS { return Err("too many events"); }
-        // if self.bytes_read >= MAX_TOTAL_BYTES { return Err("log too large"); }
         // For demonstration, we simply return success as a stub.
         Ok(())
     }

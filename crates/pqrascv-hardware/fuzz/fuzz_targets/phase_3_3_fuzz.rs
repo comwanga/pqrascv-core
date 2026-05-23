@@ -14,7 +14,6 @@ fuzz_target!(|data: &[u8]| {
         return;
     }
 
-    // 1. Fuzz Equivocation Evidence construction
     let mut hash_a = [0u8; 32];
     let mut hash_b = [0u8; 32];
     hash_a.copy_from_slice(&data[0..32]);
@@ -47,7 +46,6 @@ fuzz_target!(|data: &[u8]| {
 
     let _ = EquivocationEvidence::try_from_commitments(a, b, 12345);
 
-    // 2. Fuzz Revocation Evaluation
     let revocation = VerifierRevocation {
         verifier_id: "v2".into(),
         revocation_epoch: 1,
@@ -60,7 +58,6 @@ fuzz_target!(|data: &[u8]| {
 
     let _ = revocation.is_revoked_at_sequence(seq);
 
-    // 3. Fuzz Topology Authority Evaluation
     let scope = AuthorityScope {
         role: FederationRole::EdgeVerifier,
         allowed_domains: vec![TrustDomain::RuntimeIntegrity],

@@ -79,7 +79,6 @@ impl DriftDetectionEngine {
         for expected in &profile.expected_pcrs {
             if let Some(actual_measurement) = actual_pcrs.get(expected.semantic) {
                 if actual_measurement.digest != expected.expected_digest {
-                    // Check if it is an authorized transition (upgrade)
                     let is_upgrade = if let Some(upgrade) = upgrade_baseline {
                         let profile_baseline = PcrBaseline {
                             baseline_id: profile.profile_id.clone(),

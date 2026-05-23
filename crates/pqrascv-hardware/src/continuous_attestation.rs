@@ -92,7 +92,6 @@ impl AttestationSession {
             });
         }
 
-        // Update state
         self.sequence_number = next_sequence;
         self.last_seen = now;
         Ok(())

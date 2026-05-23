@@ -50,7 +50,6 @@ impl TimelineMerkleAggregator {
             return None;
         }
 
-        // Convert events to Bitcoin-compatible leaf hashes: SHA256d(event_hash)
         let mut nodes: Vec<[u8; 32]> = self.event_hashes.iter().map(|h| sha256d(h)).collect();
 
         while nodes.len() > 1 {

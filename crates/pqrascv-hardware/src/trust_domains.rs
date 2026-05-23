@@ -26,6 +26,8 @@ pub enum TrustDomain {
     TemporalTimekeeping,
     // --- Phase 3.5 Infrastructure Resilience ---
     RecoveryIntegrity,
+    // --- Phase 3.6 Adaptive Federation Synchronization ---
+    FederationAvailability,
 }
 
 /// Explicit reasons why a verification decision succeeded or failed.
@@ -119,6 +121,17 @@ pub enum VerificationDecisionReason {
     // --- Phase 3.5 Infrastructure Resilience ---
     /// Recovery procedure violated (e.g., partition detected, invalid snapshot, missing lineage).
     RecoveryIntegrityFailure,
+    // --- Phase 3.6 Adaptive Federation Synchronization Additions ---
+    /// Synchronization collapse detected across peers.
+    SynchronizationCollapse,
+    /// Eclipse risk detected due to concentrated topology.
+    EclipseRiskDetected,
+    /// Snapshot proof failed Merkle validation.
+    InvalidSnapshotProof,
+    /// State reconstruction failed due to invalid lineage or ordering.
+    ReconstructionFailure,
+    /// Quorum liveness and convergence properties failed.
+    FederationLivenessFailure,
 }
 
 /// Structured outcome of evaluation for a single trust domain.

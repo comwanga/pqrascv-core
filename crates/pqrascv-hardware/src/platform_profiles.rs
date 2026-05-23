@@ -70,7 +70,6 @@ impl PlatformProfile {
         let warnings = Vec::new();
         let mut decision_reason = VerificationDecisionReason::Success;
 
-        // 1. Secure Boot checks
         let secure_boot_valid = if self.secure_boot_required {
             if let Some(sb) = secure_boot {
                 if sb.state == SecureBootState::Enabled {
@@ -87,7 +86,6 @@ impl PlatformProfile {
             true
         };
 
-        // 2. Measured Boot checks (PCRs match and no critical drift)
         let mut measured_boot_valid = secure_boot_valid; // start with secure boot status, if SB is invalid we fail
         let mut has_critical_drift = false;
         let mut has_warning_drift = false;

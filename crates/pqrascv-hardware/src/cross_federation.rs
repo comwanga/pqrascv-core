@@ -52,7 +52,6 @@ impl CrossFederationReport {
             // the differing tips.
             divergence_points.extend_from_slice(known_divergences);
             if known_divergences.is_empty() {
-                // If no historical traversal is available, the tips themselves are divergent
                 divergence_points.push(*local_state_hash);
                 divergence_points.push(*external_state_hash);
             }

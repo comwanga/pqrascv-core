@@ -104,7 +104,6 @@ impl BitcoinNodeEvent {
             }
         }
 
-        // Simple SHA-256 placeholder
         let mut hasher = Sha256::new();
         hasher.update(&buf);
         let result = hasher.finalize();

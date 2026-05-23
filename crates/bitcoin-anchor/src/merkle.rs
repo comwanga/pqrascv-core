@@ -79,16 +79,13 @@ impl MerkleAggregator {
             return None;
         }
 
-        // Convert SHA3-256 quote hashes to Bitcoin-compatible leaf hashes.
         let mut nodes: Vec<[u8; 32]> = self.quote_hashes.iter().map(|h| sha256d(h)).collect();
 
-        // Build the tree bottom-up.
         while nodes.len() > 1 {
             let mut next_level = Vec::with_capacity(nodes.len().div_ceil(2));
             let mut i = 0;
             while i < nodes.len() {
                 let left = nodes[i];
-                // Duplicate last node if odd count (Bitcoin convention).
                 let right = if i + 1 < nodes.len() {
                     nodes[i + 1]
                 } else {
@@ -135,7 +132,6 @@ impl MerkleAggregator {
                 is_left: current_index % 2 != 0,
             });
 
-            // Build next level.
             let mut next_level = Vec::with_capacity(nodes.len().div_ceil(2));
             let mut i = 0;
             while i < nodes.len() {

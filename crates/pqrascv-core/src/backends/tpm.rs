@@ -139,7 +139,6 @@ mod inner {
             let mut pcrs = PcrBank::default();
             for (i, digest) in digest_list.value().iter().enumerate().take(PCR_COUNT) {
                 let raw: &[u8] = digest.as_ref();
-                // Pad or truncate to exactly PCR_SIZE before normalizing.
                 let mut padded = [0u8; PCR_SIZE];
                 let copy_len = raw.len().min(PCR_SIZE);
                 padded[PCR_SIZE - copy_len..].copy_from_slice(&raw[..copy_len]);
