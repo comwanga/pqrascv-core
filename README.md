@@ -16,6 +16,9 @@
 
 ---
 
+**What is PQ-RASCV?**  
+It is a security framework that mathematically proves exactly what software is running on a device and how it was built, using quantum-resistant cryptography. By anchoring this hardware trust to a decentralized Bitcoin ledger, it prevents attackers from silently compromising critical infrastructure.
+
 `pqrascv-core` is a `no_std + alloc` Rust library for issuing and verifying
 tamper-evident device attestation quotes. Every quote is signed with
 **ML-DSA-65 (FIPS 204)** and carries a **SLSA v1 / in-toto provenance predicate**,
