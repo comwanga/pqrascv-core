@@ -28,7 +28,7 @@ sha3        = { workspace = true }
 sha2        = { workspace = true }
 zeroize     = { workspace = true }
 ciborium    = { workspace = true }
-pqrascv-bitcoin-anchor = { path = "../bitcoin-anchor", version = "1.0.0-rc.2", default-features = false }
+pqrascv-bitcoin-anchor = { path = "../bitcoin-anchor", version = "1.0.0-rc.3", default-features = false }
 ml-kem      = { workspace = true }
 ml-dsa      = { workspace = true }
 chacha20poly1305 = { workspace = true }

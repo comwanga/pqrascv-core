@@ -84,10 +84,10 @@ The core protocols have advanced to **Production Readiness**, backed by Level B 
 
 ```toml
 # std (default)
-pqrascv-core = "1.0.0-rc.2"
+pqrascv-core = "1.0.0-rc.3"
 
 # bare-metal — bring your own allocator
-pqrascv-core = { version = "1.0.0-rc.2", default-features = false, features = ["alloc"] }
+pqrascv-core = { version = "1.0.0-rc.3", default-features = false, features = ["alloc"] }
 ```
 
 ### CLI Utility
@@ -320,9 +320,9 @@ Measurement latency on Cortex-M4 @ 168 MHz: < 1 ms (Software RoT, 64 KB firmware
 
 ## Status & Roadmap
 
-**v1.0.0-rc.2** is published. The public API has stabilized, featuring deterministic formal verification and a fully functional CLI.
+**v1.0.0-rc.3** is published. The public API has stabilized, featuring deterministic formal verification and a fully functional CLI.
 
-| Shipped in v1.0.0-rc.2 ✅ | Planned 🗺 |
+| Shipped in v1.0.0-rc.3 ✅ | Planned 🗺 |
 |----------------------|------------|
 | ML-DSA-65 sign / verify | Noise\_PQX post-quantum transport |
 | ML-KEM-768 encapsulation | CBOR COSE signatures (RFC 9052) |

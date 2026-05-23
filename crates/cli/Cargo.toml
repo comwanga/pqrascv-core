@@ -14,8 +14,8 @@ name = "pqrascv"
 path = "src/main.rs"
 
 [dependencies]
-pqrascv-core     = { path = "../pqrascv-core", version = "1.0.0-rc.2", features = ["std", "software-rot-unsafe"] }
-pqrascv-verifier = { path = "../verifier",     version = "1.0.0-rc.2" }
+pqrascv-core     = { path = "../pqrascv-core", version = "1.0.0-rc.3", features = ["std", "software-rot-unsafe"] }
+pqrascv-verifier = { path = "../verifier",     version = "1.0.0-rc.3" }
 clap             = { version = "4", features = ["derive"] }
 hex              = "0.4"
 anyhow           = "1.0.102"
