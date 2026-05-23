@@ -289,7 +289,11 @@ fn cmd_attest(
     fs::write(&out, &cbor)?;
 
     let nonce_display = hex::encode(nonce);
-    println!("Attestation Quote generated ({} bytes) → {}", cbor.len(), out.display());
+    println!(
+        "Attestation Quote generated ({} bytes) → {}",
+        cbor.len(),
+        out.display()
+    );
     println!(
         "  Firmware:  {} (SHA3-256: {})",
         fw_path.display(),
@@ -305,6 +309,7 @@ fn cmd_attest(
 // verify
 // ─────────────────────────────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_verify(
     vk_path: PathBuf,
     quote_path: PathBuf,
@@ -327,7 +332,8 @@ fn cmd_verify(
     let quote_bytes = fs::read(&quote_path)?;
 
     let mut nonce = [0u8; 32];
-    hex::decode_to_slice(nonce_hex, &mut nonce).map_err(|_| anyhow::anyhow!("Invalid nonce format: must be 64 hex chars"))?;
+    hex::decode_to_slice(nonce_hex, &mut nonce)
+        .map_err(|_| anyhow::anyhow!("Invalid nonce format: must be 64 hex chars"))?;
 
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
@@ -348,7 +354,9 @@ fn cmd_verify(
             if let Some(expected) = expected_hash_hex {
                 if actual_hash != expected {
                     if json {
-                        println!(r#"{{"verification":"FAILED","reason":"Firmware hash mismatch"}}"#);
+                        println!(
+                            r#"{{"verification":"FAILED","reason":"Firmware hash mismatch"}}"#
+                        );
                     } else {
                         println!("✗  Verification FAILED: Firmware hash mismatch");
                         println!("   Expected: {expected}");
@@ -374,7 +382,8 @@ fn cmd_verify(
             }
 
             if json {
-                println!(r#"{{
+                println!(
+                    r#"{{
   "verification": "VALID",
   "replay_protection": "PASSED",
   "audit_lineage": "VERIFIED",
@@ -382,18 +391,26 @@ fn cmd_verify(
   "state_root": "{}",
   "finality_state": "StrongFinality",
   "slsa_requirement": "SATISFIED"
-}}"#, sim_epoch, sim_root);
+}}"#,
+                    sim_epoch, sim_root
+                );
             } else {
                 println!("✓  Attestation Quote verified successfully.\n");
                 println!("   Verification:      VALID (ML-DSA-65 Post-Quantum Signature)");
                 println!("   Replay Protection: PASSED (32-byte Nonce Binding)");
                 println!("   Audit Lineage:     VERIFIED (Deterministic Merkle Trace)");
-                println!("   Consensus Epoch:   Epoch {} (State Root: {})", sim_epoch, sim_root);
+                println!(
+                    "   Consensus Epoch:   Epoch {} (State Root: {})",
+                    sim_epoch, sim_root
+                );
                 println!("   Finality State:    StrongFinality (6 confirmations)");
-                println!("   Anchor Reference:  bitcoin:9a8f2c31eab917d84b2c0f99a3b2184a4439c@842109");
+                println!(
+                    "   Anchor Reference:  bitcoin:9a8f2c31eab917d84b2c0f99a3b2184a4439c@842109"
+                );
                 println!(
                     "   SLSA Requirement:  SATISFIED (Level {} >= {})",
-                    result.slsa_level(), min_slsa_level
+                    result.slsa_level(),
+                    min_slsa_level
                 );
                 println!("\n   Payload:           {}", quote_path.display());
                 println!("   Firmware Hash:     {}", actual_hash);
