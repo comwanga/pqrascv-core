@@ -23,7 +23,10 @@ mod tests {
             
             let ev2 = TraceEvent::SnapshotSealed { 
                 snapshot_id: event2_seed, 
-                snapshot_hash: TypedDigest::new(DigestAlgorithm::Sha3_256, event2_seed) 
+                snapshot_hash: TypedDigest::new(DigestAlgorithm::Sha3_256, event2_seed),
+                anchor_height: Some(100),
+                confirmation_depth: Some(6),
+                finality_state: alloc::string::String::from("IrreversibleFinality"),
             };
 
             trace_a.append_event(ev1.clone());

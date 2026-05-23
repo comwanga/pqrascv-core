@@ -5,6 +5,7 @@
 //! them is considered a critical Byzantine violation, resulting in a fail-closed state.
 
 use crate::digest::TypedDigest;
+use pqrascv_bitcoin_anchor::finality_anchor::FinalityState;
 
 /// Global architectural invariants enforced by the federation node.
 pub struct SystemInvariants;
@@ -64,6 +65,22 @@ impl SystemInvariants {
             );
         }
     }
+    /// Asserts that a finality state is strictly `IrreversibleFinality`.
+    /// 
+    /// No system state derived from a FinalityCommitment may be considered
+    /// immutable unless it is in the `IrreversibleFinality` state.
+    /// 
+    /// # Panics
+    /// Panics if the state is not `IrreversibleFinality`.
+    pub fn assert_irreversible_finality(state: &FinalityState) {
+        if state != &FinalityState::IrreversibleFinality {
+            panic!(
+                "CRITICAL INVARIANT VIOLATION: Attempted to assume immutability on a provisional state. \
+                 Current state is {:?}, but IrreversibleFinality is required.",
+                state
+            );
+        }
+    }
 }
 
 #[cfg(test)]
@@ -99,5 +116,15 @@ mod tests {
     #[should_panic(expected = "Replay window length")]
     fn test_replay_window_exceeded() {
         SystemInvariants::assert_bounded_replay(1000, 500);
+    }
+    #[test]
+    #[should_panic(expected = "Attempted to assume immutability on a provisional state")]
+    fn test_irreversible_finality_panic() {
+        SystemInvariants::assert_irreversible_finality(&FinalityState::StrongFinality);
+    }
+
+    #[test]
+    fn test_irreversible_finality_success() {
+        SystemInvariants::assert_irreversible_finality(&FinalityState::IrreversibleFinality);
     }
 }

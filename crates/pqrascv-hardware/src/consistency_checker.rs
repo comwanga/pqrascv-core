@@ -50,9 +50,18 @@ impl ConsistencyChecker {
                     last_epoch = Some(*epoch);
                     has_quorum = true;
                 }
-                TraceEvent::SnapshotSealed { .. } => {
+                TraceEvent::SnapshotSealed { finality_state, confirmation_depth, .. } => {
                     if !has_quorum {
                         return Err("Broken quorum lineage: SnapshotSealed without a preceding QuorumFormed");
+                    }
+                    if finality_state == "PendingAnchor" || finality_state == "Included" {
+                        return Err("Finalized state assumption rejected: commitment is below StrongFinality");
+                    }
+                    if finality_state == "WeakFinality" {
+                        return Err("Divergence warning: WeakFinality state used as canonical root");
+                    }
+                    if confirmation_depth.unwrap_or(0) == 0 {
+                        return Err("Missing explicit confirmation depth validation for closure");
                     }
                 }
                 _ => {}
@@ -81,6 +90,9 @@ mod tests {
         trace.append_event(TraceEvent::SnapshotSealed {
             snapshot_id: [3; 32],
             snapshot_hash: TypedDigest::new(DigestAlgorithm::Sha3_256, [4; 32]),
+            anchor_height: Some(100),
+            confirmation_depth: Some(6),
+            finality_state: alloc::string::String::from("IrreversibleFinality"),
         });
 
         assert_eq!(
@@ -132,6 +144,9 @@ mod tests {
         trace.append_event(TraceEvent::SnapshotSealed {
             snapshot_id: [3; 32],
             snapshot_hash: TypedDigest::new(DigestAlgorithm::Sha3_256, [4; 32]),
+            anchor_height: Some(100),
+            confirmation_depth: Some(6),
+            finality_state: alloc::string::String::from("IrreversibleFinality"),
         });
 
         assert_eq!(

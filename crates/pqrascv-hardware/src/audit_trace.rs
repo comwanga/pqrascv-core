@@ -37,6 +37,9 @@ pub enum TraceEvent {
     SnapshotSealed {
         snapshot_id: [u8; 32],
         snapshot_hash: TypedDigest,
+        anchor_height: Option<u64>,
+        confirmation_depth: Option<u64>,
+        finality_state: alloc::string::String,
     },
     ReplayApplied {
         start_seq: u64,
@@ -61,10 +64,13 @@ impl TraceEvent {
                 hasher.update(epoch.to_be_bytes());
                 hasher.update(&quorum_hash.value);
             }
-            TraceEvent::SnapshotSealed { snapshot_id, snapshot_hash } => {
+            TraceEvent::SnapshotSealed { snapshot_id, snapshot_hash, anchor_height, confirmation_depth, finality_state } => {
                 hasher.update(b"SnapshotSealed");
                 hasher.update(snapshot_id);
                 hasher.update(&snapshot_hash.value);
+                if let Some(h) = anchor_height { hasher.update(h.to_be_bytes()); }
+                if let Some(c) = confirmation_depth { hasher.update(c.to_be_bytes()); }
+                hasher.update(finality_state.as_bytes());
             }
             TraceEvent::ReplayApplied { start_seq, end_seq, final_hash } => {
                 hasher.update(b"ReplayApplied");
