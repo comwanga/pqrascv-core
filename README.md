@@ -376,12 +376,12 @@ Areas where contributions are especially valuable:
 
 - **Platform backends** — SEV-SNP, TDX, OP-TEE, Apple Secure Enclave
 - **Transport** — Noise\_PQX integration, COSE/CBOR signing
-- **Tooling** — CLI binary, provisioning helpers
+- **Tooling** — Hardware provisioning scripts, key management daemons
 - **Verification** — `kani` harnesses for the crypto paths, fuzzing
 
 If you are using `pqrascv-core` in a project — even experimentally — open a
 [GitHub Discussion](https://github.com/comwanga/pqrascv-core/discussions).
-Feedback at any stage shapes the road to 1.0.
+Your feedback is critical as we finalize the v1.0.0 stable release!
 
 ---
 
