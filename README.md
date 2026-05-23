@@ -84,10 +84,35 @@ The core protocols have advanced to **Production Readiness**, backed by Level B 
 
 ```toml
 # std (default)
-pqrascv-core = "0.1"
+pqrascv-core = "1.0.0-rc.1"
 
 # bare-metal — bring your own allocator
-pqrascv-core = { version = "0.1", default-features = false, features = ["alloc"] }
+pqrascv-core = { version = "1.0.0-rc.1", default-features = false, features = ["alloc"] }
+```
+
+### CLI Utility
+
+The fastest way to conduct attestation is using the `pqrascv` CLI binary:
+
+```bash
+cargo install pqrascv-cli
+
+# 1. Generate post-quantum keypair
+pqrascv keygen --out-seed seed.bin --out-vk vk.bin
+
+# 2. Prover: Generate attestation quote
+pqrascv attest \
+  --seed seed.bin --vk vk.bin \
+  --firmware firmware.bin \
+  --slsa-level 3 \
+  --out quote.cbor
+
+# 3. Verifier: Validate the quote deterministically
+pqrascv verify \
+  --vk vk.bin \
+  --quote quote.cbor \
+  --nonce <NONCE_FROM_ATTEST_STEP> \
+  --json
 ```
 
 ### Prover — device side
@@ -295,17 +320,18 @@ Measurement latency on Cortex-M4 @ 168 MHz: < 1 ms (Software RoT, 64 KB firmware
 
 ## Status & Roadmap
 
-**v0.1.0** is published. The public API is stabilising; expect breaking changes before 1.0.
+**v1.0.0-rc.1** is published. The public API has stabilized, featuring deterministic formal verification and a fully functional CLI.
 
-| Shipped in v0.1.0 ✅ | Planned 🗺 |
+| Shipped in v1.0.0-rc.1 ✅ | Planned 🗺 |
 |----------------------|------------|
 | ML-DSA-65 sign / verify | Noise\_PQX post-quantum transport |
 | ML-KEM-768 encapsulation | CBOR COSE signatures (RFC 9052) |
 | Software / TPM 2.0 / DICE backends | AMD SEV-SNP & Intel TDX backends |
 | SLSA v1 provenance + SBOM hash | `heapless` allocation-free quote assembly |
 | Sovereign Bitcoin Node Architecture | OP-TEE / TrustZone backend |
-| Verifier Federation & Consensus | CLI prover + verifier binary |
+| Verifier Federation & Consensus | |
 | Bitcoin Transparency Anchoring | Stable 1.0 API |
+| CLI prover + verifier binary | |
 
 ---
 
