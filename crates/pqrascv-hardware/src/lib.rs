@@ -97,6 +97,18 @@ pub mod runtime_stream;
 pub mod stream_reconciliation;
 pub mod timeline_compaction;
 
+// Phase 3.3 Byzantine Federation Convergence
+pub mod byzantine_quorum;
+pub mod cross_federation;
+pub mod epoch_key_binding;
+pub mod equivocation;
+pub mod federation_sync;
+pub mod federation_time;
+pub mod federation_topology;
+pub mod governance_continuity;
+pub mod retention_governance;
+pub mod verifier_revocation;
+
 pub mod ek_framework;
 pub mod governance;
 pub mod ima_integration;
@@ -111,6 +123,7 @@ pub mod runtime_attestation;
 pub mod runtime_drift;
 pub mod runtime_integrity;
 pub mod secure_boot;
+pub mod temporal_ambiguity;
 pub mod timeline_reconciliation;
 pub mod tpm_structures;
 pub mod tpm_verify;

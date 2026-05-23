@@ -30,7 +30,9 @@ use core::fmt;
 /// Hash algorithm used to produce a [`TypedDigest`].
 ///
 /// The discriminant values are stable wire identifiers — do not reorder.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 #[repr(u8)]
 pub enum DigestAlgorithm {
     /// SHA-256 (FIPS 180-4). Used natively by TPM 2.0 PCR banks.
@@ -83,7 +85,7 @@ impl fmt::Display for DigestAlgorithm {
 /// normalized to SHA3-256 via `TypedDigest::normalize_to_sha3_256()`.
 /// The original algorithm is preserved in the `source_algorithm` field of
 /// the measurement for auditability.
-#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct TypedDigest {
     /// The hash algorithm that produced `value`.
     pub algorithm: DigestAlgorithm,

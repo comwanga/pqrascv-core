@@ -20,6 +20,10 @@ pub enum TrustDomain {
     // --- Phase 3.0 Sovereign Node Additions ---
     WorkloadIntegrity,
     ConsensusIntegrity,
+    // --- Phase 3.3 Byzantine Federation Convergence ---
+    DistributedGovernance,
+    // --- Phase 3.4 Federation Time Semantics ---
+    TemporalTimekeeping,
 }
 
 /// Explicit reasons why a verification decision succeeded or failed.
@@ -88,6 +92,28 @@ pub enum VerificationDecisionReason {
     PolicyProfileCorruption,
     /// A policy rollback attack against the Bitcoin node was rejected.
     PolicyRollbackRejected,
+    // --- Phase 3.3 Byzantine Federation Convergence Additions ---
+    /// Verifier identity has been formally revoked.
+    VerifierRevoked,
+    /// Verifier equivocation (contradictory state commitments) was detected.
+    EquivocationDetected,
+    /// Byzantine partition detected (multiple conflicting sub-quorums).
+    ByzantinePartitionDetected,
+    /// Verifier lacks topological authority for this domain.
+    TopologyAuthorityExceeded,
+    /// Cross-federation conflict or irreconcilable divergence detected.
+    CrossFederationConflict,
+    /// Governance continuity chain is broken or missing.
+    GovernanceContinuityBroken,
+    // --- Phase 3.4 Federation Time Semantics Additions ---
+    /// Physical time drift exceeds bounded skew limits.
+    TimeSkewExceeded,
+    /// Logical clock synchronization failed or non-monotonic.
+    LogicalClockFailed,
+    /// Epoch-key binding validation failed.
+    EpochKeyBindingInvalid,
+    /// Verifier key registration is not yet anchored.
+    VerifierNotAnchored,
 }
 
 /// Structured outcome of evaluation for a single trust domain.

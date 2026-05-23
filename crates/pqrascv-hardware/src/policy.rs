@@ -254,6 +254,21 @@ pub enum HardwarePolicyRule {
     RequireRetentionCompliance,
     /// Require valid ML-DSA signatures on federation messages.
     RequireFederationMessageSigning,
+
+    // ── Phase 3.3 Byzantine Federation Convergence Rules ──────────────────
+    RequireVerifierRevocationChecks,
+    RequireEquivocationDetection,
+    RequireByzantineQuorum,
+    RequireTopologyValidation,
+    RequireRetentionGovernance,
+    RequireCrossFederationConsistency,
+    RequireGovernanceContinuity,
+
+    // ── Phase 3.4 Federation Time Semantics Rules ────────────────────────
+    RequireLogicalClockSynchronization,
+    RequireBoundedTimeSkew,
+    RequireAnchoredKeyRegistry,
+    RequireEpochKeyBinding,
 }
 
 // ── HardwarePolicyContext ─────────────────────────────────────────────────
@@ -334,6 +349,21 @@ pub struct HardwarePolicyContext<'a> {
     pub compacted_timeline: Option<&'a crate::timeline_compaction::CompactedTimeline>,
     /// Optional signed federation envelope.
     pub federation_envelope: Option<&'a crate::federation_transport::SignedFederationEnvelope>,
+
+    // ── Phase 3.3 Byzantine Federation Convergence Fields ─────────────────
+    /// Optional verifier revocation list for checking revocation status.
+    pub revocation_list: Option<&'a [crate::verifier_revocation::VerifierRevocation]>,
+
+    // ── Phase 3.4 Federation Time Semantics Fields ────────────────────────
+    /// Optional logical clock reading.
+    pub logical_clock: Option<&'a crate::federation_time::HybridLogicalClock>,
+    /// Optional observed temporal ambiguity evidence.
+    pub temporal_ambiguity: Option<&'a [crate::temporal_ambiguity::TemporalAmbiguityEvidence]>,
+    /// Optional verifier registration status from Bitcoin.
+    pub verifier_registration_state:
+        Option<&'a pqrascv_bitcoin_anchor::key_registry_anchor::VerifierRegistrationState>,
+    /// Optional epoch key binding.
+    pub epoch_key_binding: Option<&'a crate::epoch_key_binding::EpochKeyBinding>,
 }
 
 // ── HardwarePolicyEngine ──────────────────────────────────────────────────
@@ -613,6 +643,25 @@ impl HardwarePolicyEngine {
                         | HardwarePolicyRule::RequireFederationMessageSigning
                 )
             }
+            // --- Phase 3.3 Byzantine Federation Convergence ---
+            TrustDomain::DistributedGovernance => matches!(
+                rule,
+                HardwarePolicyRule::RequireVerifierRevocationChecks
+                    | HardwarePolicyRule::RequireEquivocationDetection
+                    | HardwarePolicyRule::RequireByzantineQuorum
+                    | HardwarePolicyRule::RequireTopologyValidation
+                    | HardwarePolicyRule::RequireRetentionGovernance
+                    | HardwarePolicyRule::RequireCrossFederationConsistency
+                    | HardwarePolicyRule::RequireGovernanceContinuity
+            ),
+            // --- Phase 3.4 Federation Time Semantics ---
+            TrustDomain::TemporalTimekeeping => matches!(
+                rule,
+                HardwarePolicyRule::RequireLogicalClockSynchronization
+                    | HardwarePolicyRule::RequireBoundedTimeSkew
+                    | HardwarePolicyRule::RequireAnchoredKeyRegistry
+                    | HardwarePolicyRule::RequireEpochKeyBinding
+            ),
         }
     }
 
@@ -694,7 +743,7 @@ impl HardwarePolicyEngine {
         Ok(())
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, clippy::collapsible_match)]
     fn evaluate_rule(
         rule: &HardwarePolicyRule,
         ctx: &HardwarePolicyContext<'_>,
@@ -1139,6 +1188,39 @@ impl HardwarePolicyEngine {
                     return Err(HardwarePolicyError::FederationMessageSigningInvalid);
                 }
             }
+            // ── Phase 3.3 Byzantine Federation Convergence ─────────────────
+            HardwarePolicyRule::RequireVerifierRevocationChecks => {
+                if ctx.revocation_list.is_none() {
+                    return Err(HardwarePolicyError::VerifierRevoked("Unknown".into()));
+                }
+            }
+            // ── Phase 3.4 Federation Time Semantics ────────────────────────
+            HardwarePolicyRule::RequireLogicalClockSynchronization => {
+                if ctx.logical_clock.is_none() {
+                    return Err(HardwarePolicyError::LogicalClockFailed);
+                }
+            }
+            HardwarePolicyRule::RequireBoundedTimeSkew => {
+                if ctx.temporal_ambiguity.is_some() {
+                    return Err(HardwarePolicyError::TimeSkewExceeded);
+                }
+            }
+            HardwarePolicyRule::RequireAnchoredKeyRegistry => {
+                use pqrascv_bitcoin_anchor::key_registry_anchor::VerifierRegistrationState;
+                if let Some(state) = ctx.verifier_registration_state {
+                    if *state != VerifierRegistrationState::Anchored {
+                        return Err(HardwarePolicyError::VerifierNotAnchored);
+                    }
+                } else {
+                    return Err(HardwarePolicyError::VerifierNotAnchored);
+                }
+            }
+            HardwarePolicyRule::RequireEpochKeyBinding => {
+                if ctx.epoch_key_binding.is_none() {
+                    return Err(HardwarePolicyError::EpochKeyBindingInvalid);
+                }
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -1237,7 +1319,10 @@ pub enum HardwarePolicyError {
     /// The counter is not hardware-backed.
     CounterNotHardwareBacked(CounterEvidence),
     /// The counter value is below the required minimum.
-    CounterTooLow { got: u64, min: u64 },
+    CounterTooLow {
+        got: u64,
+        min: u64,
+    },
     /// The backend does not support nonce binding.
     NonceBindingUnsupported,
     /// Secure Boot state mismatch.
@@ -1265,7 +1350,9 @@ pub enum HardwarePolicyError {
     /// Missing Boot Chain evidence when required.
     BootChainEvidenceMissing,
     /// Mismatch with Platform Profile.
-    PlatformProfileMismatch { reason: VerificationDecisionReason },
+    PlatformProfileMismatch {
+        reason: VerificationDecisionReason,
+    },
     /// Baseline version rollback detected.
     BaselineRollbackDetected,
     /// Policy evaluation failed due to conflicts.
@@ -1291,9 +1378,15 @@ pub enum HardwarePolicyError {
         window: u64,
     },
     /// Replay detected during sequence monotonicity check.
-    ReplayDetected { got: u64, expected: u64 },
+    ReplayDetected {
+        got: u64,
+        expected: u64,
+    },
     /// Sequence gap detected during sequence monotonicity check.
-    SequenceGapDetected { got: u64, expected: u64 },
+    SequenceGapDetected {
+        got: u64,
+        expected: u64,
+    },
     /// Transparency proof is missing.
     TransparencyProofMissing,
     /// SPV verifier is missing.
@@ -1305,19 +1398,26 @@ pub enum HardwarePolicyError {
     /// SPV verification failed.
     SpvVerificationFailed(pqrascv_bitcoin_anchor::proof::SpvError),
     /// Policy epoch mismatch.
-    PolicyEpochMismatch { expected: u64, got: u64 },
+    PolicyEpochMismatch {
+        expected: u64,
+        got: u64,
+    },
 
     // ── Phase 2.9 Federated Trust Errors ─────────────────────────────────
     /// No verifier federation was provided in the policy context.
     VerifierFederationMissing,
     /// The consensus evaluation did not reach quorum or was not Trusted.
-    ConsensusQuorumFailed { decision: ConsensusDecision },
+    ConsensusQuorumFailed {
+        decision: ConsensusDecision,
+    },
     /// Verifier transparency logs are inconsistent; consensus failed.
     TransparencyConsensusFailed,
     /// The federated policy epoch context is missing.
     FederatedPolicyApprovalMissing,
     /// The federated policy epoch has not been approved by quorum.
-    FederatedEpochQuorumNotReached { epoch_id: u64 },
+    FederatedEpochQuorumNotReached {
+        epoch_id: u64,
+    },
     /// Cross-verifier timeline reconciliation detected conflicts.
     TimelineConflictDetected,
 
@@ -1376,9 +1476,31 @@ pub enum HardwarePolicyError {
     RetentionComplianceViolated,
     /// Federation message signature is missing or cryptographically invalid.
     FederationMessageSigningInvalid,
+
+    // ── Phase 3.3 Byzantine Federation Convergence Errors ─────────────────
+    VerifierRevoked(String),
+    EquivocationDetected(String),
+    ByzantinePartitionDetected,
+    ByzantineIntersectionFailure,
+    TopologyValidationFailed,
+    RetentionGovernanceFailed,
+    CrossFederationConflictDetected,
+    /// Governance continuity chain is broken or missing.
+    GovernanceContinuityBroken,
+
+    // ── Phase 3.4 Federation Time Semantics Errors ────────────────────────
+    /// Physical time drift exceeds bounded skew limits.
+    TimeSkewExceeded,
+    /// Logical clock synchronization failed or non-monotonic.
+    LogicalClockFailed,
+    /// Epoch-key binding validation failed.
+    EpochKeyBindingInvalid,
+    /// Verifier key registration is not yet anchored.
+    VerifierNotAnchored,
 }
 
 impl HardwarePolicyError {
+    #[allow(clippy::too_many_lines)]
     #[must_use]
     pub fn decision_reason(&self) -> VerificationDecisionReason {
         match self {
@@ -1409,9 +1531,15 @@ impl HardwarePolicyError {
             Self::CriticalRuntimeDriftDetected(_) => {
                 VerificationDecisionReason::CriticalRuntimeDrift
             }
+            // Merged: Phase 3.1 continuous attestation + Phase 3.2 streaming errors
+            // all map to ContinuousAttestationExpired.
             Self::ContinuousAttestationSessionMissing
             | Self::ContinuousAttestationSessionInactive
-            | Self::ContinuousAttestationExpired { .. } => {
+            | Self::ContinuousAttestationExpired { .. }
+            | Self::DeltaAttestationMissing
+            | Self::CheckpointIntegrityMissing
+            | Self::TimelineCompactionMissing
+            | Self::RetentionComplianceViolated => {
                 VerificationDecisionReason::ContinuousAttestationExpired
             }
             Self::ReplayDetected { .. }
@@ -1426,7 +1554,6 @@ impl HardwarePolicyError {
             | Self::TransparencySerializationFailed
             | Self::SpvVerificationFailed(_) => VerificationDecisionReason::RuntimeMeasurementGap,
             Self::PolicyEpochMismatch { .. } => VerificationDecisionReason::PolicyEpochMismatch,
-            // Phase 2.9
             Self::VerifierFederationMissing
             | Self::ConsensusQuorumFailed { .. }
             | Self::FederatedPolicyApprovalMissing
@@ -1438,7 +1565,6 @@ impl HardwarePolicyError {
             Self::TransparencyConsensusFailed | Self::TimelineConflictDetected => {
                 VerificationDecisionReason::TimelineInconsistencyDetected
             }
-            // ── Phase 3.0 Sovereign Node Errors ──────────────────────────────
             Self::BitcoinNodeIdentityMissing => VerificationDecisionReason::InvalidNodeIdentity,
             Self::BitcoinWorkloadEvidenceMissing
             | Self::LiveTpmEvidenceMissing
@@ -1460,15 +1586,29 @@ impl HardwarePolicyError {
             Self::NodeTransparencyWithholding => {
                 VerificationDecisionReason::TransparencyWithholding
             }
-            Self::DeterministicPolicyMissing => VerificationDecisionReason::PolicyProfileCorruption,
-
-            // ── Phase 3.2 Streaming & PQ Federation Errors ──────────────────────
-            Self::DeltaAttestationMissing
-            | Self::CheckpointIntegrityMissing
-            | Self::TimelineCompactionMissing
-            | Self::RetentionComplianceViolated => {
-                VerificationDecisionReason::ContinuousAttestationExpired
+            Self::DeterministicPolicyMissing | Self::RetentionGovernanceFailed => {
+                VerificationDecisionReason::PolicyProfileCorruption
             }
+
+            // ── Phase 3.3 Byzantine Federation Convergence Errors ─────────────────
+            Self::VerifierRevoked(_) => VerificationDecisionReason::VerifierRevoked,
+            Self::EquivocationDetected(_) => VerificationDecisionReason::EquivocationDetected,
+            Self::ByzantinePartitionDetected | Self::ByzantineIntersectionFailure => {
+                VerificationDecisionReason::ByzantinePartitionDetected
+            }
+            Self::TopologyValidationFailed => VerificationDecisionReason::TopologyAuthorityExceeded,
+            Self::CrossFederationConflictDetected => {
+                VerificationDecisionReason::CrossFederationConflict
+            }
+            Self::GovernanceContinuityBroken => {
+                VerificationDecisionReason::GovernanceContinuityBroken
+            }
+
+            // ── Phase 3.4 Federation Time Semantics Errors ────────────────
+            Self::TimeSkewExceeded => VerificationDecisionReason::TimeSkewExceeded,
+            Self::LogicalClockFailed => VerificationDecisionReason::LogicalClockFailed,
+            Self::EpochKeyBindingInvalid => VerificationDecisionReason::EpochKeyBindingInvalid,
+            Self::VerifierNotAnchored => VerificationDecisionReason::VerifierNotAnchored,
         }
     }
 }
@@ -1640,7 +1780,10 @@ impl core::fmt::Display for HardwarePolicyError {
                 f.write_str("node transparency anchoring is missing or withheld")
             }
             Self::DeterministicPolicyMissing => {
-                f.write_str("deterministic node policy profile missing or corrupted")
+                write!(
+                    f,
+                    "Node deterministic policy is missing or missing from evaluation context"
+                )
             }
 
             // ── Phase 3.1 Live Evidence Errors ──────────────────────────────
@@ -1678,6 +1821,32 @@ impl core::fmt::Display for HardwarePolicyError {
             Self::FederationMessageSigningInvalid => {
                 f.write_str("federation message signature is missing or invalid")
             }
+
+            // ── Phase 3.3 Byzantine Federation Convergence Errors ─────────────────
+            Self::VerifierRevoked(id) => write!(f, "Verifier '{id}' has been formally revoked"),
+            Self::EquivocationDetected(id) => {
+                write!(f, "Equivocation detected from verifier '{id}'")
+            }
+            Self::ByzantinePartitionDetected => {
+                write!(f, "Byzantine partition detected (conflicting sub-quorums)")
+            }
+            Self::ByzantineIntersectionFailure => {
+                write!(f, "Byzantine intersection failure (quorum impossible)")
+            }
+            Self::TopologyValidationFailed => write!(f, "Topology authority scope exceeded"),
+            Self::RetentionGovernanceFailed => write!(f, "Retention governance policy violation"),
+            Self::CrossFederationConflictDetected => {
+                write!(f, "Cross-federation conflict or divergence detected")
+            }
+            Self::GovernanceContinuityBroken => write!(f, "Governance epoch continuity is broken"),
+
+            // ── Phase 3.4 Federation Time Semantics Errors ────────────────
+            Self::TimeSkewExceeded => write!(f, "Physical time drift exceeds bounded skew limits"),
+            Self::LogicalClockFailed => {
+                write!(f, "Logical clock synchronization failed or non-monotonic")
+            }
+            Self::EpochKeyBindingInvalid => write!(f, "Epoch-key binding validation failed"),
+            Self::VerifierNotAnchored => write!(f, "Verifier key registration is not yet anchored"),
         }
     }
 }
@@ -1734,6 +1903,11 @@ mod tests {
             pq_session: None,
             compacted_timeline: None,
             federation_envelope: None,
+            revocation_list: None,
+            logical_clock: None,
+            temporal_ambiguity: None,
+            verifier_registration_state: None,
+            epoch_key_binding: None,
         }
     }
 

@@ -44,14 +44,18 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 pub mod federation;
+pub mod governance_anchor;
 pub mod incremental_anchor;
+pub mod key_registry_anchor;
 pub mod merkle;
 pub mod node_anchor;
 pub mod proof;
 pub mod timeline;
 
 pub use federation::FederationBatchAggregator;
+pub use governance_anchor::{GovernanceAnchor, GovernanceEventType};
 pub use incremental_anchor::IncrementalAnchor;
+pub use key_registry_anchor::{AnchoredVerifierKey, VerifierRegistrationState};
 pub use merkle::MerkleAggregator;
 pub use node_anchor::NodeAttestationAnchor;
 pub use proof::{InclusionProof, SpvVerifier};

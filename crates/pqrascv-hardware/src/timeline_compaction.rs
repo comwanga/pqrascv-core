@@ -38,7 +38,7 @@ pub struct CompactedTimeline {
     /// including pruned ones. Provides a verifiable commitment to the full
     /// operational history.
     pub history_merkle_root: [u8; 32],
-    /// Ordered list of the rolling_hash values of every pruned checkpoint
+    /// Ordered list of the `rolling_hash` values of every pruned checkpoint
     /// boundary. Combined with `history_merkle_root`, enables inclusion proofs.
     pub checkpoint_boundary_hashes: Vec<[u8; 32]>,
 }
