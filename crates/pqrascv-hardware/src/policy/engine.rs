@@ -460,8 +460,10 @@ impl HardwarePolicyEngine {
 // ── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::wildcard_imports)]
 mod tests {
     use super::*;
+    use crate::*;
     use crate::{
         digest::{DigestAlgorithm, TypedDigest},
         pcr::{PcrMeasurement, PcrSemantic, TypedPcrBank},
