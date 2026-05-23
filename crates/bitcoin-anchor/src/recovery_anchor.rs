@@ -88,9 +88,9 @@ impl RecoveryAnchor {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use alloc::string::String;
     use alloc::vec::Vec;
-    use super::*;
 
     #[test]
     fn valid_snapshot_anchor() {

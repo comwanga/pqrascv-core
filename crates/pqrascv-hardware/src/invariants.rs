@@ -66,10 +66,10 @@ impl SystemInvariants {
         }
     }
     /// Asserts that a finality state is strictly `IrreversibleFinality`.
-    /// 
+    ///
     /// No system state derived from a FinalityCommitment may be considered
     /// immutable unless it is in the `IrreversibleFinality` state.
-    /// 
+    ///
     /// # Panics
     /// Panics if the state is not `IrreversibleFinality`.
     pub fn assert_irreversible_finality(state: &FinalityState) {

@@ -24,29 +24,29 @@ pub enum FinalityState {
 }
 
 /// A cryptographic closure representing the anchoring status of a snapshot.
-/// 
-/// `FinalityCommitment` encapsulates the proof that a deterministic federation state 
-/// transition has achieved Byzantine consensus, has a proven audit trace lineage, 
+///
+/// `FinalityCommitment` encapsulates the proof that a deterministic federation state
+/// transition has achieved Byzantine consensus, has a proven audit trace lineage,
 /// and has been anchored on the Bitcoin blockchain. Its finality is probabilistic
 /// and must be evaluated against the current chain tip.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FinalityCommitment {
     /// The unique identifier of the snapshot being finalized.
     pub snapshot_id: String,
-    
+
     /// The Bitcoin transaction ID (txid) containing the anchored commitment.
     pub bitcoin_txid: String,
-    
+
     /// The canonical block height where this commitment was confirmed.
     /// If None, the anchor is considered PendingAnchor.
     pub block_height: Option<u64>,
-    
+
     /// The global audit trace root corresponding to this snapshot.
     pub audit_trace_root: [u8; 32],
-    
+
     /// Cryptographic signatures from a Byzantine quorum of verifiers affirming finality.
     pub quorum_signatures: Vec<String>,
-    
+
     /// The number of confirmations required for irreversible finality (k-threshold).
     pub k_threshold: u64,
 }
@@ -81,7 +81,7 @@ impl FinalityCommitment {
     /// - At least one signature is present (actual threshold verified at consensus layer).
     #[must_use]
     pub fn is_structurally_valid(&self) -> bool {
-        !self.snapshot_id.is_empty() 
+        !self.snapshot_id.is_empty()
             && !self.bitcoin_txid.is_empty()
             && self.k_threshold > 0
             && !self.audit_trace_root.iter().all(|&b| b == 0)
@@ -134,9 +134,12 @@ mod tests {
         assert_eq!(commitment.current_state(100), FinalityState::Included);
         assert_eq!(commitment.current_state(103), FinalityState::WeakFinality);
         assert_eq!(commitment.current_state(106), FinalityState::StrongFinality);
-        assert_eq!(commitment.current_state(107), FinalityState::IrreversibleFinality);
+        assert_eq!(
+            commitment.current_state(107),
+            FinalityState::IrreversibleFinality
+        );
     }
-    
+
     #[test]
     fn finality_state_pending() {
         let commitment = FinalityCommitment {

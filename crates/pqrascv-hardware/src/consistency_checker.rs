@@ -50,7 +50,11 @@ impl ConsistencyChecker {
                     last_epoch = Some(*epoch);
                     has_quorum = true;
                 }
-                TraceEvent::SnapshotSealed { finality_state, confirmation_depth, .. } => {
+                TraceEvent::SnapshotSealed {
+                    finality_state,
+                    confirmation_depth,
+                    ..
+                } => {
                     if !has_quorum {
                         return Err("Broken quorum lineage: SnapshotSealed without a preceding QuorumFormed");
                     }
@@ -58,7 +62,9 @@ impl ConsistencyChecker {
                         return Err("Finalized state assumption rejected: commitment is below StrongFinality");
                     }
                     if finality_state == "WeakFinality" {
-                        return Err("Divergence warning: WeakFinality state used as canonical root");
+                        return Err(
+                            "Divergence warning: WeakFinality state used as canonical root",
+                        );
                     }
                     if confirmation_depth.unwrap_or(0) == 0 {
                         return Err("Missing explicit confirmation depth validation for closure");
@@ -86,7 +92,7 @@ mod tests {
             epoch: 1,
             quorum_hash: TypedDigest::new(DigestAlgorithm::Sha3_256, [2; 32]),
         });
-        
+
         trace.append_event(TraceEvent::SnapshotSealed {
             snapshot_id: [3; 32],
             snapshot_hash: TypedDigest::new(DigestAlgorithm::Sha3_256, [4; 32]),
@@ -107,7 +113,7 @@ mod tests {
         let trace = AuditTrace::new(genesis);
 
         let wrong_root = TypedDigest::new(DigestAlgorithm::Sha3_256, [99; 32]);
-        
+
         assert_eq!(
             ConsistencyChecker::validate_system_consistency(&trace, &wrong_root),
             Err("Divergence drift detected: trace latest root does not match the expected state root")
@@ -123,7 +129,7 @@ mod tests {
             epoch: 5,
             quorum_hash: TypedDigest::new(DigestAlgorithm::Sha3_256, [2; 32]),
         });
-        
+
         trace.append_event(TraceEvent::QuorumFormed {
             epoch: 4, // Invalid!
             quorum_hash: TypedDigest::new(DigestAlgorithm::Sha3_256, [3; 32]),

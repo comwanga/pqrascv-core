@@ -5,8 +5,8 @@
 //! The trace forms a cryptographically linked append-only log that proves
 //! the lineage of any given federation state.
 
-use alloc::vec::Vec;
 use crate::digest::{DigestAlgorithm, TypedDigest};
+use alloc::vec::Vec;
 use sha3::{Digest, Sha3_256};
 
 /// A cryptographically linked, append-only audit trace.
@@ -54,7 +54,10 @@ impl TraceEvent {
     pub fn compute_hash(&self) -> TypedDigest {
         let mut hasher = Sha3_256::new();
         match self {
-            TraceEvent::PolicyEvaluated { evaluator, result_hash } => {
+            TraceEvent::PolicyEvaluated {
+                evaluator,
+                result_hash,
+            } => {
                 hasher.update(b"PolicyEvaluated");
                 hasher.update(evaluator.as_bytes());
                 hasher.update(&result_hash.value);
@@ -64,15 +67,29 @@ impl TraceEvent {
                 hasher.update(epoch.to_be_bytes());
                 hasher.update(&quorum_hash.value);
             }
-            TraceEvent::SnapshotSealed { snapshot_id, snapshot_hash, anchor_height, confirmation_depth, finality_state } => {
+            TraceEvent::SnapshotSealed {
+                snapshot_id,
+                snapshot_hash,
+                anchor_height,
+                confirmation_depth,
+                finality_state,
+            } => {
                 hasher.update(b"SnapshotSealed");
                 hasher.update(snapshot_id);
                 hasher.update(&snapshot_hash.value);
-                if let Some(h) = anchor_height { hasher.update(h.to_be_bytes()); }
-                if let Some(c) = confirmation_depth { hasher.update(c.to_be_bytes()); }
+                if let Some(h) = anchor_height {
+                    hasher.update(h.to_be_bytes());
+                }
+                if let Some(c) = confirmation_depth {
+                    hasher.update(c.to_be_bytes());
+                }
                 hasher.update(finality_state.as_bytes());
             }
-            TraceEvent::ReplayApplied { start_seq, end_seq, final_hash } => {
+            TraceEvent::ReplayApplied {
+                start_seq,
+                end_seq,
+                final_hash,
+            } => {
                 hasher.update(b"ReplayApplied");
                 hasher.update(start_seq.to_be_bytes());
                 hasher.update(end_seq.to_be_bytes());
@@ -97,38 +114,38 @@ impl AuditTrace {
     }
 
     /// Appends a new event to the trace, deterministically advancing the latest root.
-    /// 
+    ///
     /// The new root is: `SHA3-256(previous_root || event_hash)`
     pub fn append_event(&mut self, event: TraceEvent) {
         let event_hash = event.compute_hash();
-        
+
         let mut hasher = Sha3_256::new();
         hasher.update(&self.latest_root.value);
         hasher.update(&event_hash.value);
-        
+
         let next_root: [u8; 32] = hasher.finalize().into();
-        
+
         self.latest_root = TypedDigest::new(DigestAlgorithm::Sha3_256, next_root);
         self.events.push(event);
         self.sequence = self.sequence.saturating_add(1);
     }
-    
+
     /// Verifies the structural integrity and cryptographically recomputes the entire trace
     /// to ensure the `latest_root` matches the sequence of `events` applied to `genesis_root`.
     #[must_use]
     pub fn verify_integrity(&self) -> bool {
         let mut current_root = self.genesis_root.clone();
-        
+
         for event in &self.events {
             let event_hash = event.compute_hash();
             let mut hasher = Sha3_256::new();
             hasher.update(&current_root.value);
             hasher.update(&event_hash.value);
-            
+
             let next_root: [u8; 32] = hasher.finalize().into();
             current_root = TypedDigest::new(DigestAlgorithm::Sha3_256, next_root);
         }
-        
+
         current_root == self.latest_root
     }
 }
