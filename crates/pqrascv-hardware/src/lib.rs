@@ -61,6 +61,9 @@ pub mod bitcoin_node_identity;
 pub mod bitcoin_node_timeline;
 pub mod bitcoin_policy_profiles;
 pub mod bitcoin_runtime_monitor;
+
+#[cfg(test)]
+mod proptests;
 pub mod bitcoin_workload_integrity;
 pub mod boot_chain;
 pub mod continuous_attestation;

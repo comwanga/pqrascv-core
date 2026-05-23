@@ -1,0 +1,19 @@
+[package]
+name = "pqrascv-hardware-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json = "1.0"
+pqrascv-hardware = { path = ".." }
+
+[[bin]]
+name = "policy_engine_fuzz"
+path = "fuzz_targets/policy_engine_fuzz.rs"
+test = false
+doc = false

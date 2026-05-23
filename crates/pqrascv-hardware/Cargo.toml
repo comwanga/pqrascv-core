@@ -39,3 +39,6 @@ signature   = { version = "2",    default-features = false,                     
 
 # Live Evidence Acquisition
 tss-esapi   = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest = "1.11.0"
