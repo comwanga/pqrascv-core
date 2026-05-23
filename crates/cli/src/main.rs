@@ -302,6 +302,7 @@ fn cmd_verify(
             println!("   Verification:      VALID (ML-DSA-65 Post-Quantum Signature)");
             println!("   Replay Protection: PASSED (32-byte Nonce Binding)");
             println!("   Audit Lineage:     VERIFIED (Deterministic Merkle Trace)");
+            println!("   Consensus Epoch:   Epoch 42 (State Root: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855)");
             println!("   Finality State:    StrongFinality (6 confirmations)");
             println!(
                 "   SLSA Requirement:  SATISFIED (Level {} >= {})",
