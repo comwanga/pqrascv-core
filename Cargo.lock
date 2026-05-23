@@ -848,7 +848,7 @@ dependencies = [
 
 [[package]]
 name = "pqrascv-bitcoin-anchor"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ciborium",
  "serde",
@@ -859,7 +859,7 @@ dependencies = [
 
 [[package]]
 name = "pqrascv-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -872,7 +872,7 @@ dependencies = [
 
 [[package]]
 name = "pqrascv-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ciborium",
  "getrandom 0.4.2",
@@ -888,7 +888,7 @@ dependencies = [
 
 [[package]]
 name = "pqrascv-hardware"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chacha20poly1305",
  "ciborium",
@@ -908,7 +908,7 @@ dependencies = [
 
 [[package]]
 name = "pqrascv-verifier"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ciborium",
  "getrandom 0.4.2",
