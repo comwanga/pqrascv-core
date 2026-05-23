@@ -269,6 +269,16 @@ pub enum HardwarePolicyRule {
     RequireBoundedTimeSkew,
     RequireAnchoredKeyRegistry,
     RequireEpochKeyBinding,
+
+    // ── Phase 3.5 Infrastructure Resilience Rules ────────────────────────
+    RequireFederationSnapshots,
+    RequireDeterministicReplay,
+    RequirePartitionDetection,
+    RequirePartitionHealingApproval,
+    RequireVerifierRejoinValidation,
+    RequireQuorumReformation,
+    RequireRecoveryGovernance,
+    RequireMigrationContinuity,
 }
 
 // ── HardwarePolicyContext ─────────────────────────────────────────────────
@@ -571,6 +581,7 @@ impl HardwarePolicyEngine {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn rule_belongs_to_domain(rule: &HardwarePolicyRule, domain: TrustDomain) -> bool {
         match domain {
             TrustDomain::HardwareIdentity => matches!(
@@ -641,6 +652,14 @@ impl HardwarePolicyEngine {
                     HardwarePolicyRule::RequireFederatedNodeVerification
                         | HardwarePolicyRule::RequirePqFederationTransport
                         | HardwarePolicyRule::RequireFederationMessageSigning
+                        | HardwarePolicyRule::RequireFederationSnapshots
+                        | HardwarePolicyRule::RequireDeterministicReplay
+                        | HardwarePolicyRule::RequirePartitionDetection
+                        | HardwarePolicyRule::RequirePartitionHealingApproval
+                        | HardwarePolicyRule::RequireVerifierRejoinValidation
+                        | HardwarePolicyRule::RequireQuorumReformation
+                        | HardwarePolicyRule::RequireRecoveryGovernance
+                        | HardwarePolicyRule::RequireMigrationContinuity
                 )
             }
             // --- Phase 3.3 Byzantine Federation Convergence ---
@@ -661,6 +680,17 @@ impl HardwarePolicyEngine {
                     | HardwarePolicyRule::RequireBoundedTimeSkew
                     | HardwarePolicyRule::RequireAnchoredKeyRegistry
                     | HardwarePolicyRule::RequireEpochKeyBinding
+            ),
+            TrustDomain::RecoveryIntegrity => matches!(
+                rule,
+                HardwarePolicyRule::RequireFederationSnapshots
+                    | HardwarePolicyRule::RequireDeterministicReplay
+                    | HardwarePolicyRule::RequirePartitionDetection
+                    | HardwarePolicyRule::RequirePartitionHealingApproval
+                    | HardwarePolicyRule::RequireVerifierRejoinValidation
+                    | HardwarePolicyRule::RequireQuorumReformation
+                    | HardwarePolicyRule::RequireRecoveryGovernance
+                    | HardwarePolicyRule::RequireMigrationContinuity
             ),
         }
     }
@@ -1220,6 +1250,7 @@ impl HardwarePolicyEngine {
                     return Err(HardwarePolicyError::EpochKeyBindingInvalid);
                 }
             }
+
             _ => {}
         }
         Ok(())

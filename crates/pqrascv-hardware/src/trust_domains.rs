@@ -24,6 +24,8 @@ pub enum TrustDomain {
     DistributedGovernance,
     // --- Phase 3.4 Federation Time Semantics ---
     TemporalTimekeeping,
+    // --- Phase 3.5 Infrastructure Resilience ---
+    RecoveryIntegrity,
 }
 
 /// Explicit reasons why a verification decision succeeded or failed.
@@ -114,6 +116,9 @@ pub enum VerificationDecisionReason {
     EpochKeyBindingInvalid,
     /// Verifier key registration is not yet anchored.
     VerifierNotAnchored,
+    // --- Phase 3.5 Infrastructure Resilience ---
+    /// Recovery procedure violated (e.g., partition detected, invalid snapshot, missing lineage).
+    RecoveryIntegrityFailure,
 }
 
 /// Structured outcome of evaluation for a single trust domain.
