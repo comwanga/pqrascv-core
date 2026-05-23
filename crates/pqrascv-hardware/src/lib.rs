@@ -109,6 +109,18 @@ pub mod governance_continuity;
 pub mod retention_governance;
 pub mod verifier_revocation;
 
+// Phase 3.5 Infrastructure Resilience
+pub mod deterministic_replay;
+pub mod disaster_recovery;
+pub mod federation_migration;
+pub mod federation_snapshot;
+pub mod partition_detection;
+pub mod partition_healing;
+pub mod quorum_reformation;
+pub mod recovery_governance;
+pub mod recovery_lineage;
+pub mod verifier_rejoin;
+
 pub mod ek_framework;
 pub mod governance;
 pub mod ima_integration;

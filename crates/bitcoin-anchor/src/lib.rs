@@ -50,6 +50,7 @@ pub mod key_registry_anchor;
 pub mod merkle;
 pub mod node_anchor;
 pub mod proof;
+pub mod recovery_anchor;
 pub mod timeline;
 
 pub use federation::FederationBatchAggregator;
@@ -59,6 +60,7 @@ pub use key_registry_anchor::{AnchoredVerifierKey, VerifierRegistrationState};
 pub use merkle::MerkleAggregator;
 pub use node_anchor::NodeAttestationAnchor;
 pub use proof::{InclusionProof, SpvVerifier};
+pub use recovery_anchor::{RecoveryAnchor, RecoveryAnchorType};
 pub use timeline::{TimelineInclusionProof, TimelineMerkleAggregator, TimelineSpvVerifier};
 
 // ── OP_RETURN constants ───────────────────────────────────────────────────
