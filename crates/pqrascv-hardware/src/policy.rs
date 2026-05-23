@@ -743,7 +743,7 @@ impl HardwarePolicyEngine {
         Ok(())
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, clippy::collapsible_match)]
     fn evaluate_rule(
         rule: &HardwarePolicyRule,
         ctx: &HardwarePolicyContext<'_>,
