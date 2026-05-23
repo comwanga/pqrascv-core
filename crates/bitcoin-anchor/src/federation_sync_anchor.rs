@@ -1,3 +1,4 @@
+use alloc::string::String;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -46,6 +47,8 @@ impl FederationSyncAnchor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::string::String;
+    use alloc::vec::Vec;
 
     #[test]
     fn invalid_snapshot_anchor_rejected() {

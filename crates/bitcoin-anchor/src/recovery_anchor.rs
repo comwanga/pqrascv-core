@@ -1,3 +1,4 @@
+use alloc::string::String;
 use serde::{Deserialize, Serialize};
 
 /// Represents Bitcoin-anchored proofs of federation recovery actions.
@@ -87,6 +88,8 @@ impl RecoveryAnchor {
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::String;
+    use alloc::vec::Vec;
     use super::*;
 
     #[test]
