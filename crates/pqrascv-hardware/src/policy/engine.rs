@@ -15,16 +15,6 @@ use alloc::vec::Vec;
 
 // ── HardwarePolicyRule ────────────────────────────────────────────────────
 
-/// Hardware-specific policy rules for the attestation engine.
-///
-/// These rules operate on [`HardwarePolicyContext`] and complement the
-/// base `PolicyRule` set from `pqrascv-core`.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-// ── HardwarePolicyContext ─────────────────────────────────────────────────
-
-/// Hardware-specific context for policy evaluation.
-///
-/// Populated by the verifier from [`HardwareEvidence`](crate::backend::HardwareEvidence).
 
 // ── HardwarePolicyEngine ──────────────────────────────────────────────────
 
