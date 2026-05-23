@@ -55,21 +55,32 @@ impl RecoveryAnchor {
         }
 
         match &self.anchor_type {
-            RecoveryAnchorType::SnapshotAnchor { snapshot_id, snapshot_hash } => {
-                !snapshot_id.is_empty() && *snapshot_hash != [0; 32]
+            RecoveryAnchorType::SnapshotAnchor {
+                snapshot_id,
+                snapshot_hash,
+            } => !snapshot_id.is_empty() && *snapshot_hash != [0; 32],
+            RecoveryAnchorType::DisasterRecoveryAnchor {
+                checkpoint_id,
+                federation_state_hash,
+                ..
+            } => !checkpoint_id.is_empty() && *federation_state_hash != [0; 32],
+            RecoveryAnchorType::PartitionHealingAnchor {
+                partition_id,
+                healed_root,
+            } => !partition_id.is_empty() && *healed_root != [0; 32],
+            RecoveryAnchorType::MigrationAnchor {
+                source_federation_id,
+                target_federation_id,
+                migration_root,
+            } => {
+                !source_federation_id.is_empty()
+                    && !target_federation_id.is_empty()
+                    && *migration_root != [0; 32]
             }
-            RecoveryAnchorType::DisasterRecoveryAnchor { checkpoint_id, federation_state_hash, .. } => {
-                !checkpoint_id.is_empty() && *federation_state_hash != [0; 32]
-            }
-            RecoveryAnchorType::PartitionHealingAnchor { partition_id, healed_root } => {
-                !partition_id.is_empty() && *healed_root != [0; 32]
-            }
-            RecoveryAnchorType::MigrationAnchor { source_federation_id, target_federation_id, migration_root } => {
-                !source_federation_id.is_empty() && !target_federation_id.is_empty() && *migration_root != [0; 32]
-            }
-            RecoveryAnchorType::QuorumReformationAnchor { reformed_quorum_root, .. } => {
-                *reformed_quorum_root != [0; 32]
-            }
+            RecoveryAnchorType::QuorumReformationAnchor {
+                reformed_quorum_root,
+                ..
+            } => *reformed_quorum_root != [0; 32],
         }
     }
 }

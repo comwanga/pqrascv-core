@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use alloc::collections::VecDeque;
+use serde::{Deserialize, Serialize};
 
 /// A bounded replay window representing a rolling cache of deterministically applied events.
 /// This prevents memory exhaustion attacks by compacting older events into `applied_event_root`.
@@ -102,7 +102,7 @@ mod tests {
         window.apply_event([1; 32]);
         window.apply_event([2; 32]);
         window.apply_event([3; 32]);
-        
+
         assert_eq!(window.retained_events.len(), 3);
         assert_eq!(window.applied_event_root, [0; 32]); // No compaction yet
 

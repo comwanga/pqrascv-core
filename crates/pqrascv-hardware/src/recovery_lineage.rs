@@ -29,7 +29,7 @@ impl RecoveryLineage {
             if parent == [0; 32] {
                 return false;
             }
-            
+
             // A lineage cannot reference itself
             if parent == self.lineage_root {
                 return false;

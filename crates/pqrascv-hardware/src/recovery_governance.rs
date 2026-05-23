@@ -48,15 +48,15 @@ impl RecoveryGovernanceEvent {
             RecoveryGovernanceAction::ApprovePartitionHealing { partition_id } => {
                 !partition_id.is_empty()
             }
-            RecoveryGovernanceAction::ApproveQuorumReformation { reformed_quorum_root } => {
-                *reformed_quorum_root != [0; 32]
-            }
+            RecoveryGovernanceAction::ApproveQuorumReformation {
+                reformed_quorum_root,
+            } => *reformed_quorum_root != [0; 32],
             RecoveryGovernanceAction::ApproveRecoveryCheckpoint { checkpoint_id } => {
                 !checkpoint_id.is_empty()
             }
-            RecoveryGovernanceAction::ApproveFederationMigration { target_federation_id } => {
-                !target_federation_id.is_empty()
-            }
+            RecoveryGovernanceAction::ApproveFederationMigration {
+                target_federation_id,
+            } => !target_federation_id.is_empty(),
             RecoveryGovernanceAction::RejectRecoveryState { reason } => !reason.is_empty(),
         }
     }
