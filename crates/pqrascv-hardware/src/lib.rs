@@ -54,6 +54,9 @@ extern crate alloc;
 pub mod attested_node_report;
 pub mod backend;
 pub mod baseline;
+pub mod invariants;
+pub mod audit_trace;
+pub mod consistency_checker;
 pub mod bitcoin_node_identity;
 pub mod bitcoin_node_timeline;
 pub mod bitcoin_policy_profiles;
@@ -128,7 +131,7 @@ pub mod eclipse_resistance;
 pub mod federation_liveness;
 pub mod gossip_protocol;
 pub mod hashing;
-pub mod invariants;
+
 pub mod network_governance;
 pub mod peer_reputation;
 pub mod snapshot_sync;
