@@ -103,10 +103,10 @@
 //!
 //! Issues, PRs, and feedback are welcome at <https://github.com/comwanga/pqrascv-core>.
 //! Areas where contributions are especially valuable:
-//! - **Hardware backends** — SEV-SNP, TDX, OP-TEE, Apple Secure Enclave
+//! - **New platform backends** — SEV-SNP, TDX, OP-TEE, Apple Secure Enclave
 //! - **Allocation-free quote assembly** — removing the `alloc` requirement entirely
 //! - **Post-quantum transport** — Noise\_PQX or COSE/CBOR signing integration
-//! - **Formal verification expansion** — extending Phase 4 Kani harnesses and `cargo-fuzz` targets
+//! - **Formal verification** — Kani harnesses and fuzzing coverage
 //!
 //! Licensed under either MIT or Apache-2.0 at your option.
 

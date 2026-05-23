@@ -16,9 +16,6 @@
 //! | [`backend`] | Hardware backend trait and evidence types |
 //! | [`tpm_verify`] | TPM 2.0 quote structural verification |
 //! | [`policy`] | Hardware-aware policy rules |
-//! | [`audit_trace`] | Cryptographically linked, append-only lineage of evaluation events |
-//! | [`invariants`] | System-wide assertions to prevent Byzantine violations and equivocation |
-//! | [`consistency_checker`] | Full divergence drift validation for the global audit trace |
 //!
 //! ## Trust Model
 //!

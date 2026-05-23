@@ -68,18 +68,6 @@ PQ-RASCV now ships with a complete reference architecture for **Sovereign Bitcoi
 
 ---
 
-## Phase 4.0: Formal Verification & Production Hardening
-
-The core protocols have advanced to **Production Readiness**, backed by Level B Formal Verification:
-
-- **Strict System Invariants** — Runtime invariants guarantee monotonic sequence evolution, bounded replay windows, and non-equivocation (`invariants.rs`).
-- **Cryptographic Audit Lineage** — The `AuditTrace` subsystem enforces an append-only, deterministic Merkle log of all policy evaluations and quorum formations.
-- **Bitcoin Finality State Machine** — `FinalityCommitment` formally distinguishes between probabilistic confirmation depth and internal deterministic finality thresholds (`k_threshold`), preventing premature irreversible consensus.
-- **Consistency Checking** — Full divergence drift validation via `ConsistencyChecker` ensures global state integrity.
-- **Fuzzing & Property Tests** — Stabilized `cargo-fuzz` targets for panic boundaries and `proptest` suites for mathematical trace determinism.
-
----
-
 ## Quick Start
 
 ```toml
