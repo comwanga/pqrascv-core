@@ -61,7 +61,6 @@ impl RuntimeDriftEngine {
                     RuntimeDriftSeverity::Critical
                 };
 
-                // Fallback dummy/empty digest if whitelist is empty
                 let expected = whitelist.first().copied().unwrap_or_else(|| {
                     TypedDigest::new(crate::digest::DigestAlgorithm::Sha3_256, [0; 32])
                 });

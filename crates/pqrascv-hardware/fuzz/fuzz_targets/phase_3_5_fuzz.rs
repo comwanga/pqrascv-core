@@ -7,7 +7,6 @@ fuzz_target!(|data: &[u8]| {
         return;
     }
     
-    // Create a dummy replay window
     let mut window = ReplayWindow::new(data[0] as u64, 100);
     
     // Attempt to add a dummy event based on fuzzed data

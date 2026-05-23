@@ -28,10 +28,6 @@ impl BitcoinProcessEvidence {
     pub fn collect() -> Result<Self, &'static str> {
         // In a real implementation on Linux, this traverses procfs.
         // E.g.
-        // 1. Find bitcoind by parsing /proc/[pid]/comm or cmdline.
-        // 2. Read /proc/[pid]/exe to hash the exact binary on disk.
-        // 3. Locate bitcoin.conf from cmdline or default path, and hash it.
-        // 4. Calculate uptime from /proc/[pid]/stat.
         //
         // This is strictly workload integrity collection.
         //

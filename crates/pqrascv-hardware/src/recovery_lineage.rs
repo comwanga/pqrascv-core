@@ -24,7 +24,6 @@ impl RecoveryLineage {
             return false;
         }
 
-        // If a parent exists, it cannot be empty
         if let Some(parent) = self.parent_lineage {
             if parent == [0; 32] {
                 return false;

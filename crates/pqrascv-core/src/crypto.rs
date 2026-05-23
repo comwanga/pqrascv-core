@@ -22,7 +22,6 @@ use sha3::{Digest, Sha3_256};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 // ────────────────────────────────────────────────────────────────────────────
-// Size constants
 // ────────────────────────────────────────────────────────────────────────────
 
 /// ML-DSA-65 signing key seed size in bytes.
@@ -183,7 +182,6 @@ impl CryptoBackend for MlDsaBackend {
         let sig =
             Signature::<MlDsa65>::decode(&encoded_sig).ok_or(PqRascvError::VerificationFailed)?;
 
-        // Returns bool, not Result — so we convert it ourselves.
         if vk.verify_with_context(message, b"", &sig) {
             Ok(())
         } else {
@@ -193,7 +191,6 @@ impl CryptoBackend for MlDsaBackend {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Key generation
 // ────────────────────────────────────────────────────────────────────────────
 
 /// Generates a fresh ML-DSA-65 key pair using the OS random source.

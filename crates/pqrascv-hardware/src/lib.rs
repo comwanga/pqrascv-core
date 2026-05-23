@@ -121,14 +121,29 @@ pub mod recovery_governance;
 pub mod recovery_lineage;
 pub mod verifier_rejoin;
 
-pub mod ek_framework;
-pub mod governance;
+// Phase 3.6 Adaptive Federation Synchronization
+pub mod adaptive_sync;
+pub mod canonicalization;
+pub mod eclipse_resistance;
+pub mod federation_liveness;
+pub mod gossip_protocol;
+pub mod hashing;
+pub mod invariants;
+pub mod network_governance;
+pub mod peer_reputation;
+pub mod snapshot_sync;
+pub mod state_reconstruction;
+
 pub mod ima_integration;
+pub mod linux_ima_collector;
 pub mod node_attestation_session;
 pub mod pcr;
 pub mod platform_profiles;
 pub mod policy;
 pub mod policy_federation;
+
+pub mod ek_framework;
+pub mod governance;
 pub mod profiles;
 pub mod reputation;
 pub mod runtime_attestation;

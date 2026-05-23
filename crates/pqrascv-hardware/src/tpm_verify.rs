@@ -66,24 +66,20 @@ impl TpmQuoteVerifier {
             warnings: Vec::new(),
         };
 
-        // 1. Parse TPM2B_ATTEST
         let attest =
             TpmsAttest::parse_tpm2b(&evidence.quote_blob).map_err(TpmVerifyError::ParseError)?;
 
-        // 2. Nonce verification
         if attest.extra_data != expected_nonce {
             return Err(TpmVerifyError::NonceMismatch);
         }
         report.nonce_valid = true;
 
-        // 3. Clock state
         if !attest.safe || !evidence.clock_info.safe {
             report
                 .warnings
                 .push("TPM clock is in an unsafe state".into());
         }
 
-        // 4. PCR Digest Recomputation
         let expected_pcr_digest =
             Self::recompute_pcr_digest(&attest.attested.pcr_select.selections, pcr_bank)?;
         if attest.attested.pcr_digest != expected_pcr_digest {
@@ -91,7 +87,6 @@ impl TpmQuoteVerifier {
         }
         report.pcr_digest_valid = true;
 
-        // 5. Parse AK Public Key & Verify Signature
         #[cfg(feature = "tpm-crypto")]
         {
             let ak_pub = TpmtPublic::parse_tpm2b(&evidence.identity.ak_pub)

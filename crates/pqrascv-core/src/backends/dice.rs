@@ -128,7 +128,6 @@ impl RoT for DiceRoT<'_> {
         // ── 4. Populate PCR bank ─────────────────────────────────────────────
         //
         // PCR 0 holds the attestation CDI. The rest stay zero for now —
-        // if you're stacking DICE layers, each nested DiceRoT fills in the next slot.
         let mut pcrs = PcrBank::default();
         pcrs.digests[0] = cdi_attestation;
 

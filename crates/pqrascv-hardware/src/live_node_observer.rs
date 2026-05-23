@@ -49,7 +49,6 @@ impl NodeObservation {
             return Err("observation integrity status is unacceptable");
         }
 
-        // Check if the runtime restarted unexpectedly without proper event markers
         if self.runtime_state.uptime_seconds < previous.runtime_state.uptime_seconds {
             return Err("runtime uptime reversed, indicating an untracked node restart");
         }

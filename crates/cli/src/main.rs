@@ -211,7 +211,6 @@ fn cmd_prove(
 
     let rot = SoftwareRoT::new(&firmware, model.as_deref(), 0);
 
-    // Hash the firmware and register it as a provenance subject.
     let fw_digest = sha3_256(&firmware);
     let mut builder_obj = SlsaPredicateBuilder::new(&builder)
         .add_subject(
