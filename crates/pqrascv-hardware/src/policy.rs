@@ -1842,7 +1842,9 @@ impl core::fmt::Display for HardwarePolicyError {
 
             // ── Phase 3.4 Federation Time Semantics Errors ────────────────
             Self::TimeSkewExceeded => write!(f, "Physical time drift exceeds bounded skew limits"),
-            Self::LogicalClockFailed => write!(f, "Logical clock synchronization failed or non-monotonic"),
+            Self::LogicalClockFailed => {
+                write!(f, "Logical clock synchronization failed or non-monotonic")
+            }
             Self::EpochKeyBindingInvalid => write!(f, "Epoch-key binding validation failed"),
             Self::VerifierNotAnchored => write!(f, "Verifier key registration is not yet anchored"),
         }

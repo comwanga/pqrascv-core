@@ -95,6 +95,6 @@ mod tests {
         };
 
         assert!(!a.exceeds_skew(&b, 60)); // 50 <= 60
-        assert!(a.exceeds_skew(&b, 40));  // 50 > 40
+        assert!(a.exceeds_skew(&b, 40)); // 50 > 40
     }
 }

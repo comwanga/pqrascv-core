@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 
 /// Represents the registration state of a Verifier's identity key on the Bitcoin blockchain.
-/// 
+///
 /// In Phase 3.4, a verifier's key must be explicitly bound to the Bitcoin anchor. To prevent
 /// delays while waiting for Bitcoin block confirmations, a verifier can be in a `Provisional`
 /// state, transitioning to `Anchored` once confirmed.
@@ -43,7 +43,13 @@ pub struct AnchoredVerifierKey {
 
 impl AnchoredVerifierKey {
     /// Creates a new provisional anchored key entry.
-    pub fn new_provisional(verifier_id: String, public_key: Vec<u8>, txid: [u8; 32], epoch_id: u64, timestamp: u64) -> Self {
+    pub fn new_provisional(
+        verifier_id: String,
+        public_key: Vec<u8>,
+        txid: [u8; 32],
+        epoch_id: u64,
+        timestamp: u64,
+    ) -> Self {
         Self {
             verifier_id,
             public_key,
