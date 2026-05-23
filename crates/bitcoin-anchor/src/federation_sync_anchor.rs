@@ -1,3 +1,4 @@
+use alloc::string::String;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -45,6 +45,7 @@ use alloc::vec::Vec;
 
 pub mod federation;
 pub mod federation_sync_anchor;
+pub mod finality_anchor;
 pub mod governance_anchor;
 pub mod incremental_anchor;
 pub mod key_registry_anchor;
@@ -56,6 +57,7 @@ pub mod recovery_anchor;
 pub mod timeline;
 
 pub use federation::FederationBatchAggregator;
+pub use finality_anchor::FinalityCommitment;
 pub use governance_anchor::{GovernanceAnchor, GovernanceEventType};
 pub use incremental_anchor::IncrementalAnchor;
 pub use key_registry_anchor::{AnchoredVerifierKey, VerifierRegistrationState};

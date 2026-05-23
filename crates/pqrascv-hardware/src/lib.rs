@@ -52,12 +52,16 @@
 extern crate alloc;
 
 pub mod attested_node_report;
+pub mod audit_trace;
 pub mod backend;
 pub mod baseline;
 pub mod bitcoin_node_identity;
 pub mod bitcoin_node_timeline;
 pub mod bitcoin_policy_profiles;
 pub mod bitcoin_runtime_monitor;
+pub mod consistency_checker;
+pub mod invariants;
+
 pub mod bitcoin_workload_integrity;
 pub mod boot_chain;
 pub mod continuous_attestation;
@@ -66,6 +70,8 @@ pub mod deployment_reference;
 pub mod digest;
 pub mod distributed_consensus;
 pub mod drift;
+#[cfg(test)]
+mod proptests;
 
 // Phase 3.1 Live Evidence Modules
 #[cfg(feature = "live-evidence")]
@@ -128,7 +134,7 @@ pub mod eclipse_resistance;
 pub mod federation_liveness;
 pub mod gossip_protocol;
 pub mod hashing;
-pub mod invariants;
+
 pub mod network_governance;
 pub mod peer_reputation;
 pub mod snapshot_sync;

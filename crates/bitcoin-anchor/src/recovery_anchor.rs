@@ -1,3 +1,4 @@
+use alloc::string::String;
 use serde::{Deserialize, Serialize};
 
 /// Represents Bitcoin-anchored proofs of federation recovery actions.
