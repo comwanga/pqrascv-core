@@ -60,12 +60,12 @@ impl TraceEvent {
             } => {
                 hasher.update(b"PolicyEvaluated");
                 hasher.update(evaluator.as_bytes());
-                hasher.update(&result_hash.value);
+                hasher.update(result_hash.value);
             }
             TraceEvent::QuorumFormed { epoch, quorum_hash } => {
                 hasher.update(b"QuorumFormed");
                 hasher.update(epoch.to_be_bytes());
-                hasher.update(&quorum_hash.value);
+                hasher.update(quorum_hash.value);
             }
             TraceEvent::SnapshotSealed {
                 snapshot_id,
@@ -76,7 +76,7 @@ impl TraceEvent {
             } => {
                 hasher.update(b"SnapshotSealed");
                 hasher.update(snapshot_id);
-                hasher.update(&snapshot_hash.value);
+                hasher.update(snapshot_hash.value);
                 if let Some(h) = anchor_height {
                     hasher.update(h.to_be_bytes());
                 }
@@ -93,7 +93,7 @@ impl TraceEvent {
                 hasher.update(b"ReplayApplied");
                 hasher.update(start_seq.to_be_bytes());
                 hasher.update(end_seq.to_be_bytes());
-                hasher.update(&final_hash.value);
+                hasher.update(final_hash.value);
             }
         }
         let result: [u8; 32] = hasher.finalize().into();
@@ -106,7 +106,7 @@ impl AuditTrace {
     #[must_use]
     pub fn new(genesis_root: TypedDigest) -> Self {
         Self {
-            genesis_root: genesis_root.clone(),
+            genesis_root,
             latest_root: genesis_root,
             events: Vec::new(),
             sequence: 0,
@@ -120,8 +120,8 @@ impl AuditTrace {
         let event_hash = event.compute_hash();
 
         let mut hasher = Sha3_256::new();
-        hasher.update(&self.latest_root.value);
-        hasher.update(&event_hash.value);
+        hasher.update(self.latest_root.value);
+        hasher.update(event_hash.value);
 
         let next_root: [u8; 32] = hasher.finalize().into();
 
@@ -134,13 +134,13 @@ impl AuditTrace {
     /// to ensure the `latest_root` matches the sequence of `events` applied to `genesis_root`.
     #[must_use]
     pub fn verify_integrity(&self) -> bool {
-        let mut current_root = self.genesis_root.clone();
+        let mut current_root = self.genesis_root;
 
         for event in &self.events {
             let event_hash = event.compute_hash();
             let mut hasher = Sha3_256::new();
-            hasher.update(&current_root.value);
-            hasher.update(&event_hash.value);
+            hasher.update(current_root.value);
+            hasher.update(event_hash.value);
 
             let next_root: [u8; 32] = hasher.finalize().into();
             current_root = TypedDigest::new(DigestAlgorithm::Sha3_256, next_root);

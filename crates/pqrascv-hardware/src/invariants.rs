@@ -17,13 +17,11 @@ impl SystemInvariants {
     /// # Panics
     /// Panics if `new_timestamp <= watermark`.
     pub fn assert_monotonic_time(watermark: u64, new_timestamp: u64) {
-        if new_timestamp <= watermark {
-            panic!(
-                "CRITICAL INVARIANT VIOLATION: Non-monotonic time sequence. \
-                 Watermark: {}, New: {}. This indicates Byzantine tampering or rollback.",
-                watermark, new_timestamp
-            );
-        }
+        assert!(
+            new_timestamp > watermark,
+            "CRITICAL INVARIANT VIOLATION: Non-monotonic time sequence. \
+             Watermark: {watermark}, New: {new_timestamp}. This indicates Byzantine tampering or rollback."
+        );
     }
 
     /// Asserts that a cryptographic state transition produces a canonical, deterministic hash.
@@ -32,9 +30,10 @@ impl SystemInvariants {
     /// # Panics
     /// Panics if `root` is empty (all zeroes).
     pub fn assert_deterministic_delta_root(root: &TypedDigest) {
-        if root.value.iter().all(|&b| b == 0) {
-            panic!("CRITICAL INVARIANT VIOLATION: Zeroed delta root generated. State transitions must be cryptographically distinct.");
-        }
+        assert!(
+            !root.value.iter().all(|&b| b == 0),
+            "CRITICAL INVARIANT VIOLATION: Zeroed delta root generated. State transitions must be cryptographically distinct."
+        );
     }
 
     /// Asserts that no two unique, finalized events share the same Sequence ID (Epoch/Timeline).
@@ -43,13 +42,11 @@ impl SystemInvariants {
     /// # Panics
     /// Panics if `seq_a == seq_b`.
     pub fn assert_no_equivocation(seq_a: u64, seq_b: u64) {
-        if seq_a == seq_b {
-            panic!(
-                "CRITICAL INVARIANT VIOLATION: Equivocation detected at sequence ID {}. \
-                 Two divergent finalizing events share the same index.",
-                seq_a
-            );
-        }
+        assert!(
+            seq_a != seq_b,
+            "CRITICAL INVARIANT VIOLATION: Equivocation detected at sequence ID {seq_a}. \
+             Two divergent finalizing events share the same index."
+        );
     }
 
     /// Asserts that replay windows strictly bound the historical horizon.
@@ -57,29 +54,25 @@ impl SystemInvariants {
     /// # Panics
     /// Panics if the current replay length exceeds the maximum allowed deterministic boundary.
     pub fn assert_bounded_replay(current_length: usize, max_length: usize) {
-        if current_length > max_length {
-            panic!(
-                "CRITICAL INVARIANT VIOLATION: Replay window length {} exceeds bounded maximum {}. \
-                 This violates the state-space exhaustion assumptions.",
-                current_length, max_length
-            );
-        }
+        assert!(
+            current_length <= max_length,
+            "CRITICAL INVARIANT VIOLATION: Replay window length {current_length} exceeds bounded maximum {max_length}. \
+             This violates the state-space exhaustion assumptions."
+        );
     }
     /// Asserts that a finality state is strictly `IrreversibleFinality`.
     ///
-    /// No system state derived from a FinalityCommitment may be considered
+    /// No system state derived from a `FinalityCommitment` may be considered
     /// immutable unless it is in the `IrreversibleFinality` state.
     ///
     /// # Panics
     /// Panics if the state is not `IrreversibleFinality`.
     pub fn assert_irreversible_finality(state: &FinalityState) {
-        if state != &FinalityState::IrreversibleFinality {
-            panic!(
-                "CRITICAL INVARIANT VIOLATION: Attempted to assume immutability on a provisional state. \
-                 Current state is {:?}, but IrreversibleFinality is required.",
-                state
-            );
-        }
+        assert!(
+            state == &FinalityState::IrreversibleFinality,
+            "CRITICAL INVARIANT VIOLATION: Attempted to assume immutability on a provisional state. \
+             Current state is {state:?}, but IrreversibleFinality is required."
+        );
     }
 }
 

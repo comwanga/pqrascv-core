@@ -14,8 +14,8 @@ impl ConsistencyChecker {
     /// Performs a full-system consistency validation pass.
     ///
     /// Checks that:
-    /// 1. The AuditTrace is structurally sound and cryptographically verified.
-    /// 2. The latest root in the AuditTrace matches the expected federation state root.
+    /// 1. The `AuditTrace` is structurally sound and cryptographically verified.
+    /// 2. The latest root in the `AuditTrace` matches the expected federation state root.
     /// 3. Epoch transitions are strictly monotonic and unbroken.
     /// 4. No anchors are missing (e.g., `SnapshotSealed` events are properly sequenced).
     ///
