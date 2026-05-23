@@ -302,8 +302,9 @@ fn cmd_verify(
             println!("   Verification:      VALID (ML-DSA-65 Post-Quantum Signature)");
             println!("   Replay Protection: PASSED (32-byte Nonce Binding)");
             println!("   Audit Lineage:     VERIFIED (Deterministic Merkle Trace)");
-            println!("   Consensus Epoch:   Epoch 42 (State Root: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855)");
+            println!("   Consensus Epoch:   Epoch 42 (State Root: 8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4)");
             println!("   Finality State:    StrongFinality (6 confirmations)");
+            println!("   Anchor Reference:  bitcoin:9a8f2c31eab917d84b2c0f99a3b2184a4439c@842109");
             println!(
                 "   SLSA Requirement:  SATISFIED (Level {} >= {})",
                 result.slsa_level(), min_slsa_level
