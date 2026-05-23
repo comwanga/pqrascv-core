@@ -1,6 +1,7 @@
 [package]
 name         = "pqrascv-bitcoin-anchor"
 description  = "Bitcoin OP_RETURN anchoring for PQ-RASCV attestation audit trails"
+readme       = "../../README.md"
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true
