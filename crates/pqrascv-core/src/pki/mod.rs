@@ -43,7 +43,7 @@ use sha3::{Digest, Sha3_256};
 // ── Certificate version ───────────────────────────────────────────────────
 
 /// Current PQ-RASCV certificate format version.
-pub const CERT_VERSION: u8 = 2;
+pub const CERT_VERSION: u8 = 3;
 
 // ── Hardware identity binding ─────────────────────────────────────────────
 
@@ -115,6 +115,15 @@ pub struct DeviceCertificate {
     pub hardware_identity: HardwareIdentity,
     /// Optional firmware policy constraints.
     pub fw_policy: Option<FirmwarePolicyConstraint>,
+    /// This certificate's own subject identifier URI.
+    /// Must match the `issuer_id` of any certificate this cert signs.
+    #[serde(default)]
+    pub self_id: String,
+    /// Maximum CA depth allowed below this certificate's subject key.
+    /// `Some(0)` = leaf (device cert, cannot sign further certs).
+    /// `None` = no constraint.
+    #[serde(default)]
+    pub max_path_length: Option<u8>,
     /// ML-DSA-65 signature by the issuing CA over the TBS (to-be-signed) fields.
     #[serde(with = "serde_bytes")]
     pub issuer_signature: Vec<u8>,
@@ -149,6 +158,8 @@ impl DeviceCertificate {
             subject_key_id: self.subject_key_id,
             hardware_identity: &self.hardware_identity,
             fw_policy: self.fw_policy.as_ref(),
+            self_id: &self.self_id,
+            max_path_length: self.max_path_length,
         };
         let mut buf = Vec::new();
         ciborium::into_writer(&tbs, &mut buf).map_err(|_| PqRascvError::SerializationFailed)?;
@@ -170,6 +181,8 @@ struct DeviceCertTbs<'a> {
     subject_key_id: [u8; 32],
     hardware_identity: &'a HardwareIdentity,
     fw_policy: Option<&'a FirmwarePolicyConstraint>,
+    self_id: &'a str,
+    max_path_length: Option<u8>,
 }
 
 // ── CaPublicKey ───────────────────────────────────────────────────────────
@@ -255,14 +268,18 @@ impl CertChain {
 /// Validates a certificate chain against a trust anchor.
 ///
 /// Checks:
-/// 1. Each certificate's `issuer_signature` is valid under the previous cert's key
+/// 1. Each certificate's format version equals [`CERT_VERSION`].
+/// 2. Each certificate's `issuer_id` matches the identity of the cert above it.
+/// 3. Each certificate's `issuer_signature` is valid under the previous cert's key
 ///    (or the root CA key for the first intermediate).
-/// 2. Each certificate is temporally valid at `now_secs`.
-/// 3. The chain terminates at the trust anchor's root CA.
+/// 4. Each certificate is temporally valid at `now_secs`.
+/// 5. CA path-length constraints (`max_path_length`) are honoured.
+/// 6. The chain terminates at the trust anchor's root CA.
 ///
 /// # Errors
 ///
-/// Returns [`PqRascvError::VerificationFailed`] if any check fails.
+/// Returns [`PqRascvError::CertificateInvalid`] for structural/policy failures
+/// and [`PqRascvError::VerificationFailed`] for cryptographic failures.
 #[cfg(feature = "alloc")]
 pub fn validate_chain(
     device_cert: DeviceCertificate,
@@ -272,26 +289,82 @@ pub fn validate_chain(
 ) -> Result<CertChain, PqRascvError> {
     use crate::crypto::{CryptoBackend, MlDsaBackend, SIGNING_CONTEXT_CERT};
 
-    // Verify each cert is signed by the key above it.
-    let mut current_verifying_key: &[u8] = trust_anchor.root_key_bytes();
+    // Build signing key sequence: [root_key, int[0].subject_key, int[1].subject_key, ...]
+    let mut signing_keys: Vec<Vec<u8>> = Vec::with_capacity(intermediates.len() + 1);
+    signing_keys.push(trust_anchor.root_key_bytes().to_vec());
+    for int in &intermediates {
+        signing_keys.push(int.subject_key.clone());
+    }
 
-    for intermediate in &intermediates {
+    // Build expected issuer ID sequence: root_ca.ca_id, int[0].self_id, int[1].self_id, ...
+    let mut issuer_ids: Vec<String> = Vec::with_capacity(intermediates.len() + 1);
+    issuer_ids.push(trust_anchor.root_ca.ca_id.to_owned());
+    for int in &intermediates {
+        issuer_ids.push(int.self_id.clone());
+    }
+
+    // Validate each intermediate
+    for (d, intermediate) in intermediates.iter().enumerate() {
+        // Version check
+        if intermediate.version != CERT_VERSION {
+            return Err(PqRascvError::CertificateInvalid);
+        }
+
+        // Issuer binding: cert's issuer_id must match the identity of the cert above it
+        if intermediate.issuer_id != issuer_ids[d] {
+            return Err(PqRascvError::CertificateInvalid);
+        }
+
+        // Path length: the signer at level d may constrain how deep the chain goes below it.
+        // Number of CA certificates below signer[d] = (intermediates.len() - d)
+        if d > 0 {
+            if let Some(max) = intermediates[d - 1].max_path_length {
+                let ca_certs_below = (intermediates.len() - d) as u8;
+                if ca_certs_below > max {
+                    return Err(PqRascvError::CertificateInvalid);
+                }
+            }
+        }
+
+        // Temporal validity
         if !intermediate.is_valid_at(now_secs) {
             return Err(PqRascvError::VerificationFailed);
         }
+
+        // Signature verification
         let tbs = intermediate.tbs_cbor()?;
-        MlDsaBackend.verify(&tbs, current_verifying_key, &intermediate.issuer_signature, SIGNING_CONTEXT_CERT)?;
-        current_verifying_key = &intermediate.subject_key;
+        MlDsaBackend.verify(&tbs, &signing_keys[d], &intermediate.issuer_signature, SIGNING_CONTEXT_CERT)?;
     }
 
-    // Verify the device certificate is signed by the last intermediate (or root).
+    // Validate device certificate
+    if device_cert.version != CERT_VERSION {
+        return Err(PqRascvError::CertificateInvalid);
+    }
+
+    let device_expected_issuer = issuer_ids.last().expect("issuer_ids always has root");
+    if device_cert.issuer_id != *device_expected_issuer {
+        return Err(PqRascvError::CertificateInvalid);
+    }
+
+    // Path length check from last intermediate
+    if let Some(last_int) = intermediates.last() {
+        if let Some(max) = last_int.max_path_length {
+            if max == 0 {
+                // Last intermediate is a leaf — it cannot sign the device cert
+                return Err(PqRascvError::CertificateInvalid);
+            }
+        }
+    }
+
     if !device_cert.is_valid_at(now_secs) {
         return Err(PqRascvError::VerificationFailed);
     }
-    let tbs = device_cert.tbs_cbor()?;
-    MlDsaBackend.verify(&tbs, current_verifying_key, &device_cert.issuer_signature, SIGNING_CONTEXT_CERT)?;
 
-    // Verify the subject_key_id is consistent with the actual subject_key.
+    let device_tbs = device_cert.tbs_cbor()?;
+    let device_signing_key = signing_keys.last().expect("always has root key");
+    MlDsaBackend.verify(&device_tbs, device_signing_key, &device_cert.issuer_signature, SIGNING_CONTEXT_CERT)?;
+
+    // subject_key_id consistency
     let computed_id = {
         let mut h = Sha3_256::new();
         h.update(&device_cert.subject_key);
@@ -302,8 +375,89 @@ pub fn validate_chain(
         return Err(PqRascvError::VerificationFailed);
     }
 
-    Ok(CertChain {
-        device_cert,
-        intermediates,
-    })
+    Ok(CertChain { device_cert, intermediates })
+}
+
+#[cfg(all(test, feature = "alloc", feature = "std"))]
+mod chain_tests {
+    use super::*;
+    use crate::crypto::{generate_ml_dsa_keypair, MlDsaBackend, CryptoBackend, SIGNING_CONTEXT_CERT};
+
+    fn sign_cert(cert: &mut DeviceCertificate, signer_seed: &[u8]) {
+        let tbs = cert.tbs_cbor().expect("tbs_cbor");
+        let sig = MlDsaBackend.sign(&tbs, signer_seed, SIGNING_CONTEXT_CERT).expect("sign");
+        cert.issuer_signature = sig.as_ref().to_vec();
+    }
+
+    fn make_ca() -> (crate::crypto::SigningKeySeed, [u8; crate::crypto::ML_DSA_65_VERIFYING_KEY_SIZE]) {
+        generate_ml_dsa_keypair().unwrap()
+    }
+
+    fn make_device_cert(
+        device_vk: &[u8],
+        issuer_id: &str,
+        self_id: &str,
+        serial: &str,
+        signer_seed: &[u8],
+    ) -> DeviceCertificate {
+        let subject_key_id = crate::crypto::pub_key_id(device_vk);
+        let mut cert = DeviceCertificate {
+            version: CERT_VERSION,
+            serial: serial.to_string(),
+            issuer_id: issuer_id.to_string(),
+            not_before: 0,
+            not_after: u64::MAX,
+            subject_key: device_vk.to_vec(),
+            subject_key_id,
+            hardware_identity: HardwareIdentity::TpmEkCertHash([0u8; 32]),
+            fw_policy: None,
+            issuer_signature: vec![],
+            self_id: self_id.to_string(),
+            max_path_length: Some(0), // leaf cert
+        };
+        sign_cert(&mut cert, signer_seed);
+        cert
+    }
+
+    #[test]
+    fn valid_chain_no_intermediates() {
+        let (ca_seed, ca_vk) = make_ca();
+        let (_, dev_vk) = make_ca();
+        let anchor = TrustAnchor::new(CaPublicKey { key_bytes: ca_vk, ca_id: "https://ca.test" });
+        let device_cert = make_device_cert(&dev_vk, "https://ca.test", "https://dev.test", "DEV-001", ca_seed.as_bytes());
+        assert!(validate_chain(device_cert, vec![], &anchor, 1_000).is_ok());
+    }
+
+    #[test]
+    fn issuer_mismatch_rejected() {
+        let (ca_seed, ca_vk) = make_ca();
+        let (_, dev_vk) = make_ca();
+        let anchor = TrustAnchor::new(CaPublicKey { key_bytes: ca_vk, ca_id: "https://ca.test" });
+        // Wrong issuer_id (claims "https://evil.ca" instead of "https://ca.test")
+        let device_cert = make_device_cert(&dev_vk, "https://evil.ca", "https://dev.test", "DEV-001", ca_seed.as_bytes());
+        assert!(matches!(
+            validate_chain(device_cert, vec![], &anchor, 1_000),
+            Err(PqRascvError::CertificateInvalid)
+        ));
+    }
+
+    #[test]
+    fn path_length_exceeded_rejected() {
+        let (root_seed, root_vk) = make_ca();
+        let (int_seed, int_vk) = make_ca();
+        let (_, dev_vk) = make_ca();
+        let anchor = TrustAnchor::new(CaPublicKey { key_bytes: root_vk, ca_id: "https://root.test" });
+
+        // Intermediate with max_path_length = Some(0) — cannot sign the device cert
+        let mut intermediate = make_device_cert(&int_vk, "https://root.test", "https://int.test", "INT-001", root_seed.as_bytes());
+        intermediate.max_path_length = Some(0); // re-sign after field change
+        sign_cert(&mut intermediate, root_seed.as_bytes());
+
+        let device_cert = make_device_cert(&dev_vk, "https://int.test", "https://dev.test", "DEV-001", int_seed.as_bytes());
+
+        assert!(matches!(
+            validate_chain(device_cert, vec![intermediate], &anchor, 1_000),
+            Err(PqRascvError::CertificateInvalid)
+        ));
+    }
 }
