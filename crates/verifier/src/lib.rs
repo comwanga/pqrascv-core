@@ -16,6 +16,8 @@ use pqrascv_core::{
     config::PolicyConfig,
     crypto::{pub_key_id, CryptoBackend, MlDsaBackend, SIGNING_CONTEXT_QUOTE},
     error::PqRascvError,
+    pki::{validate_chain, CertChain, DeviceCertificate, TrustAnchor},
+    pki::revocation::VerifiedRevocationList,
     quote::{AttestationQuote, Challenge, PROTOCOL_VERSION},
 };
 
@@ -50,6 +52,31 @@ impl VerificationResult {
     pub fn nonce(&self) -> &[u8; 32] {
         &self.quote.body.nonce
     }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// PkiVerificationResult
+// ────────────────────────────────────────────────────────────────────────────
+
+/// Outcome of a successful PKI-backed attestation verification.
+///
+/// Both the ML-DSA-65 signature and the certificate chain are verified.
+/// The signing key is derived exclusively from the validated certificate.
+#[derive(Debug)]
+pub struct PkiVerificationResult {
+    pub quote: AttestationQuote,
+    pub cert_chain: CertChain,
+}
+
+impl PkiVerificationResult {
+    #[must_use]
+    pub fn slsa_level(&self) -> u8 { self.quote.body.provenance.slsa_level() }
+    #[must_use]
+    pub fn firmware_hash(&self) -> &[u8; 32] { &self.quote.body.measurements.firmware_hash }
+    #[must_use]
+    pub fn nonce(&self) -> &[u8; 32] { &self.quote.body.nonce }
+    #[must_use]
+    pub fn device_serial(&self) -> &str { &self.cert_chain.device_cert.serial }
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -117,6 +144,44 @@ impl Verifier {
         now_secs: u64,
     ) -> Result<VerificationResult, PqRascvError> {
         self.verify_cbor(cbor, verifying_key, &challenge.nonce, now_secs)
+    }
+
+    /// Verifies a CBOR quote using a cryptographically-validated certificate chain.
+    ///
+    /// The signing key is extracted exclusively from the validated certificate.
+    /// No caller-supplied verifying key is accepted — the chain IS the source of trust.
+    ///
+    /// # Arguments
+    ///
+    /// - `device_cert`: leaf certificate for the attesting device.
+    /// - `intermediates`: ordered CA chain from root-adjacent to device-adjacent (may be empty).
+    /// - `trust_anchor`: root CA trust anchor.
+    /// - `crl`: optional verified CRL; if `Some`, the device serial is checked for revocation.
+    pub fn verify_cbor_with_pki(
+        &self,
+        cbor: &[u8],
+        device_cert: DeviceCertificate,
+        intermediates: Vec<DeviceCertificate>,
+        trust_anchor: &TrustAnchor,
+        crl: Option<&VerifiedRevocationList<'_>>,
+        expected_nonce: &[u8; 32],
+        now_secs: u64,
+    ) -> Result<PkiVerificationResult, PqRascvError> {
+        // Step 1: Validate certificate chain — sole source of the trusted signing key
+        let chain = validate_chain(device_cert, intermediates, trust_anchor, now_secs)?;
+
+        // Step 2: Revocation check before any signature work
+        if let Some(crl) = crl {
+            if crl.is_revoked(&chain.device_cert.serial) {
+                return Err(PqRascvError::CertificateRevoked);
+            }
+        }
+
+        // Step 3: Verify the quote against the key from the validated certificate
+        let verifying_key = &chain.device_cert.subject_key;
+        let result = self.verify_cbor(cbor, verifying_key, expected_nonce, now_secs)?;
+
+        Ok(PkiVerificationResult { quote: result.quote, cert_chain: chain })
     }
 
     /// Verifies an already-parsed [`AttestationQuote`]. Useful if you've already
@@ -323,5 +388,146 @@ mod tests {
         assert_eq!(result.slsa_level(), 2);
         assert_eq!(result.firmware_hash(), &expected_firmware_hash);
         assert_eq!(result.nonce(), &[0x77u8; 32]);
+    }
+}
+
+#[cfg(test)]
+mod pki_tests {
+    use super::*;
+    use pqrascv_core::{
+        crypto::{generate_ml_dsa_keypair, MlDsaBackend, CryptoBackend, SIGNING_CONTEXT_CERT,
+                 ML_DSA_65_VERIFYING_KEY_SIZE},
+        measurement::SoftwareRoT,
+        pki::{build_device_certificate, CaPublicKey, HardwareIdentity, CERT_VERSION},
+        provenance::SlsaPredicateBuilder,
+        quote::{generate_quote, QuoteTimestamp},
+    };
+
+    fn make_provenance() -> pqrascv_core::provenance::InTotoAttestation {
+        SlsaPredicateBuilder::new("https://ci.test")
+            .add_subject("fw.bin", &[0xabu8; 32])
+            .with_slsa_level(2)
+            .build()
+            .unwrap()
+    }
+
+    fn sign_cert(cert: &mut pqrascv_core::pki::DeviceCertificate, seed: &[u8]) {
+        let tbs = cert.tbs_cbor().unwrap();
+        let sig = MlDsaBackend.sign(&tbs, seed, SIGNING_CONTEXT_CERT).unwrap();
+        cert.issuer_signature = sig.as_ref().to_vec();
+    }
+
+    fn make_device_cert(
+        device_vk: &[u8; ML_DSA_65_VERIFYING_KEY_SIZE],
+        issuer_id: &str,
+        serial: &str,
+        signer_seed: &[u8],
+    ) -> pqrascv_core::pki::DeviceCertificate {
+        let subject_key_id = pqrascv_core::crypto::pub_key_id(device_vk);
+        let mut cert = build_device_certificate(
+            CERT_VERSION,
+            serial.to_string(),
+            issuer_id.to_string(),
+            0,
+            u64::MAX,
+            device_vk.to_vec(),
+            subject_key_id,
+            HardwareIdentity::TpmEkCertHash([0u8; 32]),
+            None,
+            vec![],
+            serial.to_string(),
+            Some(0),
+        );
+        sign_cert(&mut cert, signer_seed);
+        cert
+    }
+
+    #[test]
+    fn pki_verification_succeeds_with_valid_chain() {
+        let (ca_seed, ca_vk) = generate_ml_dsa_keypair().unwrap();
+        let (dev_seed, dev_vk) = generate_ml_dsa_keypair().unwrap();
+
+        let anchor = TrustAnchor::new(CaPublicKey { key_bytes: ca_vk, ca_id: "https://ca.test" });
+        let device_cert = make_device_cert(&dev_vk, "https://ca.test", "DEV-001", ca_seed.as_bytes());
+
+        let rot = SoftwareRoT::new(b"fw", None, 1);
+        let nonce = [0xAAu8; 32];
+        let quote = generate_quote(
+            &rot, &MlDsaBackend, dev_seed.as_bytes(), &dev_vk,
+            &nonce, make_provenance(), QuoteTimestamp::Rtc(1_700_000_000),
+        ).unwrap();
+        let cbor = quote.to_cbor().unwrap();
+
+        let verifier = Verifier::new(PolicyConfig::default());
+        let result = verifier.verify_cbor_with_pki(
+            &cbor, device_cert, vec![], &anchor, None, &nonce, 1_700_000_100,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().device_serial(), "DEV-001");
+    }
+
+    #[test]
+    fn pki_verification_rejects_revoked_device() {
+        use pqrascv_core::pki::revocation::{build_revocation_list, RevocationEntry, RevocationReason};
+        use pqrascv_core::crypto::SIGNING_CONTEXT_CRL;
+
+        let (ca_seed, ca_vk) = generate_ml_dsa_keypair().unwrap();
+        let (dev_seed, dev_vk) = generate_ml_dsa_keypair().unwrap();
+        let anchor = TrustAnchor::new(CaPublicKey { key_bytes: ca_vk, ca_id: "https://ca.test" });
+        let device_cert = make_device_cert(&dev_vk, "https://ca.test", "DEV-REVOKED", ca_seed.as_bytes());
+
+        let mut crl = build_revocation_list(
+            "https://ca.test".to_string(),
+            1_000,
+            9_999_999,
+            vec![RevocationEntry {
+                serial: "DEV-REVOKED".to_string(),
+                revoked_at: 1_000,
+                reason: RevocationReason::KeyCompromise,
+            }],
+            vec![],
+        );
+        let crl_tbs = crl.tbs_cbor().unwrap();
+        let crl_sig = MlDsaBackend.sign(&crl_tbs, ca_seed.as_bytes(), SIGNING_CONTEXT_CRL).unwrap();
+        crl.issuer_signature = crl_sig.as_ref().to_vec();
+        let verified_crl = crl.verify(&ca_vk, 2_000).unwrap();
+
+        let rot = SoftwareRoT::new(b"fw", None, 1);
+        let nonce = [0xBBu8; 32];
+        let quote = generate_quote(
+            &rot, &MlDsaBackend, dev_seed.as_bytes(), &dev_vk,
+            &nonce, make_provenance(), QuoteTimestamp::Rtc(1_700_000_000),
+        ).unwrap();
+        let cbor = quote.to_cbor().unwrap();
+
+        let verifier = Verifier::new(PolicyConfig::default());
+        let result = verifier.verify_cbor_with_pki(
+            &cbor, device_cert, vec![], &anchor, Some(&verified_crl), &nonce, 1_700_000_100,
+        );
+        assert!(matches!(result, Err(PqRascvError::CertificateRevoked)));
+    }
+
+    #[test]
+    fn pki_verification_rejects_wrong_trust_anchor() {
+        let (ca_seed, ca_vk) = generate_ml_dsa_keypair().unwrap();
+        let (_other_seed, other_vk) = generate_ml_dsa_keypair().unwrap();
+        let (dev_seed, dev_vk) = generate_ml_dsa_keypair().unwrap();
+
+        // Anchor uses `other_vk` but cert was signed by `ca_seed`
+        let anchor = TrustAnchor::new(CaPublicKey { key_bytes: other_vk, ca_id: "https://ca.test" });
+        let device_cert = make_device_cert(&dev_vk, "https://ca.test", "DEV-001", ca_seed.as_bytes());
+
+        let rot = SoftwareRoT::new(b"fw", None, 1);
+        let nonce = [0xCCu8; 32];
+        let quote = generate_quote(
+            &rot, &MlDsaBackend, dev_seed.as_bytes(), &dev_vk,
+            &nonce, make_provenance(), QuoteTimestamp::Rtc(1_700_000_000),
+        ).unwrap();
+        let cbor = quote.to_cbor().unwrap();
+
+        let verifier = Verifier::new(PolicyConfig::default());
+        assert!(verifier.verify_cbor_with_pki(
+            &cbor, device_cert, vec![], &anchor, None, &nonce, 1_700_000_100,
+        ).is_err());
     }
 }

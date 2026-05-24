@@ -129,6 +129,42 @@ pub struct DeviceCertificate {
     pub issuer_signature: Vec<u8>,
 }
 
+/// Constructs a [`DeviceCertificate`] with all fields explicitly supplied.
+///
+/// Available under `software-rot-unsafe` to allow test code in external crates
+/// to bypass the `#[non_exhaustive]` restriction.
+#[cfg(all(feature = "alloc", feature = "software-rot-unsafe"))]
+#[allow(clippy::too_many_arguments)]
+pub fn build_device_certificate(
+    version: u8,
+    serial: String,
+    issuer_id: String,
+    not_before: u64,
+    not_after: u64,
+    subject_key: Vec<u8>,
+    subject_key_id: [u8; 32],
+    hardware_identity: HardwareIdentity,
+    fw_policy: Option<FirmwarePolicyConstraint>,
+    issuer_signature: Vec<u8>,
+    self_id: String,
+    max_path_length: Option<u8>,
+) -> DeviceCertificate {
+    DeviceCertificate {
+        version,
+        serial,
+        issuer_id,
+        not_before,
+        not_after,
+        subject_key,
+        subject_key_id,
+        hardware_identity,
+        fw_policy,
+        issuer_signature,
+        self_id,
+        max_path_length,
+    }
+}
+
 #[cfg(feature = "alloc")]
 impl DeviceCertificate {
     /// Returns the SHA3-256 fingerprint of the subject key.
@@ -248,6 +284,7 @@ impl TrustAnchor {
 /// Constructed by [`validate_chain`]; cannot be constructed directly.
 /// Holding a `CertChain` is proof that the chain was valid at construction time.
 #[cfg(feature = "alloc")]
+#[derive(Debug)]
 pub struct CertChain {
     /// The validated device certificate at the leaf.
     pub device_cert: DeviceCertificate,

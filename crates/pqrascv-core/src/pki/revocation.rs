@@ -119,6 +119,27 @@ impl RevocationList {
     }
 }
 
+/// Constructs a [`RevocationList`] with all fields explicitly supplied.
+///
+/// Available under `software-rot-unsafe` to allow test code in external crates
+/// to bypass the `#[non_exhaustive]` restriction.
+#[cfg(all(feature = "alloc", feature = "software-rot-unsafe"))]
+pub fn build_revocation_list(
+    issuer_id: String,
+    this_update: u64,
+    next_update: u64,
+    entries: Vec<RevocationEntry>,
+    issuer_signature: Vec<u8>,
+) -> RevocationList {
+    RevocationList {
+        issuer_id,
+        this_update,
+        next_update,
+        entries,
+        issuer_signature,
+    }
+}
+
 /// A revocation list whose issuer signature and freshness have been verified.
 ///
 /// Obtain via [`RevocationList::verify`].
