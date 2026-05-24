@@ -265,8 +265,7 @@ pub fn validate_chain(
     trust_anchor: &TrustAnchor,
     now_secs: u64,
 ) -> Result<CertChain, PqRascvError> {
-    use crate::crypto::CryptoBackend;
-    use crate::crypto::MlDsaBackend;
+    use crate::crypto::{CryptoBackend, MlDsaBackend, SIGNING_CONTEXT_CERT};
 
     // Verify each cert is signed by the key above it.
     let mut current_verifying_key: &[u8] = trust_anchor.root_key_bytes();
@@ -276,7 +275,7 @@ pub fn validate_chain(
             return Err(PqRascvError::VerificationFailed);
         }
         let tbs = intermediate.tbs_cbor()?;
-        MlDsaBackend.verify(&tbs, current_verifying_key, &intermediate.issuer_signature)?;
+        MlDsaBackend.verify(&tbs, current_verifying_key, &intermediate.issuer_signature, SIGNING_CONTEXT_CERT)?;
         current_verifying_key = &intermediate.subject_key;
     }
 
@@ -285,7 +284,7 @@ pub fn validate_chain(
         return Err(PqRascvError::VerificationFailed);
     }
     let tbs = device_cert.tbs_cbor()?;
-    MlDsaBackend.verify(&tbs, current_verifying_key, &device_cert.issuer_signature)?;
+    MlDsaBackend.verify(&tbs, current_verifying_key, &device_cert.issuer_signature, SIGNING_CONTEXT_CERT)?;
 
     // Verify the subject_key_id is consistent with the actual subject_key.
     let computed_id = {

@@ -14,7 +14,7 @@
 
 use pqrascv_core::{
     config::PolicyConfig,
-    crypto::{pub_key_id, CryptoBackend, MlDsaBackend},
+    crypto::{pub_key_id, CryptoBackend, MlDsaBackend, SIGNING_CONTEXT_QUOTE},
     error::PqRascvError,
     quote::{AttestationQuote, Challenge, PROTOCOL_VERSION},
 };
@@ -146,7 +146,7 @@ impl Verifier {
 
         // Re-serialize the body and check the signature over it.
         let body_cbor = quote.body.to_cbor()?;
-        MlDsaBackend.verify(&body_cbor, verifying_key, &quote.signature)?;
+        MlDsaBackend.verify(&body_cbor, verifying_key, &quote.signature, SIGNING_CONTEXT_QUOTE)?;
 
         // Finally, check that the quote meets our policy (SLSA level, age, firmware hash, etc.).
         self.policy.evaluate(

@@ -34,6 +34,15 @@ pub const ML_DSA_65_VERIFYING_KEY_SIZE: usize = 1952;
 /// ML-DSA-65 signature size in bytes.
 pub const ML_DSA_65_SIGNATURE_SIZE: usize = 3309;
 
+/// Domain-separation context for ML-DSA-65 attestation quote body signatures.
+pub const SIGNING_CONTEXT_QUOTE: &[u8] = b"pqrascv-quote-v1";
+
+/// Domain-separation context for ML-DSA-65 device certificate TBS signatures.
+pub const SIGNING_CONTEXT_CERT: &[u8] = b"pqrascv-cert-v2";
+
+/// Domain-separation context for ML-DSA-65 Certificate Revocation List signatures.
+pub const SIGNING_CONTEXT_CRL: &[u8] = b"pqrascv-crl-v2";
+
 // ────────────────────────────────────────────────────────────────────────────
 // Signature bytes — fixed-size, stack-allocatable
 // ────────────────────────────────────────────────────────────────────────────
@@ -87,18 +96,25 @@ impl SigningKeySeed {
 /// - `sign` must run in constant time with respect to `signing_seed`.
 /// - `verify` must run in constant time with respect to `verifying_key`.
 pub trait CryptoBackend {
-    /// Sign `message` using the 32-byte ML-DSA-65 seed.
+    /// Sign `message` using the 32-byte ML-DSA-65 seed and the given `context`.
     ///
-    /// The seed is expanded to the full signing key inside this call and is
-    /// never stored.  We pass empty context bytes, as the spec requires.
-    fn sign(&self, message: &[u8], signing_seed: &[u8]) -> Result<SignatureBytes, PqRascvError>;
+    /// `context` must be one of the `SIGNING_CONTEXT_*` constants in this module.
+    fn sign(
+        &self,
+        message: &[u8],
+        signing_seed: &[u8],
+        context: &[u8],
+    ) -> Result<SignatureBytes, PqRascvError>;
 
-    /// Verify `signature` over `message` using the encoded verifying key.
+    /// Verify `signature` over `message` under `verifying_key` and `context`.
+    ///
+    /// `context` must match the context used at signing time.
     fn verify(
         &self,
         message: &[u8],
         verifying_key: &[u8],
         signature: &[u8],
+        context: &[u8],
     ) -> Result<(), PqRascvError>;
 }
 
@@ -126,7 +142,12 @@ pub fn pub_key_id(verifying_key: &[u8]) -> [u8; 32] {
 pub struct MlDsaBackend;
 
 impl CryptoBackend for MlDsaBackend {
-    fn sign(&self, message: &[u8], signing_seed: &[u8]) -> Result<SignatureBytes, PqRascvError> {
+    fn sign(
+        &self,
+        message: &[u8],
+        signing_seed: &[u8],
+        context: &[u8],
+    ) -> Result<SignatureBytes, PqRascvError> {
         use ml_dsa::{KeyGen, MlDsa65};
 
         let seed_array: &[u8; ML_DSA_65_SEED_SIZE] = signing_seed
@@ -134,14 +155,11 @@ impl CryptoBackend for MlDsaBackend {
             .map_err(|_| PqRascvError::SigningFailed)?;
 
         let seed = ml_dsa::B32::from(*seed_array);
-
-        // Expand seed → full signing key (constant-time, no heap).
         let sk = MlDsa65::from_seed(&seed);
 
-        // Sign with empty context — deterministic, so no randomness needed here.
         let sig = sk
             .signing_key()
-            .sign_deterministic(message, b"")
+            .sign_deterministic(message, context)
             .map_err(|_| PqRascvError::SigningFailed)?;
 
         let encoded = sig.encode();
@@ -157,6 +175,7 @@ impl CryptoBackend for MlDsaBackend {
         message: &[u8],
         verifying_key: &[u8],
         signature: &[u8],
+        context: &[u8],
     ) -> Result<(), PqRascvError> {
         use ml_dsa::{EncodedVerifyingKey, MlDsa65, Signature, VerifyingKey};
 
@@ -170,19 +189,17 @@ impl CryptoBackend for MlDsaBackend {
         let vk_array: [u8; ML_DSA_65_VERIFYING_KEY_SIZE] = verifying_key
             .try_into()
             .map_err(|_| PqRascvError::VerificationFailed)?;
-
         let encoded_vk = EncodedVerifyingKey::<MlDsa65>::from(vk_array);
         let vk = VerifyingKey::<MlDsa65>::decode(&encoded_vk);
 
         let sig_array: [u8; ML_DSA_65_SIGNATURE_SIZE] = signature
             .try_into()
             .map_err(|_| PqRascvError::VerificationFailed)?;
-
         let encoded_sig = ml_dsa::EncodedSignature::<MlDsa65>::from(sig_array);
         let sig =
             Signature::<MlDsa65>::decode(&encoded_sig).ok_or(PqRascvError::VerificationFailed)?;
 
-        if vk.verify_with_context(message, b"", &sig) {
+        if vk.verify_with_context(message, context, &sig) {
             Ok(())
         } else {
             Err(PqRascvError::VerificationFailed)
@@ -244,9 +261,9 @@ mod tests {
         let backend = MlDsaBackend;
         let message = b"hello pqrascv-core";
 
-        let sig = backend.sign(message, seed.as_bytes()).expect("sign failed");
+        let sig = backend.sign(message, seed.as_bytes(), b"test-ctx").expect("sign failed");
         backend
-            .verify(message, &vk, sig.as_ref())
+            .verify(message, &vk, sig.as_ref(), b"test-ctx")
             .expect("verify failed");
     }
 
@@ -257,9 +274,9 @@ mod tests {
         let backend = MlDsaBackend;
 
         let sig = backend
-            .sign(b"original", seed.as_bytes())
+            .sign(b"original", seed.as_bytes(), b"test-ctx")
             .expect("sign failed");
-        assert!(backend.verify(b"tampered", &vk, sig.as_ref()).is_err());
+        assert!(backend.verify(b"tampered", &vk, sig.as_ref(), b"test-ctx").is_err());
     }
 
     #[cfg(feature = "std")]
@@ -270,10 +287,10 @@ mod tests {
         let backend = MlDsaBackend;
 
         let sig = backend
-            .sign(b"cross-key test", seed1.as_bytes())
+            .sign(b"cross-key test", seed1.as_bytes(), b"test-ctx")
             .expect("sign failed");
         assert!(backend
-            .verify(b"cross-key test", &vk2, sig.as_ref())
+            .verify(b"cross-key test", &vk2, sig.as_ref(), b"test-ctx")
             .is_err());
     }
 
@@ -291,8 +308,34 @@ mod tests {
         let backend = MlDsaBackend;
         let message = b"determinism test";
 
-        let sig1 = backend.sign(message, seed.as_bytes()).unwrap();
-        let sig2 = backend.sign(message, seed.as_bytes()).unwrap();
+        let sig1 = backend.sign(message, seed.as_bytes(), b"test-ctx").unwrap();
+        let sig2 = backend.sign(message, seed.as_bytes(), b"test-ctx").unwrap();
         assert_eq!(sig1, sig2);
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn different_contexts_produce_incompatible_signatures() {
+        let (seed, vk) = generate_ml_dsa_keypair().expect("keygen failed");
+        let backend = MlDsaBackend;
+        let message = b"domain-separation-test";
+
+        let sig_a = backend
+            .sign(message, seed.as_bytes(), b"pqrascv-quote-v1")
+            .expect("sign failed");
+        let sig_b = backend
+            .sign(message, seed.as_bytes(), b"pqrascv-cert-v2")
+            .expect("sign failed");
+
+        assert_ne!(sig_a, sig_b, "contexts must produce distinct signatures");
+
+        assert!(
+            backend.verify(message, &vk, sig_a.as_ref(), b"pqrascv-cert-v2").is_err(),
+            "quote sig must not verify under cert context"
+        );
+        assert!(
+            backend.verify(message, &vk, sig_b.as_ref(), b"pqrascv-quote-v1").is_err(),
+            "cert sig must not verify under quote context"
+        );
     }
 }

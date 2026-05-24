@@ -22,7 +22,7 @@ use alloc::vec::Vec;
 
 #[cfg(feature = "alloc")]
 use crate::{
-    crypto::{pub_key_id, CryptoBackend},
+    crypto::{pub_key_id, CryptoBackend, SIGNING_CONTEXT_QUOTE},
     error::PqRascvError,
     measurement::{Measurements, RoT},
     provenance::InTotoAttestation,
@@ -219,7 +219,7 @@ pub fn generate_quote<R: RoT, C: CryptoBackend>(
     };
 
     let body_cbor = body.to_cbor()?;
-    let sig = crypto.sign(&body_cbor, signing_seed)?;
+    let sig = crypto.sign(&body_cbor, signing_seed, SIGNING_CONTEXT_QUOTE)?;
 
     Ok(AttestationQuote {
         body,
@@ -235,7 +235,7 @@ pub fn generate_quote<R: RoT, C: CryptoBackend>(
 mod tests {
     use super::*;
     use crate::{
-        crypto::{generate_ml_dsa_keypair, MlDsaBackend},
+        crypto::{generate_ml_dsa_keypair, MlDsaBackend, SIGNING_CONTEXT_QUOTE},
         measurement::SoftwareRoT,
         provenance::SlsaPredicateBuilder,
     };
@@ -314,7 +314,7 @@ mod tests {
 
         let body_cbor = quote.body.to_cbor().unwrap();
         MlDsaBackend
-            .verify(&body_cbor, &vk, &quote.signature)
+            .verify(&body_cbor, &vk, &quote.signature, SIGNING_CONTEXT_QUOTE)
             .expect("signature must verify");
     }
 
