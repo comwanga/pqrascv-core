@@ -297,6 +297,13 @@ fn cmd_verify(
     hex::decode_to_slice(nonce_hex, &mut nonce)
         .map_err(|_| anyhow::anyhow!("Invalid nonce format: must be 64 hex chars"))?;
 
+    // Validate expected_hash_hex is safe hex before any interpolation into JSON
+    if let Some(expected) = expected_hash_hex {
+        if !expected.chars().all(|c| c.is_ascii_hexdigit()) {
+            anyhow::bail!("--expected-hash must be a hex string");
+        }
+    }
+
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     let policy = PolicyConfig {
         min_slsa_level,
