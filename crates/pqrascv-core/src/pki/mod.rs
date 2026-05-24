@@ -224,6 +224,7 @@ impl TrustAnchor {
     /// Creates a trust anchor from the root CA's verifying key.
     #[must_use]
     pub fn new(root_ca: CaPublicKey) -> Self {
+        assert!(!root_ca.ca_id.is_empty(), "TrustAnchor ca_id must not be empty");
         Self { root_ca }
     }
 
@@ -319,8 +320,8 @@ pub fn validate_chain(
         // Number of CA certificates below signer[d] = (intermediates.len() - d)
         if d > 0 {
             if let Some(max) = intermediates[d - 1].max_path_length {
-                let ca_certs_below = (intermediates.len() - d) as u8;
-                if ca_certs_below > max {
+                let ca_certs_below = intermediates.len() - d;
+                if ca_certs_below > usize::from(max) {
                     return Err(PqRascvError::CertificateInvalid);
                 }
             }
@@ -451,6 +452,38 @@ mod chain_tests {
         // Intermediate with max_path_length = Some(0) — cannot sign the device cert
         let mut intermediate = make_device_cert(&int_vk, "https://root.test", "https://int.test", "INT-001", root_seed.as_bytes());
         intermediate.max_path_length = Some(0); // re-sign after field change
+        sign_cert(&mut intermediate, root_seed.as_bytes());
+
+        let device_cert = make_device_cert(&dev_vk, "https://int.test", "https://dev.test", "DEV-001", int_seed.as_bytes());
+
+        assert!(matches!(
+            validate_chain(device_cert, vec![intermediate], &anchor, 1_000),
+            Err(PqRascvError::CertificateInvalid)
+        ));
+    }
+
+    #[test]
+    fn intermediate_issuer_mismatch_rejected() {
+        let (root_seed, root_vk) = make_ca();
+        let (int_seed, int_vk) = make_ca();
+        let (_, dev_vk) = make_ca();
+        let anchor = TrustAnchor::new(CaPublicKey { key_bytes: root_vk, ca_id: "https://root.test" });
+
+        // Intermediate claims wrong issuer_id (should be "https://root.test" to match root CA)
+        let mut intermediate = DeviceCertificate {
+            version: CERT_VERSION,
+            serial: "INT-001".to_string(),
+            issuer_id: "https://evil.ca".to_string(), // wrong — should be "https://root.test"
+            not_before: 0,
+            not_after: u64::MAX,
+            subject_key: int_vk.to_vec(),
+            subject_key_id: crate::crypto::pub_key_id(&int_vk),
+            hardware_identity: HardwareIdentity::TpmEkCertHash([0u8; 32]),
+            fw_policy: None,
+            issuer_signature: vec![],
+            self_id: "https://int.test".to_string(),
+            max_path_length: Some(0),
+        };
         sign_cert(&mut intermediate, root_seed.as_bytes());
 
         let device_cert = make_device_cert(&dev_vk, "https://int.test", "https://dev.test", "DEV-001", int_seed.as_bytes());
