@@ -101,7 +101,7 @@ impl QuoteBody {
 ///
 /// 1. Deserialise: `AttestationQuote::from_cbor(bytes)`.
 /// 2. Reproduce signing input: `quote.body.to_cbor()`.
-/// 3. Verify: `backend.verify(&body_cbor, &verifying_key, &quote.signature)`.
+/// 3. Verify: `backend.verify(&body_cbor, &verifying_key, &quote.signature, SIGNING_CONTEXT_QUOTE)`.
 /// 4. Check `body.pub_key_id == SHA3-256(verifying_key)`.
 /// 5. Apply [`PolicyConfig`](crate::config::PolicyConfig).
 #[cfg(feature = "alloc")]

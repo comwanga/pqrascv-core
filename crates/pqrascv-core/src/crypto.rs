@@ -41,6 +41,7 @@ pub const SIGNING_CONTEXT_QUOTE: &[u8] = b"pqrascv-quote-v1";
 pub const SIGNING_CONTEXT_CERT: &[u8] = b"pqrascv-cert-v2";
 
 /// Domain-separation context for ML-DSA-65 Certificate Revocation List signatures.
+/// Used by `RevocationList::verify()` once CRL signature enforcement is wired in (Task 6).
 pub const SIGNING_CONTEXT_CRL: &[u8] = b"pqrascv-crl-v2";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -321,20 +322,20 @@ mod tests {
         let message = b"domain-separation-test";
 
         let sig_a = backend
-            .sign(message, seed.as_bytes(), b"pqrascv-quote-v1")
+            .sign(message, seed.as_bytes(), SIGNING_CONTEXT_QUOTE)
             .expect("sign failed");
         let sig_b = backend
-            .sign(message, seed.as_bytes(), b"pqrascv-cert-v2")
+            .sign(message, seed.as_bytes(), SIGNING_CONTEXT_CERT)
             .expect("sign failed");
 
         assert_ne!(sig_a, sig_b, "contexts must produce distinct signatures");
 
         assert!(
-            backend.verify(message, &vk, sig_a.as_ref(), b"pqrascv-cert-v2").is_err(),
+            backend.verify(message, &vk, sig_a.as_ref(), SIGNING_CONTEXT_CERT).is_err(),
             "quote sig must not verify under cert context"
         );
         assert!(
-            backend.verify(message, &vk, sig_b.as_ref(), b"pqrascv-quote-v1").is_err(),
+            backend.verify(message, &vk, sig_b.as_ref(), SIGNING_CONTEXT_QUOTE).is_err(),
             "cert sig must not verify under quote context"
         );
     }
