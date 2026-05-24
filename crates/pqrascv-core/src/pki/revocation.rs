@@ -66,16 +66,40 @@ pub struct RevocationList {
 
 #[cfg(feature = "alloc")]
 impl RevocationList {
-    /// Returns `true` if the certificate with `serial` is revoked.
+    /// Verifies the CRL issuer signature and freshness, returning a `VerifiedRevocationList`.
+    ///
+    /// # Errors
+    ///
+    /// - `PolicyViolation` — CRL is stale (`next_update < now_secs`).
+    /// - `VerificationFailed` — CA signature over TBS is invalid.
+    pub fn verify<'a>(
+        &'a self,
+        ca_key: &[u8],
+        now_secs: u64,
+    ) -> Result<VerifiedRevocationList<'a>, PqRascvError> {
+        use crate::crypto::{CryptoBackend, MlDsaBackend, SIGNING_CONTEXT_CRL};
+
+        if !self.is_fresh(now_secs) {
+            return Err(PqRascvError::PolicyViolation);
+        }
+        let tbs = self.tbs_cbor()?;
+        MlDsaBackend.verify(&tbs, ca_key, &self.issuer_signature, SIGNING_CONTEXT_CRL)?;
+        Ok(VerifiedRevocationList { inner: self })
+    }
+
+    /// Checks whether `serial` appears in the CRL entries.
+    ///
+    /// # ⚠ Signature Not Verified
+    ///
+    /// This method does NOT check the CRL signature. Use [`RevocationList::verify`]
+    /// to get a [`VerifiedRevocationList`] whose `is_revoked()` is cryptographically backed.
     #[must_use]
+    #[deprecated = "use RevocationList::verify() first, then VerifiedRevocationList::is_revoked()"]
     pub fn is_revoked(&self, serial: &str) -> bool {
         self.entries.iter().any(|e| e.serial == serial)
     }
 
     /// Returns `true` if this CRL is still fresh at `now_secs`.
-    ///
-    /// A stale CRL should trigger a warning but may still be used for
-    /// offline operation (configurable via policy).
     #[must_use]
     pub fn is_fresh(&self, now_secs: u64) -> bool {
         now_secs <= self.next_update
@@ -95,6 +119,24 @@ impl RevocationList {
     }
 }
 
+/// A revocation list whose issuer signature and freshness have been verified.
+///
+/// Obtain via [`RevocationList::verify`].
+/// `is_revoked()` is only available on this type.
+#[cfg(feature = "alloc")]
+pub struct VerifiedRevocationList<'a> {
+    inner: &'a RevocationList,
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> VerifiedRevocationList<'a> {
+    /// Returns `true` if the certificate with `serial` is listed as revoked.
+    #[must_use]
+    pub fn is_revoked(&self, serial: &str) -> bool {
+        self.inner.entries.iter().any(|e| e.serial == serial)
+    }
+}
+
 #[cfg(feature = "alloc")]
 #[derive(serde::Serialize)]
 struct CrlTbs<'a> {
@@ -102,4 +144,78 @@ struct CrlTbs<'a> {
     this_update: u64,
     next_update: u64,
     entries: &'a [RevocationEntry],
+}
+
+#[cfg(all(test, feature = "alloc", feature = "std"))]
+mod tests {
+    use super::*;
+    use crate::crypto::{generate_ml_dsa_keypair, MlDsaBackend, CryptoBackend, SIGNING_CONTEXT_CRL};
+
+    fn make_signed_crl(
+        entries: Vec<RevocationEntry>,
+        ca_seed: &[u8],
+        this_update: u64,
+        next_update: u64,
+    ) -> RevocationList {
+        let mut crl = RevocationList {
+            issuer_id: "https://ca.test".to_string(),
+            this_update,
+            next_update,
+            entries,
+            issuer_signature: vec![],
+        };
+        let tbs = crl.tbs_cbor().expect("tbs_cbor failed");
+        let sig = MlDsaBackend
+            .sign(&tbs, ca_seed, SIGNING_CONTEXT_CRL)
+            .expect("sign failed");
+        crl.issuer_signature = sig.as_ref().to_vec();
+        crl
+    }
+
+    #[test]
+    fn verified_crl_detects_revoked_serial() {
+        let (ca_seed, ca_vk) = generate_ml_dsa_keypair().unwrap();
+        let crl = make_signed_crl(
+            vec![RevocationEntry {
+                serial: "DEV-001".to_string(),
+                revoked_at: 1_000,
+                reason: RevocationReason::KeyCompromise,
+            }],
+            ca_seed.as_bytes(),
+            1_000,
+            9_999_999,
+        );
+        let verified = crl.verify(&ca_vk, 2_000).expect("verify failed");
+        assert!(verified.is_revoked("DEV-001"));
+        assert!(!verified.is_revoked("DEV-002"));
+    }
+
+    #[test]
+    fn stale_crl_is_refused() {
+        let (ca_seed, ca_vk) = generate_ml_dsa_keypair().unwrap();
+        let crl = make_signed_crl(vec![], ca_seed.as_bytes(), 1_000, 2_000);
+        // now_secs = 3_000 > next_update = 2_000
+        assert!(matches!(crl.verify(&ca_vk, 3_000), Err(PqRascvError::PolicyViolation)));
+    }
+
+    #[test]
+    fn tampered_crl_entries_fail_signature_check() {
+        let (ca_seed, ca_vk) = generate_ml_dsa_keypair().unwrap();
+        let mut crl = make_signed_crl(vec![], ca_seed.as_bytes(), 1_000, 9_999_999);
+        // Tamper: inject a revocation entry after signing
+        crl.entries.push(RevocationEntry {
+            serial: "INJECTED-001".to_string(),
+            revoked_at: 1_000,
+            reason: RevocationReason::KeyCompromise,
+        });
+        assert!(crl.verify(&ca_vk, 2_000).is_err(), "tampered CRL must fail");
+    }
+
+    #[test]
+    fn wrong_ca_key_fails_verification() {
+        let (ca_seed, _ca_vk) = generate_ml_dsa_keypair().unwrap();
+        let (_other_seed, other_vk) = generate_ml_dsa_keypair().unwrap();
+        let crl = make_signed_crl(vec![], ca_seed.as_bytes(), 1_000, 9_999_999);
+        assert!(crl.verify(&other_vk, 2_000).is_err());
+    }
 }

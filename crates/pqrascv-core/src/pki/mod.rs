@@ -21,6 +21,11 @@
 //! rooted at an offline CA. The verifier rejects any quote whose signing key
 //! is not covered by a valid, unrevoked certificate chain.
 
+pub mod revocation;
+
+#[cfg(feature = "alloc")]
+pub use revocation::{RevocationEntry, RevocationList, RevocationReason, VerifiedRevocationList};
+
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
