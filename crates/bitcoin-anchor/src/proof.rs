@@ -64,13 +64,17 @@ impl TxMerklePath {
     pub fn verify(&self) -> bool {
         let mut current = self.txid;
         for step in &self.steps {
+            let Some(sibling) = step.sibling_hash else {
+                // Promoted node — pass through unchanged
+                continue;
+            };
             let mut combined = [0u8; 64];
             if step.is_left {
-                combined[..32].copy_from_slice(&step.sibling_hash);
+                combined[..32].copy_from_slice(&sibling);
                 combined[32..].copy_from_slice(&current);
             } else {
                 combined[..32].copy_from_slice(&current);
-                combined[32..].copy_from_slice(&step.sibling_hash);
+                combined[32..].copy_from_slice(&sibling);
             }
             current = sha256d(&combined);
         }
@@ -142,11 +146,13 @@ impl SpvVerifier {
             return Err(SpvError::MerkleRootMismatch);
         }
 
-        // The leaf hash in the proof must match SHA256d(quote_hash).
-        let expected_leaf = {
-            let first: [u8; 32] = sha2::Sha256::digest(quote_hash).into();
-            let second: [u8; 32] = sha2::Sha256::digest(first).into();
-            second
+        // RFC6962 leaf hash: SHA256d(0x00 || quote_hash)
+        let expected_leaf: [u8; 32] = {
+            let mut buf = [0u8; 33];
+            buf[0] = 0x00; // RFC6962 leaf prefix
+            buf[1..].copy_from_slice(quote_hash);
+            let first: [u8; 32] = sha2::Sha256::digest(&buf).into();
+            sha2::Sha256::digest(first).into()
         };
         if proof.quote_merkle_path.leaf_hash != expected_leaf {
             return Err(SpvError::QuoteNotInAnchor);

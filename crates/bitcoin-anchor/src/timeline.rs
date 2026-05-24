@@ -87,16 +87,20 @@ impl TimelineMerkleAggregator {
         let mut current_index = index;
 
         while nodes.len() > 1 {
-            let sibling_index = if current_index % 2 == 0 {
-                (current_index + 1).min(nodes.len() - 1)
+            let is_last_odd = current_index == nodes.len() - 1 && nodes.len() % 2 == 1;
+            if is_last_odd {
+                path.push(ProofStep { sibling_hash: None, is_left: false });
             } else {
-                current_index - 1
-            };
-
-            path.push(ProofStep {
-                sibling_hash: nodes[sibling_index],
-                is_left: current_index % 2 != 0,
-            });
+                let sibling_index = if current_index % 2 == 0 {
+                    current_index + 1
+                } else {
+                    current_index - 1
+                };
+                path.push(ProofStep {
+                    sibling_hash: Some(nodes[sibling_index]),
+                    is_left: current_index % 2 != 0,
+                });
+            }
 
             let mut next_level = Vec::with_capacity(nodes.len().div_ceil(2));
             let mut i = 0;
