@@ -38,6 +38,7 @@ tss-esapi             = { version = "8.0.0-alpha.2", optional = true }
 x509-cert    = { version = "0.2", default-features = false }
 der          = { version = "0.7", default-features = false }
 p256         = { version = "0.13", default-features = false, features = ["pkcs8", "ecdsa"] }
+ecdsa        = { version = "0.16", default-features = false, features = ["der"] }
 serde_json   = { version = "1",   default-features = false, features = ["alloc"] }
 base64       = { version = "0.22", default-features = false, features = ["alloc"] }
 

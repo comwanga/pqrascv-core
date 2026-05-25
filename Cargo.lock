@@ -944,6 +944,7 @@ dependencies = [
  "base64",
  "ciborium",
  "der",
+ "ecdsa",
  "getrandom 0.4.2",
  "ml-dsa",
  "p256",

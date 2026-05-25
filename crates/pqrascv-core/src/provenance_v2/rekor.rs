@@ -24,6 +24,9 @@ pub enum RekorError {
     InvalidRekorKey,
     /// The artifact hash in the log entry does not match the expected value.
     ArtifactHashMismatch,
+    /// The Rekor entry body does not bind to the expected predicate hash, signature,
+    /// or signing certificate — the entry references a different artifact.
+    ContentBindingMismatch,
 }
 
 impl From<RekorError> for PqRascvError {
@@ -98,13 +101,12 @@ impl RekorEntry {
 
 /// Verify the Rekor SET (Signed Entry Timestamp).
 ///
-/// The SET bytes are a raw ECDSA P-256 signature in fixed-size r||s encoding
-/// (64 bytes). The signed message is the raw `entry_json` bytes; the P-256
-/// verifier computes SHA-256(entry_json) internally.
+/// Real Rekor SETs are DER-encoded ECDSA P-256 signatures (the `p256/der`
+/// feature enables this path). PQ-RASCV test bundles use raw fixed-size r||s
+/// (64 bytes). Both are accepted: DER is tried first; raw r||s is the fallback.
 ///
-/// Using raw r||s avoids the need for the `ecdsa/der` feature while remaining
-/// cryptographically equivalent to DER-encoded ECDSA for the purpose of
-/// binding the entry JSON to the Rekor log's signing key.
+/// The signed message is the raw `entry_json` bytes; SHA-256 is applied
+/// internally by the P-256 verifier.
 #[cfg(feature = "alloc")]
 fn verify_set_signature(
     entry_json: &[u8],
@@ -117,12 +119,95 @@ fn verify_set_signature(
     let vk =
         VerifyingKey::from_public_key_der(rekor_vk_der).map_err(|_| RekorError::InvalidRekorKey)?;
 
-    // Expect raw fixed-size r||s (64 bytes for P-256).
-    let sig = Signature::try_from(set_bytes).map_err(|_| RekorError::SetSignatureInvalid)?;
+    // Try DER-encoded ECDSA first (real Rekor SET wire format, starts with 0x30).
+    // Fall back to raw fixed-size r||s (64 bytes) for PQ-RASCV test bundles.
+    type DerSig = ecdsa::der::Signature<p256::NistP256>;
+    let sig: Signature = DerSig::try_from(set_bytes)
+        .ok()
+        .and_then(|ds| Signature::try_from(ds).ok())
+        .or_else(|| Signature::try_from(set_bytes).ok())
+        .ok_or(RekorError::SetSignatureInvalid)?;
 
-    // p256::ecdsa::VerifyingKey::verify hashes the message with SHA-256 internally.
     vk.verify(entry_json, &sig)
         .map_err(|_| RekorError::SetSignatureInvalid)
+}
+
+/// Verify that the Rekor entry body binds to (`predicate_hash`, `signature`,
+/// `signing_cert_der`).
+///
+/// The `body` field in a Rekor entry is a base64-encoded hashedrekord JSON.
+/// This function decodes the body and checks three fields inside the
+/// `spec` object against the values in the Sigstore bundle, ensuring an
+/// attacker cannot substitute a valid Rekor entry for a different artifact.
+///
+/// Expected body shape:
+/// ```json
+/// {
+///   "apiVersion": "0.0.1",
+///   "kind": "hashedrekord",
+///   "spec": {
+///     "data": { "hash": { "algorithm": "sha3-256", "value": "<hex>" } },
+///     "signature": {
+///       "content": "<base64(signature)>",
+///       "publicKey": { "content": "<base64(signing_cert_der)>" }
+///     }
+///   }
+/// }
+/// ```
+#[cfg(feature = "alloc")]
+pub(crate) fn verify_content_binding(
+    entry_json: &str,
+    predicate_hash: &[u8; 32],
+    signature: &[u8],
+    signing_cert_der: &[u8],
+) -> Result<(), RekorError> {
+    use base64::Engine;
+    use serde_json::Value;
+
+    let b64 = base64::engine::general_purpose::STANDARD;
+
+    let entry: Value =
+        serde_json::from_str(entry_json).map_err(|_| RekorError::MalformedEntry)?;
+
+    // Decode the base64-encoded hashedrekord body.
+    let body_b64 = entry["body"].as_str().ok_or(RekorError::MalformedEntry)?;
+    let body_bytes = b64.decode(body_b64).map_err(|_| RekorError::MalformedEntry)?;
+    let body: Value =
+        serde_json::from_slice(&body_bytes).map_err(|_| RekorError::MalformedEntry)?;
+
+    // ── 1. Predicate hash ──
+    let body_hash = body["spec"]["data"]["hash"]["value"]
+        .as_str()
+        .ok_or(RekorError::ContentBindingMismatch)?;
+    let expected_hash: alloc::string::String =
+        predicate_hash
+            .iter()
+            .fold(alloc::string::String::new(), |mut s, b| {
+                use core::fmt::Write;
+                let _ = write!(s, "{b:02x}");
+                s
+            });
+    if body_hash != expected_hash {
+        return Err(RekorError::ContentBindingMismatch);
+    }
+
+    // ── 2. CI signature ──
+    let body_sig = body["spec"]["signature"]["content"]
+        .as_str()
+        .ok_or(RekorError::ContentBindingMismatch)?;
+    if body_sig != b64.encode(signature) {
+        return Err(RekorError::ContentBindingMismatch);
+    }
+
+    // ── 3. Signing certificate ──
+    let body_cert = body["spec"]["signature"]["publicKey"]["content"]
+        .as_str()
+        .ok_or(RekorError::ContentBindingMismatch)?;
+    if body_cert != b64.encode(signing_cert_der) {
+        return Err(RekorError::ContentBindingMismatch);
+    }
+
+    Ok(())
 }
 
 /// Minimal base64 (standard alphabet, padded) decoder — avoids `std`.
@@ -182,4 +267,88 @@ mod tests {
     // Tests with real P-256 key pairs and valid signatures are integration tests
     // that require key generation (p256::SigningKey). They are added in
     // crates/pqrascv-core/tests/provenance_v2_tests.rs under the "std" feature gate.
+
+    // ── Content-binding tests ─────────────────────────────────────────────
+
+    fn make_body_b64(hash_hex: &str, sig_b64: &str, cert_b64: &str) -> alloc::string::String {
+        use base64::Engine;
+        let body = alloc::format!(
+            r#"{{"apiVersion":"0.0.1","kind":"hashedrekord","spec":{{"data":{{"hash":{{"algorithm":"sha3-256","value":"{hash_hex}"}}}},"signature":{{"content":"{sig_b64}","publicKey":{{"content":"{cert_b64}"}}}}}}}}"#
+        );
+        base64::engine::general_purpose::STANDARD.encode(body.as_bytes())
+    }
+
+    fn make_entry(body_b64: &str) -> alloc::string::String {
+        alloc::format!(
+            r#"{{"body":"{body_b64}","integratedTime":1700000000,"verification":{{"signedEntryTimestamp":"AAAA"}}}}"#
+        )
+    }
+
+    fn good_entry() -> (alloc::string::String, [u8; 32], alloc::vec::Vec<u8>, alloc::vec::Vec<u8>) {
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD;
+        let hash = [0x42u8; 32];
+        let sig = alloc::vec![0x01u8, 0x02, 0x03];
+        let cert = alloc::vec![0xAAu8, 0xBB, 0xCC];
+        let hash_hex: alloc::string::String = hash.iter().fold(alloc::string::String::new(), |mut s, b| {
+            use core::fmt::Write;
+            let _ = write!(s, "{b:02x}");
+            s
+        });
+        let entry = make_entry(&make_body_b64(&hash_hex, &b64.encode(&sig), &b64.encode(&cert)));
+        (entry, hash, sig, cert)
+    }
+
+    #[test]
+    fn content_binding_correct_fields_pass() {
+        let (entry, hash, sig, cert) = good_entry();
+        verify_content_binding(&entry, &hash, &sig, &cert).unwrap();
+    }
+
+    #[test]
+    fn content_binding_wrong_hash_fails() {
+        let (entry, _hash, sig, cert) = good_entry();
+        let wrong_hash = [0xFFu8; 32];
+        let err = verify_content_binding(&entry, &wrong_hash, &sig, &cert).unwrap_err();
+        assert_eq!(err, RekorError::ContentBindingMismatch);
+    }
+
+    #[test]
+    fn content_binding_wrong_signature_fails() {
+        let (entry, hash, _sig, cert) = good_entry();
+        let wrong_sig = alloc::vec![0xDEu8, 0xAD];
+        let err = verify_content_binding(&entry, &hash, &wrong_sig, &cert).unwrap_err();
+        assert_eq!(err, RekorError::ContentBindingMismatch);
+    }
+
+    #[test]
+    fn content_binding_wrong_cert_fails() {
+        let (entry, hash, sig, _cert) = good_entry();
+        let wrong_cert = alloc::vec![0xFFu8; 10];
+        let err = verify_content_binding(&entry, &hash, &sig, &wrong_cert).unwrap_err();
+        assert_eq!(err, RekorError::ContentBindingMismatch);
+    }
+
+    #[test]
+    fn content_binding_missing_body_field_fails() {
+        let entry = r#"{"integratedTime":1700000000,"verification":{"signedEntryTimestamp":"AAAA"}}"#;
+        let err = verify_content_binding(entry, &[0u8; 32], &[], &[]).unwrap_err();
+        assert_eq!(err, RekorError::MalformedEntry);
+    }
+
+    #[test]
+    fn content_binding_body_not_valid_base64_fails() {
+        let entry = r#"{"body":"not-valid-base64!!!","integratedTime":1700000000}"#;
+        let err = verify_content_binding(entry, &[0u8; 32], &[], &[]).unwrap_err();
+        assert_eq!(err, RekorError::MalformedEntry);
+    }
+
+    #[test]
+    fn content_binding_body_not_valid_json_fails() {
+        use base64::Engine;
+        let bad_body = base64::engine::general_purpose::STANDARD.encode(b"not json");
+        let entry = alloc::format!(r#"{{"body":"{bad_body}","integratedTime":1700000000}}"#);
+        let err = verify_content_binding(&entry, &[0u8; 32], &[], &[]).unwrap_err();
+        assert_eq!(err, RekorError::MalformedEntry);
+    }
 }

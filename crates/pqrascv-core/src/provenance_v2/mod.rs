@@ -343,7 +343,25 @@ impl ExternalProvenanceBundle {
         Ok(identity.oidc_subject)
     }
 
-    /// Condition 5 — The Rekor entry inclusion proof validates successfully.
+    /// Condition 5a — The Rekor entry body binds to (`predicate_hash`, `signature`,
+    /// `signing_cert_der`).
+    ///
+    /// Decodes the base64-encoded `body` field from `rekor_entry_json` and
+    /// verifies that the hashedrekord payload references the same predicate hash,
+    /// CI signature, and signing certificate as the Sigstore bundle. This closes
+    /// the decoupling between conditions 1 and 5: an attacker cannot substitute
+    /// a valid Rekor entry for a different artifact.
+    fn check_rekor_content_binding(&self) -> Result<(), PqRascvError> {
+        rekor::verify_content_binding(
+            &self.sigstore_bundle.rekor_entry_json,
+            &self.sigstore_bundle.predicate_hash,
+            &self.sigstore_bundle.signature,
+            &self.sigstore_bundle.signing_cert_der,
+        )
+        .map_err(PqRascvError::from)
+    }
+
+    /// Condition 5b — The Rekor entry inclusion proof validates successfully.
     ///
     /// Verifies the Signed Entry Timestamp (SET) in `rekor_entry_json` using
     /// the `rekor_public_key_der` (ECDSA P-256). Returns `Err` if the SET
@@ -486,10 +504,11 @@ impl ExternalProvenanceBundle {
     /// | # | Condition | Status |
     /// |---|-----------|--------|
     /// | 1 | Predicate hash integrity + CI ECDSA signature | ✅ Implemented |
-    /// | 2 | Fulcio cert chain to trusted root | ✅ Issuer/subject binding |
+    /// | 2 | Fulcio cert chain to trusted root (name + CA sig) | ✅ Implemented |
     /// | 3 | Fulcio cert temporal validity | ✅ Implemented |
     /// | 4 | OIDC identity against allowlist | ✅ Implemented |
-    /// | 5 | Rekor inclusion proof (SET) | ✅ Implemented |
+    /// | 5a | Rekor body binds to predicate_hash / sig / cert | ✅ Implemented |
+    /// | 5b | Rekor inclusion proof (SET, DER ECDSA) | ✅ Implemented |
     /// | 6 | Rekor integrated time bounds | ✅ Implemented |
     /// | 7 | Artifact digest == firmware hash | ✅ Implemented |
     /// | 8 | Unambiguous artifact binding | ✅ Implemented |
@@ -537,7 +556,12 @@ impl ExternalProvenanceBundle {
         // Must follow conditions 2–3 (cert must be parsed and valid first).
         let builder_identity = self.check_oidc_identity(config)?;
 
-        // Condition 5: Rekor inclusion proof validates.
+        // Condition 5a: Rekor entry body binds to (predicate_hash, signature, cert).
+        // Runs before the SET check so we reject mismatched entries even when the
+        // SET is cryptographically valid (valid entry, wrong artifact).
+        self.check_rekor_content_binding()?;
+
+        // Condition 5b: Rekor inclusion proof validates (SET DER ECDSA signature).
         self.check_rekor_inclusion(&config.rekor_public_key_der)?;
 
         // Condition 6: Rekor integrated time within bounds.

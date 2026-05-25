@@ -121,12 +121,18 @@ impl FulcioCert {
 
 /// Verify that a leaf cert DER chains to the trusted root DER.
 ///
-/// Currently enforces issuer-subject name binding only (structural chain check).
-/// Full signature verification of the leaf cert by the root CA key is a
-/// planned extension requiring `p256::ecdsa` over the cert's `TBSCertificate`.
+/// Enforces two properties:
+/// 1. **Structural**: the leaf's `issuer` DN equals the root's `subject` DN.
+/// 2. **Cryptographic**: the root CA's P-256 key produced the DER-encoded ECDSA
+///    signature over the leaf's `TBSCertificate` bytes.
+///
+/// Both checks must pass. A forged cert with the right issuer DN but no valid
+/// CA signature is rejected by check 2.
 #[cfg(feature = "alloc")]
 pub(crate) fn verify_chain(leaf_der: &[u8], root_der: &[u8]) -> Result<(), FulcioError> {
-    use der::Decode;
+    use der::{Decode, Encode};
+    use p256::ecdsa::{signature::Verifier, VerifyingKey};
+    use p256::pkcs8::DecodePublicKey;
     use x509_cert::Certificate;
 
     if leaf_der.is_empty() || root_der.is_empty() {
@@ -136,10 +142,33 @@ pub(crate) fn verify_chain(leaf_der: &[u8], root_der: &[u8]) -> Result<(), Fulci
     let leaf = Certificate::from_der(leaf_der).map_err(|_| FulcioError::ParseError)?;
     let root = Certificate::from_der(root_der).map_err(|_| FulcioError::ParseError)?;
 
+    // 1. Issuer-subject name binding.
     if leaf.tbs_certificate.issuer != root.tbs_certificate.subject {
         return Err(FulcioError::ChainValidationFailed);
     }
-    Ok(())
+
+    // 2. ECDSA P-256 signature: root CA key over leaf TBSCertificate DER bytes.
+    let root_spki_der = root
+        .tbs_certificate
+        .subject_public_key_info
+        .to_der()
+        .map_err(|_| FulcioError::ChainValidationFailed)?;
+    let vk = VerifyingKey::from_public_key_der(&root_spki_der)
+        .map_err(|_| FulcioError::ChainValidationFailed)?;
+
+    let tbs_der = leaf
+        .tbs_certificate
+        .to_der()
+        .map_err(|_| FulcioError::ChainValidationFailed)?;
+
+    // X.509 signatures are DER-encoded ECDSA (not raw r||s).
+    let sig_bytes = leaf.signature.raw_bytes();
+    type DerSig = ecdsa::der::Signature<p256::NistP256>;
+    let sig = DerSig::try_from(sig_bytes)
+        .map_err(|_| FulcioError::ChainValidationFailed)?;
+
+    vk.verify(&tbs_der, &sig)
+        .map_err(|_| FulcioError::ChainValidationFailed)
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────
