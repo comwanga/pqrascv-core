@@ -27,9 +27,9 @@ use crate::{error::PqRascvError, nonce::ClockEvidence, provenance_v2::VerifiedPr
 
 #[cfg(feature = "alloc")]
 use crate::{
+    measurement::PcrBank,
     pki::{CertChain, HardwareIdentity},
     quote::QuoteTimestamp,
-    measurement::PcrBank,
 };
 
 #[cfg(feature = "alloc")]
@@ -138,10 +138,7 @@ pub enum PolicyRule {
     /// `pcr_slot` must be in `0..PCR_COUNT` (currently 0–7). `expected` is a
     /// SHA3-256 digest (32 bytes). Setting `expected` to all-zeros means
     /// "require the PCR to be non-zero" — any measurement value is accepted.
-    RequirePcrValues {
-        pcr_slot: u8,
-        expected: [u8; 32],
-    },
+    RequirePcrValues { pcr_slot: u8, expected: [u8; 32] },
 
     /// Reject quotes whose monotonic event counter is below this threshold.
     ///
@@ -490,7 +487,10 @@ mod tests {
         };
         bank.digests[slot] = value;
         let leaked: &'static PcrBank = Box::leak(Box::new(bank));
-        PolicyContext { pcrs: leaked, ..base_ctx() }
+        PolicyContext {
+            pcrs: leaked,
+            ..base_ctx()
+        }
     }
 
     #[test]
@@ -540,7 +540,10 @@ mod tests {
             pcr_slot: 8,
             expected: [0u8; 32],
         }]);
-        assert_eq!(engine.evaluate(&base_ctx()), Err(PqRascvError::PolicyViolation));
+        assert_eq!(
+            engine.evaluate(&base_ctx()),
+            Err(PqRascvError::PolicyViolation)
+        );
     }
 
     #[test]

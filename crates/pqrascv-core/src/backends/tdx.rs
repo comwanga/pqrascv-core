@@ -66,13 +66,19 @@ mod inner {
         #[must_use]
         #[cfg(target_os = "linux")]
         pub fn new(firmware: &'a [u8], ai_model: Option<&'a [u8]>, event_counter: u64) -> Self {
-            Self { firmware, ai_model, event_counter }
+            Self {
+                firmware,
+                ai_model,
+                event_counter,
+            }
         }
 
         #[must_use]
         #[cfg(not(target_os = "linux"))]
         pub fn new(_firmware: &'a [u8], _ai_model: Option<&'a [u8]>, _event_counter: u64) -> Self {
-            Self { _phantom: core::marker::PhantomData }
+            Self {
+                _phantom: core::marker::PhantomData,
+            }
         }
 
         /// Parse a raw 1024-byte TDREPORT and produce [`Measurements`].
@@ -101,7 +107,12 @@ mod inner {
                 None => [0u8; 32],
             };
 
-            Ok(Measurements { pcrs, firmware_hash, ai_model_hash, event_counter })
+            Ok(Measurements {
+                pcrs,
+                firmware_hash,
+                ai_model_hash,
+                event_counter,
+            })
         }
     }
 
@@ -135,7 +146,12 @@ mod inner {
                 return Err(PqRascvError::MeasurementFailed);
             }
 
-            Self::measurements_from_report(&req.tdreport, self.firmware, self.ai_model, self.event_counter)
+            Self::measurements_from_report(
+                &req.tdreport,
+                self.firmware,
+                self.ai_model,
+                self.event_counter,
+            )
         }
     }
 

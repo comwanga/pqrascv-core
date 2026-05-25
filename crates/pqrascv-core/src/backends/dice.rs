@@ -175,7 +175,12 @@ impl<'a> CompoundDiceRoT<'a> {
         ai_model: Option<&'a [u8]>,
         event_counter: u64,
     ) -> Self {
-        Self { uds, layers, ai_model, event_counter }
+        Self {
+            uds,
+            layers,
+            ai_model,
+            event_counter,
+        }
     }
 }
 
@@ -336,49 +341,88 @@ mod tests {
         let original = DiceRoT::new(UDS, FW, None, 0);
         let mc = compound.measure().unwrap();
         let mo = original.measure().unwrap();
-        assert_eq!(mc.pcrs.digests[0], mo.pcrs.digests[0], "PCR 0 must match DiceRoT");
+        assert_eq!(
+            mc.pcrs.digests[0], mo.pcrs.digests[0],
+            "PCR 0 must match DiceRoT"
+        );
         assert_eq!(mc.firmware_hash, mo.firmware_hash);
     }
 
     #[test]
     fn compound_firmware_hash_is_topmost_layer() {
         let layers = [DiceLayer { firmware: BL }, DiceLayer { firmware: FW }];
-        let m = CompoundDiceRoT::new(UDS, &layers, None, 0).measure().unwrap();
+        let m = CompoundDiceRoT::new(UDS, &layers, None, 0)
+            .measure()
+            .unwrap();
         let expected: [u8; 32] = Sha3_256::digest(FW).into();
-        assert_eq!(m.firmware_hash, expected, "firmware_hash must be hash of topmost layer");
+        assert_eq!(
+            m.firmware_hash, expected,
+            "firmware_hash must be hash of topmost layer"
+        );
     }
 
     #[test]
     fn compound_pcr0_is_topmost_cdi() {
         let layers = [DiceLayer { firmware: BL }, DiceLayer { firmware: FW }];
-        let m = CompoundDiceRoT::new(UDS, &layers, None, 0).measure().unwrap();
+        let m = CompoundDiceRoT::new(UDS, &layers, None, 0)
+            .measure()
+            .unwrap();
         assert_ne!(m.pcrs.digests[0], [0u8; 32]);
         assert_ne!(m.pcrs.digests[1], [0u8; 32]);
-        assert_eq!(m.pcrs.digests[2], [0u8; 32], "PCR 2 must be zero for 2-layer chain");
+        assert_eq!(
+            m.pcrs.digests[2], [0u8; 32],
+            "PCR 2 must be zero for 2-layer chain"
+        );
     }
 
     #[test]
     fn compound_lower_layer_change_propagates_to_all_cdis() {
         let layers_a = [DiceLayer { firmware: BL }, DiceLayer { firmware: FW }];
-        let layers_b = [DiceLayer { firmware: b"bootloader-v2" }, DiceLayer { firmware: FW }];
-        let m_a = CompoundDiceRoT::new(UDS, &layers_a, None, 0).measure().unwrap();
-        let m_b = CompoundDiceRoT::new(UDS, &layers_b, None, 0).measure().unwrap();
-        assert_ne!(m_a.pcrs.digests[0], m_b.pcrs.digests[0],
-            "changing a lower layer must change the topmost CDI");
-        assert_ne!(m_a.pcrs.digests[1], m_b.pcrs.digests[1],
-            "changing layer 0 must change its own CDI (PCR 1)");
+        let layers_b = [
+            DiceLayer {
+                firmware: b"bootloader-v2",
+            },
+            DiceLayer { firmware: FW },
+        ];
+        let m_a = CompoundDiceRoT::new(UDS, &layers_a, None, 0)
+            .measure()
+            .unwrap();
+        let m_b = CompoundDiceRoT::new(UDS, &layers_b, None, 0)
+            .measure()
+            .unwrap();
+        assert_ne!(
+            m_a.pcrs.digests[0], m_b.pcrs.digests[0],
+            "changing a lower layer must change the topmost CDI"
+        );
+        assert_ne!(
+            m_a.pcrs.digests[1], m_b.pcrs.digests[1],
+            "changing layer 0 must change its own CDI (PCR 1)"
+        );
     }
 
     #[test]
     fn compound_upper_layer_change_does_not_change_lower_cdis() {
         let layers_a = [DiceLayer { firmware: BL }, DiceLayer { firmware: FW }];
-        let layers_b = [DiceLayer { firmware: BL }, DiceLayer { firmware: b"firmware-v2.0.0" }];
-        let m_a = CompoundDiceRoT::new(UDS, &layers_a, None, 0).measure().unwrap();
-        let m_b = CompoundDiceRoT::new(UDS, &layers_b, None, 0).measure().unwrap();
-        assert_ne!(m_a.pcrs.digests[0], m_b.pcrs.digests[0],
-            "changing the topmost layer must change PCR 0");
-        assert_eq!(m_a.pcrs.digests[1], m_b.pcrs.digests[1],
-            "changing the topmost layer must NOT change PCR 1 (lower CDI)");
+        let layers_b = [
+            DiceLayer { firmware: BL },
+            DiceLayer {
+                firmware: b"firmware-v2.0.0",
+            },
+        ];
+        let m_a = CompoundDiceRoT::new(UDS, &layers_a, None, 0)
+            .measure()
+            .unwrap();
+        let m_b = CompoundDiceRoT::new(UDS, &layers_b, None, 0)
+            .measure()
+            .unwrap();
+        assert_ne!(
+            m_a.pcrs.digests[0], m_b.pcrs.digests[0],
+            "changing the topmost layer must change PCR 0"
+        );
+        assert_eq!(
+            m_a.pcrs.digests[1], m_b.pcrs.digests[1],
+            "changing the topmost layer must NOT change PCR 1 (lower CDI)"
+        );
     }
 
     #[test]
@@ -391,12 +435,20 @@ mod tests {
     #[test]
     fn compound_more_than_pcr_count_layers_uses_topmost_n() {
         use crate::measurement::PCR_COUNT;
-        let all_fw: &[&[u8]] = &[b"l0", b"l1", b"l2", b"l3", b"l4", b"l5", b"l6", b"l7", b"l8", b"l9"];
-        let layers: std::vec::Vec<DiceLayer<'_>> = all_fw.iter().map(|fw| DiceLayer { firmware: fw }).collect();
-        let m = CompoundDiceRoT::new(UDS, &layers, None, 0).measure().unwrap();
+        let all_fw: &[&[u8]] = &[
+            b"l0", b"l1", b"l2", b"l3", b"l4", b"l5", b"l6", b"l7", b"l8", b"l9",
+        ];
+        let layers: std::vec::Vec<DiceLayer<'_>> =
+            all_fw.iter().map(|fw| DiceLayer { firmware: fw }).collect();
+        let m = CompoundDiceRoT::new(UDS, &layers, None, 0)
+            .measure()
+            .unwrap();
         assert_ne!(m.pcrs.digests[0], [0u8; 32]);
         for slot in 0..PCR_COUNT {
-            assert_ne!(m.pcrs.digests[slot], [0u8; 32], "PCR {slot} must be non-zero");
+            assert_ne!(
+                m.pcrs.digests[slot], [0u8; 32],
+                "PCR {slot} must be non-zero"
+            );
         }
     }
 }

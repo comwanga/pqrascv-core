@@ -165,12 +165,13 @@ pub(crate) fn verify_content_binding(
 
     let b64 = base64::engine::general_purpose::STANDARD;
 
-    let entry: Value =
-        serde_json::from_str(entry_json).map_err(|_| RekorError::MalformedEntry)?;
+    let entry: Value = serde_json::from_str(entry_json).map_err(|_| RekorError::MalformedEntry)?;
 
     // Decode the base64-encoded hashedrekord body.
     let body_b64 = entry["body"].as_str().ok_or(RekorError::MalformedEntry)?;
-    let body_bytes = b64.decode(body_b64).map_err(|_| RekorError::MalformedEntry)?;
+    let body_bytes = b64
+        .decode(body_b64)
+        .map_err(|_| RekorError::MalformedEntry)?;
     let body: Value =
         serde_json::from_slice(&body_bytes).map_err(|_| RekorError::MalformedEntry)?;
 
@@ -283,18 +284,28 @@ mod tests {
         )
     }
 
-    fn good_entry() -> (alloc::string::String, [u8; 32], alloc::vec::Vec<u8>, alloc::vec::Vec<u8>) {
+    fn good_entry() -> (
+        alloc::string::String,
+        [u8; 32],
+        alloc::vec::Vec<u8>,
+        alloc::vec::Vec<u8>,
+    ) {
         use base64::Engine;
         let b64 = base64::engine::general_purpose::STANDARD;
         let hash = [0x42u8; 32];
         let sig = alloc::vec![0x01u8, 0x02, 0x03];
         let cert = alloc::vec![0xAAu8, 0xBB, 0xCC];
-        let hash_hex: alloc::string::String = hash.iter().fold(alloc::string::String::new(), |mut s, b| {
-            use core::fmt::Write;
-            let _ = write!(s, "{b:02x}");
-            s
-        });
-        let entry = make_entry(&make_body_b64(&hash_hex, &b64.encode(&sig), &b64.encode(&cert)));
+        let hash_hex: alloc::string::String =
+            hash.iter().fold(alloc::string::String::new(), |mut s, b| {
+                use core::fmt::Write;
+                let _ = write!(s, "{b:02x}");
+                s
+            });
+        let entry = make_entry(&make_body_b64(
+            &hash_hex,
+            &b64.encode(&sig),
+            &b64.encode(&cert),
+        ));
         (entry, hash, sig, cert)
     }
 
@@ -330,7 +341,8 @@ mod tests {
 
     #[test]
     fn content_binding_missing_body_field_fails() {
-        let entry = r#"{"integratedTime":1700000000,"verification":{"signedEntryTimestamp":"AAAA"}}"#;
+        let entry =
+            r#"{"integratedTime":1700000000,"verification":{"signedEntryTimestamp":"AAAA"}}"#;
         let err = verify_content_binding(entry, &[0u8; 32], &[], &[]).unwrap_err();
         assert_eq!(err, RekorError::MalformedEntry);
     }

@@ -74,13 +74,19 @@ mod inner {
         #[must_use]
         #[cfg(target_os = "linux")]
         pub fn new(firmware: &'a [u8], ai_model: Option<&'a [u8]>, event_counter: u64) -> Self {
-            Self { firmware, ai_model, event_counter }
+            Self {
+                firmware,
+                ai_model,
+                event_counter,
+            }
         }
 
         #[must_use]
         #[cfg(not(target_os = "linux"))]
         pub fn new(_firmware: &'a [u8], _ai_model: Option<&'a [u8]>, _event_counter: u64) -> Self {
-            Self { _phantom: core::marker::PhantomData }
+            Self {
+                _phantom: core::marker::PhantomData,
+            }
         }
 
         /// Parse a raw attestation report response buffer and produce [`Measurements`].
@@ -99,7 +105,8 @@ mod inner {
                 return Err(PqRascvError::MeasurementFailed);
             }
 
-            let measurement = &report[REPORT_MEASUREMENT_OFFSET..REPORT_MEASUREMENT_OFFSET + SHA384_LEN];
+            let measurement =
+                &report[REPORT_MEASUREMENT_OFFSET..REPORT_MEASUREMENT_OFFSET + SHA384_LEN];
             let policy = &report[REPORT_POLICY_OFFSET..REPORT_POLICY_OFFSET + POLICY_LEN];
 
             let mut pcrs = PcrBank::default();
@@ -112,7 +119,12 @@ mod inner {
                 None => [0u8; 32],
             };
 
-            Ok(Measurements { pcrs, firmware_hash, ai_model_hash, event_counter })
+            Ok(Measurements {
+                pcrs,
+                firmware_hash,
+                ai_model_hash,
+                event_counter,
+            })
         }
     }
 
@@ -123,10 +135,16 @@ mod inner {
             use std::os::unix::io::AsRawFd;
 
             let fw_hash: [u8; 32] = Sha3_256::digest(self.firmware).into();
-            let mut req = SnpReportReq { user_data: [0u8; 64], vmpl: 0, rsvd: [0u8; 28] };
+            let mut req = SnpReportReq {
+                user_data: [0u8; 64],
+                vmpl: 0,
+                rsvd: [0u8; 28],
+            };
             req.user_data[..32].copy_from_slice(&fw_hash);
 
-            let mut resp = SnpReportResp { data: [0u8; REPORT_LEN] };
+            let mut resp = SnpReportResp {
+                data: [0u8; REPORT_LEN],
+            };
 
             let mut ioctl_req = SnpGuestRequestIoctl {
                 msg_version: 1,
@@ -152,7 +170,12 @@ mod inner {
                 return Err(PqRascvError::MeasurementFailed);
             }
 
-            Self::measurements_from_resp(&resp.data, self.firmware, self.ai_model, self.event_counter)
+            Self::measurements_from_resp(
+                &resp.data,
+                self.firmware,
+                self.ai_model,
+                self.event_counter,
+            )
         }
     }
 
@@ -172,8 +195,7 @@ mod inner {
             r[MSG_HDR_LEN + REPORT_MEASUREMENT_OFFSET
                 ..MSG_HDR_LEN + REPORT_MEASUREMENT_OFFSET + 48]
                 .copy_from_slice(&measurement);
-            r[MSG_HDR_LEN + REPORT_POLICY_OFFSET
-                ..MSG_HDR_LEN + REPORT_POLICY_OFFSET + 8]
+            r[MSG_HDR_LEN + REPORT_POLICY_OFFSET..MSG_HDR_LEN + REPORT_POLICY_OFFSET + 8]
                 .copy_from_slice(&policy);
             r
         }
