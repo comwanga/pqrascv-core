@@ -16,34 +16,29 @@
 
 ---
 
-**What is PQ-RASCV?**  
-It is a security framework that mathematically proves exactly what software is running on a device and how it was built, using quantum-resistant cryptography. By anchoring this hardware trust to a decentralized Bitcoin ledger, it prevents attackers from silently compromising critical infrastructure.
-
-`pqrascv-core` is a `no_std + alloc` Rust library for issuing and verifying
-tamper-evident device attestation quotes. Every quote is signed with
-**ML-DSA-65 (FIPS 204)** and carries a **SLSA v1 / in-toto provenance predicate**,
-binding a device's firmware identity to its build pipeline in a single, compact
-CBOR message — on bare-metal Cortex-M4, RISC-V, WASM, or Linux.
+`pqrascv-core` is a `no_std + alloc` Rust library for issuing and verifying tamper-evident device
+attestation quotes. Every quote is signed with **ML-DSA-65 (FIPS 204)** and carries a
+**SLSA v1 / in-toto provenance predicate** binding a device's firmware identity to its build
+pipeline in a single compact CBOR message — on bare-metal Cortex-M4, RISC-V, WASM, or Linux.
 
 ---
 
 ## Why PQ-RASCV?
 
-Two converging threats are making classical attestation obsolete in 2026:
+Two converging threats are making classical attestation obsolete:
 
-**Supply-chain attacks are accelerating.** SolarWinds, XZ Utils, and dozens of
-lesser-known incidents show that firmware can be compromised at build time.
-Existing attestation stacks (TPM 2.0, DICE, TDX) prove *what* is running —
-but carry no cryptographic proof of *how* it was built or *who* signed it off.
+**Supply-chain attacks are accelerating.** SolarWinds, XZ Utils, and dozens of lesser-known
+incidents show that firmware can be compromised at build time. Existing attestation stacks
+(TPM 2.0, DICE, TDX) prove *what* is running — but carry no cryptographic proof of *how* it was
+built or *who* signed it off.
 
-**Post-quantum migration is overdue.** RSA and ECDSA underpin today's
-attestation chains and are broken by Shor's algorithm. NIST finalised ML-DSA
-(FIPS 204) and ML-KEM (FIPS 203) in 2024. Devices deployed today may still be
-in service when cryptographically-relevant quantum computers arrive.
+**Post-quantum migration is overdue.** RSA and ECDSA underpin today's attestation chains and are
+broken by Shor's algorithm. NIST finalised ML-DSA (FIPS 204) and ML-KEM (FIPS 203) in 2024.
+Devices deployed today may still be in service when cryptographically-relevant quantum computers
+arrive.
 
-PQ-RASCV addresses both in a single embedded-first library. Every attestation
-quote is post-quantum signed *and* supply-chain provenance-linked — no
-separately bolted-on components.
+PQ-RASCV addresses both in a single embedded-first library. Every attestation quote is
+post-quantum signed *and* supply-chain provenance-linked.
 
 ---
 
@@ -51,35 +46,14 @@ separately bolted-on components.
 
 - **Post-quantum by default** — ML-DSA-65 signatures; no RSA or ECDSA anywhere
 - **Supply-chain provenance** — SLSA v1 predicates + SBOM hash inside every signed quote
+- **Device PKI** — CBOR-native certificate chains (Root CA → Intermediate → Device), CRL revocation, and trust anchor lifecycle management
 - **Three measurement backends** — Software SHA3-256, hardware TPM 2.0, DICE CDI derivation
 - **`no_std + alloc`** — one API across Cortex-M4, RISC-V, WASM, and Linux
 - **Allocation-free measurement path** — `RoT::measure()` never touches the heap
 - **Replay protection** — verifier-supplied 32-byte nonce bound inside the signature
 - **Constant-time PQ ops** — RustCrypto crates; key material is `Zeroize`-on-drop
 - **Compact wire format** — CBOR (RFC 8949), ~3.7 KB total quote including signature
-
----
-
-## Phase 3.0: Sovereign Bitcoin Node Reference Architecture
-
-PQ-RASCV now ships with a complete reference architecture for **Sovereign Bitcoin Nodes**, extending its generalized hardware attestation into domain-specific continuous trust verification for Bitcoin infrastructure:
-
-- **Bitcoin Node Identity & Workload Integrity** — Verifies `bitcoind` binary hashes, `bitcoin.conf` states, and chainstate integrity directly bound to TPM/hardware measurements.
-- **Node Runtime Continuity** — Continuously monitors and attests to active node behavior (mempool status, connected peers, block tip height) detecting runtime drift.
-- **Distributed Verifier Consensus** — `VerifierOrchestrator` allows a federation of verifiers to vote on node trust state using deterministic quorum policies (Majority, Unanimous, Threshold).
-- **Transparency Anchoring** — `pqrascv-bitcoin-anchor` provides OP_RETURN serialization to commit final `AttestedNodeReport` hashes onto the Bitcoin blockchain or transparency logs, eliminating split-brain attestation.
-
----
-
-## Phase 4.0: Formal Verification & Production Hardening
-
-The core protocols have advanced to **Production Readiness**, backed by Level B Formal Verification:
-
-- **Strict System Invariants** — Runtime invariants guarantee monotonic sequence evolution, bounded replay windows, and non-equivocation (`invariants.rs`).
-- **Cryptographic Audit Lineage** — The `AuditTrace` subsystem enforces an append-only, deterministic Merkle log of all policy evaluations and quorum formations.
-- **Bitcoin Finality State Machine** — `FinalityCommitment` formally distinguishes between probabilistic confirmation depth and internal deterministic finality thresholds (`k_threshold`), preventing premature irreversible consensus.
-- **Consistency Checking** — Full divergence drift validation via `ConsistencyChecker` ensures global state integrity.
-- **Fuzzing & Property Tests** — Stabilized `cargo-fuzz` targets for panic boundaries and `proptest` suites for mathematical trace determinism.
+- **Bitcoin anchoring** — OP_RETURN commitments with RFC 6962 Merkle batching and SPV inclusion proofs
 
 ---
 
@@ -93,24 +67,24 @@ pqrascv-core = "1.0.0-rc.3"
 pqrascv-core = { version = "1.0.0-rc.3", default-features = false, features = ["alloc"] }
 ```
 
-### CLI Utility
+### CLI
 
-The fastest way to conduct attestation is using the `pqrascv` CLI binary:
+The fastest way to test attestation is the `pqrascv` CLI:
 
 ```bash
 cargo install pqrascv-cli
 
-# 1. Generate post-quantum keypair
+# 1. Generate a post-quantum keypair
 pqrascv keygen --out-seed seed.bin --out-vk vk.bin
 
-# 2. Prover: Generate attestation quote
+# 2. Generate an attestation quote (prover side)
 pqrascv attest \
   --seed seed.bin --vk vk.bin \
   --firmware firmware.bin \
   --slsa-level 3 \
   --out quote.cbor
 
-# 3. Verifier: Validate the quote deterministically
+# 3. Verify the quote (verifier side)
 pqrascv verify \
   --vk vk.bin \
   --quote quote.cbor \
@@ -125,24 +99,25 @@ use pqrascv_core::{
     crypto::{generate_ml_dsa_keypair, MlDsaBackend},
     measurement::SoftwareRoT,
     provenance::SlsaPredicateBuilder,
-    quote::generate_quote,
+    quote::{generate_quote, QuoteTimestamp},
 };
 
-let (signing_seed, verifying_key) = generate_ml_dsa_keypair().unwrap();
+let (sk, vk) = generate_ml_dsa_keypair().unwrap();
 
+// SoftwareRoT is for testing only. Use TpmRoT or DiceRoT in production.
 let rot = SoftwareRoT::new(b"my-firmware-image", None, 1);
 
-let firmware_digest = [0xabu8; 32]; // SHA3-256(firmware.bin)
 let provenance = SlsaPredicateBuilder::new("https://ci.example.com/pipeline/42")
-    .add_subject("firmware.bin", &firmware_digest)
+    .add_subject("firmware.bin", &[0xabu8; 32])
     .with_slsa_level(2)
     .build()
     .unwrap();
 
-let nonce = [0x42u8; 32]; // received from verifier's Challenge
+let nonce = [0x42u8; 32]; // received from the verifier's Challenge
+
 let quote = generate_quote(
-    &rot, &MlDsaBackend, signing_seed.as_bytes(),
-    &verifying_key, &nonce, provenance, 1_700_000_000,
+    &rot, &MlDsaBackend, sk.as_bytes(), &vk, &nonce,
+    provenance, QuoteTimestamp::Rtc(1_700_000_000),
 )
 .unwrap();
 
@@ -151,7 +126,7 @@ let cbor_bytes = quote.to_cbor().unwrap(); // send to verifier
 
 ### Verifier — server side
 
-Uses the companion [`pqrascv-verifier`](crates/verifier) crate:
+Simple key-based verification:
 
 ```rust
 use pqrascv_verifier::Verifier;
@@ -164,19 +139,53 @@ let verifier = Verifier::new(PolicyConfig {
     ..Default::default()
 });
 
-// trusted_vk obtained out-of-band (provisioning DB, PKI, TPM EK cert).
 match verifier.verify_cbor(&cbor_bytes, &trusted_vk, &nonce, now_secs) {
     Ok(r)  => println!("Verified — SLSA {}", r.slsa_level()),
     Err(e) => eprintln!("Rejected: {e}"),
 }
 ```
 
+PKI-based verification with a certificate chain:
+
+```rust
+use pqrascv_verifier::Verifier;
+use pqrascv_core::pki::{CaPublicKey, TrustAnchor, validate_chain};
+
+let root_ca = CaPublicKey {
+    ca_id: "root-ca-v1".to_string(),
+    key_bytes: ROOT_CA_VK_BYTES,
+    not_before: 1_700_000_000,
+    not_after:  1_800_000_000,
+};
+let anchor = TrustAnchor::new(root_ca);
+
+let result = verifier.verify_cbor_with_pki(
+    &cbor_bytes, &device_cert, &intermediates, &anchor, &nonce, now_secs,
+)?;
+
+println!("anchor: {}", result.trust_anchor_id());
+println!("valid until: {}", result.trust_anchor_valid_until());
+```
+
+CA rollover with `TrustStore`:
+
+```rust
+use pqrascv_core::pki::TrustStore;
+
+let store = TrustStore::new(old_anchor)
+    .with_rollover(new_anchor); // old and new CAs coexist during migration
+
+let result = verifier.verify_cbor_with_trust_store(
+    &cbor_bytes, &device_cert, &intermediates, &store, &nonce, now_secs,
+)?;
+```
+
 ---
 
 ## How It Works
 
-PQ-RASCV is a **challenge–response** protocol. The verifier drives; the prover
-measures, attests, and signs:
+PQ-RASCV is a **challenge–response** protocol. The verifier drives; the prover measures,
+attests, and signs:
 
 ```
 Verifier                                  Prover (device)
@@ -190,15 +199,16 @@ Verifier                                  Prover (device)
    │                                           │
    ├── verify ML-DSA-65 signature
    ├── check nonce match + pub_key_id fingerprint
+   ├── optionally: validate cert chain → root CA + CRL
    └── evaluate PolicyConfig  →  accept / reject
 ```
 
-**Signed payload fields (`QuoteBody`):**
+### Signed payload fields (`QuoteBody`)
 
 | Field | Content |
 |-------|---------|
-| `version` | Protocol version (`1`) |
-| `timestamp` | Unix epoch seconds |
+| `version` | Protocol version |
+| `timestamp` | Unix epoch seconds (or `NoRtc` for embedded targets without a clock) |
 | `nonce` | 32-byte replay-protection token |
 | `measurements.pcrs` | 8 × 32-byte PCR-style hash bank |
 | `measurements.firmware_hash` | SHA3-256 of firmware image |
@@ -219,12 +229,17 @@ Verifier                                  Prover (device)
   ┌────▼─────┐   ┌─────▼──────┐  ┌───▼──────────────────┐
   │ RoT      │   │ Crypto     │  │ Provenance            │
   │ trait    │   │ Backend    │  │ SlsaPredicateBuilder  │
-  │ measure()│   │ ML-DSA-65  │  │ InTotoAttestation     │
+  │ measure()│   │ ML-DSA-65  │  │ (v1: self-asserted)   │
   └────┬─────┘   └─────┬──────┘  └───┬──────────────────┘
        │               │              │
   ┌────▼───────────────▼──────────────▼───────────────┐
   │        AttestationQuote  (CBOR · ML-DSA signed)   │
   └───────────────────────────────────────────────────┘
+           │                         │
+  ┌────────▼────────┐    ┌───────────▼─────────────┐
+  │  PKI / CertChain│    │  Bitcoin Anchor          │
+  │  TrustStore     │    │  OP_RETURN + Merkle tree │
+  └─────────────────┘    └─────────────────────────┘
 ```
 
 | Layer | Module | Heap? |
@@ -233,16 +248,81 @@ Verifier                                  Prover (device)
 | Cryptography (`CryptoBackend` trait) | `crypto` | No |
 | Provenance builder | `provenance` | Yes — `alloc` |
 | Quote assembly | `quote` | Yes — `alloc` |
-| Policy evaluation | `config` | No |
+| PKI / certificate chains | `pki` | Yes — `alloc` |
+| Policy evaluation | `config`, `policy` | No |
+
+---
+
+## Device PKI
+
+PQ-RASCV v2 replaces arbitrary key trust with a full CBOR-native PKI.
+
+### Certificate hierarchy
+
+```
+Offline Root CA (air-gapped)
+  └── Manufacturer Intermediate CA (HSM-protected)
+        └── DeviceCertificate
+              ├── subject_key: ML-DSA-65 verifying key (1 952 bytes)
+              ├── hardware_id: TPM EK cert hash / DICE UDS fingerprint
+              └── fw_policy: allowed firmware hash set (optional)
+```
+
+Certificates are CBOR-native (`DeviceCertificate`), not X.509, to avoid ASN.1 parsing on
+embedded targets.
+
+### Trust anchor lifecycle
+
+`CaPublicKey` includes `not_before` and `not_after` timestamps. `validate_chain` enforces the
+trust anchor's temporal validity window **before** any signature work:
+
+```rust
+pub struct CaPublicKey {
+    pub ca_id: String,
+    pub key_bytes: [u8; ML_DSA_65_VERIFYING_KEY_SIZE],
+    pub not_before: u64,  // Unix seconds — CA is not trusted before this
+    pub not_after:  u64,  // Unix seconds — CA must not be trusted after this
+}
+```
+
+If the anchor is outside its validity window, `validate_chain` returns
+`PqRascvError::TrustAnchorExpired` immediately, without attempting any signature verification.
+
+### CA rollover with `TrustStore`
+
+`TrustStore` holds multiple trust anchors for staged CA migration:
+
+```rust
+let store = TrustStore::new(current_anchor)
+    .with_rollover(incoming_anchor);
+
+// Returns the first valid anchor that successfully validates the chain.
+// Returns TrustAnchorExpired if no anchors are in their validity window.
+let chain = validate_chain_with_store(&device_cert, &intermediates, &store, now_secs)?;
+```
+
+`PkiVerificationResult` exposes audit fields for the anchor that accepted the chain:
+
+```rust
+result.trust_anchor_id()          // ca_id of the accepting anchor
+result.trust_anchor_fingerprint() // SHA3-256 of its verifying key
+result.trust_anchor_valid_until() // not_after of the accepting anchor
+```
+
+### Revocation
+
+CRLs are signed CBOR lists (`RevocationList`). `VerifiedRevocationList` wraps a CRL whose
+signature has been checked — `is_revoked()` is only accessible after signature verification,
+preventing callers from bypassing the check.
 
 ---
 
 ## Supported Backends
 
-### Software RoT *(default — no hardware required)*
+### Software RoT *(development/testing — `features = ["software-rot-unsafe"]`)*
 
-Hashes memory regions with SHA3-256. Ideal for development, WASM, and any
-platform without a hardware RoT.
+Hashes memory regions with SHA3-256. **Never use in production** — the `PolicyEngineV2`
+rejects this backend by default.
 
 ```rust
 let rot = SoftwareRoT::new(b"firmware", Some(b"ai-model-weights"), 0);
@@ -254,18 +334,16 @@ Reads the SHA-256 PCR bank (PCRs 0–7) from a hardware or simulated TPM via
 [`tss-esapi`](https://crates.io/crates/tss-esapi) (TCG TSS2 ESAPI). Linux only.
 
 ```toml
-pqrascv-core = { version = "0.1", features = ["hardware-tpm"] }
+pqrascv-core = { version = "1.0.0-rc.3", features = ["hardware-tpm"] }
 ```
 
 ```rust
 // Set TPM2TOOLS_TCTI=device:/dev/tpm0  or  swtpm:path=/tmp/swtpm.sock
 let rot = TpmRoT::new(b"firmware", None, 0);
 let m   = rot.measure().expect("TPM read failed");
-println!("PCR0: {:02x?}", m.pcrs.0[0]);
 ```
 
 ```bash
-# Install system libraries (Ubuntu/Debian)
 sudo apt install libtss2-dev tpm2-tools swtpm swtpm-tools
 ```
 
@@ -279,18 +357,31 @@ CDI_attestation = SHA3-256( CDI ‖ "DICE-attest" ‖ SHA3-256(firmware) )
 ```
 
 ```toml
-pqrascv-core = { version = "0.1", features = ["dice"] }
+pqrascv-core = { version = "1.0.0-rc.3", features = ["dice"] }
 ```
 
 ```rust
-// Single layer
-let rot = DiceRoT::new(cdi_from_hardware, b"firmware", None, 0);
-
 // Two-layer chain: bootloader → application
 let m0   = DiceRoT::new(hardware_uds, BOOTLOADER, None, 0).measure().unwrap();
-let cdi1 = m0.pcrs.0[0];                 // CDI_0 derived from UDS
+let cdi1 = m0.pcrs.0[0];
 let m1   = DiceRoT::new(cdi1, APP_FW, Some(AI_MODEL), 0).measure().unwrap();
 ```
+
+---
+
+## Bitcoin Anchoring
+
+`pqrascv-bitcoin-anchor` commits batches of attestation quote hashes to the Bitcoin blockchain
+via OP_RETURN outputs, providing immutable, decentralized timestamping.
+
+```
+OP_RETURN <magic: 7 bytes "PQRASCV"> <version: 1 byte 0x02> <merkle_root: 32 bytes>
+Total payload: 40 bytes (well within the 80-byte OP_RETURN limit)
+```
+
+The Merkle tree uses RFC 6962 with prefix separation (`0x00` for leaves, `0x01` for internal
+nodes) to prevent second-preimage attacks (CVE-2012-2459 class). SPV inclusion proofs allow
+offline verification without a full Bitcoin node.
 
 ---
 
@@ -299,12 +390,15 @@ let m1   = DiceRoT::new(cdi1, APP_FW, Some(AI_MODEL), 0).measure().unwrap();
 | Role | Algorithm | Standard | Sizes |
 |------|-----------|----------|-------|
 | Signatures | ML-DSA-65 | FIPS 204 | seed 32 B · vk 1 952 B · sig 3 309 B |
-| Key encapsulation | ML-KEM-768 | FIPS 203 | — |
-| Hashing (measurements, fingerprints) | SHA3-256 | FIPS 202 | 32 B digest |
+| Key encapsulation | ML-KEM-768 | FIPS 203 | (future PQ transport layer) |
+| Hashing | SHA3-256 | FIPS 202 | 32 B digest |
 | Wire encoding | CBOR | RFC 8949 | ~3.7 KB total quote |
 
-All PQ operations are constant-time (RustCrypto guarantee).
-`SigningKeySeed` implements `Zeroize` and is wiped on drop.
+All PQ operations are constant-time (RustCrypto guarantee). `SigningKeySeed` implements
+`Zeroize` and is wiped on drop.
+
+Domain separation contexts are used for all ML-DSA-65 signing operations so that signatures
+produced in different protocol roles cannot be cross-context replayed.
 
 ---
 
@@ -321,45 +415,60 @@ Measurement latency on Cortex-M4 @ 168 MHz: < 1 ms (Software RoT, 64 KB firmware
 
 ---
 
-## Status & Roadmap
+## Security Considerations
 
-**v1.0.0-rc.3** is published. The public API has stabilized, featuring deterministic formal verification and a fully functional CLI.
+**Key storage** — `SigningKeySeed` is 32 bytes and zeroizes on drop. On real hardware, store it
+in a hardware-protected keystore (TPM NV, TrustZone, eFuse OTP). Never log or transmit the seed.
 
-| Shipped in v1.0.0-rc.3 ✅ | Planned 🗺 |
-|----------------------|------------|
-| ML-DSA-65 sign / verify | Noise\_PQX post-quantum transport |
-| ML-KEM-768 encapsulation | CBOR COSE signatures (RFC 9052) |
-| Software / TPM 2.0 / DICE backends | AMD SEV-SNP & Intel TDX backends |
-| SLSA v1 provenance + SBOM hash | `heapless` allocation-free quote assembly |
-| Sovereign Bitcoin Node Architecture | OP-TEE / TrustZone backend |
-| Verifier Federation & Consensus | |
-| Bitcoin Transparency Anchoring | Stable 1.0 API |
-| CLI prover + verifier binary | |
+**Nonce freshness** — reusing a nonce breaks replay protection. Generate a fresh 32-byte nonce
+per request and verify it matches the returned quote exactly.
+
+**Trust anchor validity** — always pass the current wall-clock time to `validate_chain` and
+`validate_chain_with_store`. If your trust anchor's `not_after` has passed, the function returns
+`TrustAnchorExpired` — rotate your root CA before this deadline.
+
+**CA key storage** — the offline root CA private key must never touch a networked machine. Use an
+HSM or air-gapped ceremony. A compromised root CA invalidates all device certificates.
+
+**CRL freshness** — always check the certificate revocation list. `VerifiedRevocationList` wraps
+a CRL whose signature has been verified; do not accept an unverified `RevocationList` directly.
+
+**Verifying key trust** — when not using PKI, the caller supplies a trusted verifying key.
+A compromised key invalidates all quotes signed with it.
+
+**DICE CDI confidentiality** — the `cdi` field in `DiceRoT` is the hardware root secret. It
+must never leave the device. Only the one-way `cdi_attestation` appears in quotes.
+
+**Transport layer** — ML-DSA-65 protects the signature. If your transport (TLS 1.2, classical
+ECDH) is not post-quantum, a "harvest now, decrypt later" attacker can record and later decrypt
+the channel. Pair with a PQ transport (Noise\_PQX, planned).
+
+**SoftwareRoT** — the `software-rot-unsafe` feature must never be compiled into production
+firmware. The `PolicyEngineV2` rejects `SoftwareRoT` by default.
+
+**Quote age** — set `PolicyConfig::max_quote_age_secs` to 60–300 s to bound the validity window
+of captured quotes.
 
 ---
 
-## Security Considerations
+## Status
 
-**Key storage** — `SigningKeySeed` is 32 bytes and zeroizes on drop. On real hardware,
-store it in a hardware-protected keystore (TPM NV, TrustZone, eFuse OTP). Never log
-or transmit the seed.
+**v1.0.0-rc.3** — API stabilized. 296 tests pass.
 
-**Nonce freshness** — reusing a nonce breaks replay protection. Generate a fresh
-32-byte nonce per request and verify it matches the returned quote exactly.
-
-**Verifying key trust** — [`pqrascv-verifier`](crates/verifier) does not manage a PKI.
-The caller supplies a trusted verifying key (provisioning DB, certificate chain, or TPM
-EK cert). A compromised key invalidates all quotes signed with it.
-
-**DICE CDI confidentiality** — the `cdi` field in `DiceRoT` is the hardware root secret.
-It must never leave the device. Only the one-way `cdi_attestation` appears in quotes.
-
-**Transport layer** — ML-DSA-65 protects the signature. If your transport (TLS 1.2,
-classical ECDH) is not post-quantum, a "harvest now, decrypt later" attacker can
-record and later decrypt the channel. Pair with a PQ transport (Noise\_PQX, planned).
-
-**Quote age** — set `PolicyConfig::max_quote_age_secs` to 60–300 s to bound the
-validity window of captured quotes.
+| Implemented ✅ | Planned 🗺 |
+|----------------|------------|
+| ML-DSA-65 sign / verify | Authoritative Sigstore provenance verification |
+| ML-KEM-768 encapsulation | Fulcio chain validation + Rekor inclusion proofs |
+| Software / TPM 2.0 / DICE backends | AMD SEV-SNP & Intel TDX backends |
+| SLSA v1 provenance + SBOM hash | Noise\_PQX post-quantum transport |
+| CBOR-native PKI (Root CA → Device) | CBOR COSE signatures (RFC 9052) |
+| CRL revocation (`VerifiedRevocationList`) | Python SDK (PyO3 bindings) |
+| Trust anchor lifecycle (`not_before`/`not_after`) | OP-TEE / TrustZone backend |
+| `TrustStore` CA rollover | Stable 1.0 API |
+| Bitcoin OP_RETURN anchoring (full 32-byte root) | |
+| RFC 6962 Merkle tree + SPV proofs | |
+| ML-DSA-65 domain separation contexts | |
+| CLI prover + verifier binary | |
 
 ---
 
@@ -370,7 +479,8 @@ Issues, PRs, and feedback are welcome at
 
 ```bash
 cargo fmt --all
-cargo clippy --features dice -- -D warnings
+cargo clippy --all --features std,dice -- -D warnings
+cargo clippy -p pqrascv-core --no-default-features -- -D warnings
 cargo test --all
 cargo audit
 ```
@@ -379,12 +489,11 @@ Areas where contributions are especially valuable:
 
 - **Platform backends** — SEV-SNP, TDX, OP-TEE, Apple Secure Enclave
 - **Transport** — Noise\_PQX integration, COSE/CBOR signing
+- **Provenance** — Sigstore / Rekor / Fulcio client integration
 - **Tooling** — Hardware provisioning scripts, key management daemons
 - **Verification** — `kani` harnesses for the crypto paths, fuzzing
 
-If you are using `pqrascv-core` in a project — even experimentally — open a
-[GitHub Discussion](https://github.com/comwanga/pqrascv-core/discussions).
-Your feedback is critical as we finalize the v1.0.0 stable release!
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full system design.
 
 ---
 
