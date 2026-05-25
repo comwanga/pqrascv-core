@@ -13,8 +13,8 @@ use pqrascv_core::{
     measurement::SoftwareRoT,
     nonce::{InMemoryNonceLedger, NonceLedger},
     pki::{
-        build_device_certificate, validate_chain, CaPublicKey, HardwareIdentity, TrustAnchor,
-        CERT_VERSION,
+        build_device_certificate, validate_chain, validate_chain_with_store,
+        CaPublicKey, HardwareIdentity, TrustAnchor, TrustStore, CERT_VERSION,
     },
     provenance::SlsaPredicateBuilder,
     quote::{generate_quote, AttestationQuote, QuoteTimestamp},
@@ -270,4 +270,157 @@ fn protocol_version_downgrade_is_rejected() {
         verifier.verify_cbor(&cbor_downgraded, &vk, &nonce, 1_700_000_100),
         Err(PqRascvError::UnsupportedVersion)
     ));
+}
+
+// ── Trust anchor lifecycle adversarial tests ──────────────────────────────────
+
+fn make_anchor(
+    ca_vk: [u8; pqrascv_core::crypto::ML_DSA_65_VERIFYING_KEY_SIZE],
+    ca_id: &str,
+    not_before: u64,
+    not_after: u64,
+) -> TrustAnchor {
+    TrustAnchor::new(CaPublicKey {
+        key_bytes: ca_vk,
+        ca_id: ca_id.to_string(),
+        not_before,
+        not_after,
+    })
+}
+
+fn make_cert_for_ca(
+    dev_vk: &[u8],
+    issuer_ca_id: &str,
+    ca_seed: &[u8],
+) -> pqrascv_core::pki::DeviceCertificate {
+    let subject_key_id = pqrascv_core::crypto::pub_key_id(dev_vk);
+    let mut cert = build_device_certificate(
+        CERT_VERSION,
+        "DEV-001".to_string(),
+        issuer_ca_id.to_string(),
+        0,
+        u64::MAX,
+        dev_vk.to_vec(),
+        subject_key_id,
+        HardwareIdentity::TpmEkCertHash([0u8; 32]),
+        None,
+        vec![],
+        "DEV-001".to_string(),
+        Some(0),
+    );
+    sign_cert(&mut cert, ca_seed);
+    cert
+}
+
+#[test]
+fn expired_trust_anchor_rejected_in_validate_chain() {
+    let (ca_seed, ca_vk) = generate_ml_dsa_keypair().unwrap();
+    let (_, dev_vk) = generate_ml_dsa_keypair().unwrap();
+    let anchor = make_anchor(ca_vk, "https://ca.test", 0, 999); // expired at t=999
+    let cert = make_cert_for_ca(&dev_vk, "https://ca.test", ca_seed.as_bytes());
+    assert!(matches!(
+        validate_chain(cert, vec![], &anchor, 1_000),
+        Err(PqRascvError::TrustAnchorExpired)
+    ));
+}
+
+#[test]
+fn not_yet_valid_trust_anchor_rejected() {
+    let (ca_seed, ca_vk) = generate_ml_dsa_keypair().unwrap();
+    let (_, dev_vk) = generate_ml_dsa_keypair().unwrap();
+    let anchor = make_anchor(ca_vk, "https://ca.test", 5_000, u64::MAX); // not yet valid
+    let cert = make_cert_for_ca(&dev_vk, "https://ca.test", ca_seed.as_bytes());
+    assert!(matches!(
+        validate_chain(cert, vec![], &anchor, 1_000),
+        Err(PqRascvError::TrustAnchorExpired)
+    ));
+}
+
+#[test]
+fn compromised_historical_root_cannot_validate_new_device_cert() {
+    // Simulates an attacker with a leaked root CA private key whose validity
+    // window has closed. The cert is correctly signed but the anchor is expired.
+    let (old_ca_seed, old_ca_vk) = generate_ml_dsa_keypair().unwrap();
+    let (_, dev_vk) = generate_ml_dsa_keypair().unwrap();
+    // Old CA was valid 0–1999; attacker uses it at t=2000
+    let old_anchor = make_anchor(old_ca_vk, "https://old-ca.test", 0, 1_999);
+    let cert = make_cert_for_ca(&dev_vk, "https://old-ca.test", old_ca_seed.as_bytes());
+    assert!(matches!(
+        validate_chain(cert, vec![], &old_anchor, 2_000),
+        Err(PqRascvError::TrustAnchorExpired)
+    ), "cert signed by expired root must be rejected even with valid signature");
+}
+
+#[test]
+fn rollover_accepts_cert_from_either_active_anchor() {
+    let (old_seed, old_vk) = generate_ml_dsa_keypair().unwrap();
+    let (new_seed, new_vk) = generate_ml_dsa_keypair().unwrap();
+    let (_, dev_vk1) = generate_ml_dsa_keypair().unwrap();
+    let (_, dev_vk2) = generate_ml_dsa_keypair().unwrap();
+
+    // Overlapping window: old valid 0–3000, new valid 2000–MAX
+    let store = TrustStore::new(make_anchor(old_vk, "https://old-ca.test", 0, 3_000))
+        .with_rollover(make_anchor(new_vk, "https://new-ca.test", 2_000, u64::MAX));
+
+    let cert_from_old = make_cert_for_ca(&dev_vk1, "https://old-ca.test", old_seed.as_bytes());
+    let cert_from_new = make_cert_for_ca(&dev_vk2, "https://new-ca.test", new_seed.as_bytes());
+
+    // At t=2500 both CAs are in their validity window
+    assert!(
+        validate_chain_with_store(&cert_from_old, &[], &store, 2_500).is_ok(),
+        "cert from old CA must be accepted while old CA is still valid"
+    );
+    assert!(
+        validate_chain_with_store(&cert_from_new, &[], &store, 2_500).is_ok(),
+        "cert from new CA must be accepted"
+    );
+}
+
+#[test]
+fn retired_rollover_anchor_does_not_validate_after_expiry() {
+    let (old_seed, old_vk) = generate_ml_dsa_keypair().unwrap();
+    let (_, new_vk) = generate_ml_dsa_keypair().unwrap();
+    let (_, dev_vk) = generate_ml_dsa_keypair().unwrap();
+
+    // Old CA expired at t=2000
+    let store = TrustStore::new(make_anchor(old_vk, "https://old-ca.test", 0, 2_000))
+        .with_rollover(make_anchor(new_vk, "https://new-ca.test", 1_000, u64::MAX));
+
+    // Cert signed by the OLD (expired) CA
+    let cert = make_cert_for_ca(&dev_vk, "https://old-ca.test", old_seed.as_bytes());
+
+    // At t=3000 old CA is expired; new CA is valid but ca_id doesn't match
+    let result = validate_chain_with_store(&cert, &[], &store, 3_000);
+    assert!(result.is_err(), "cert signed by expired anchor must be rejected");
+}
+
+#[test]
+fn stale_trust_store_with_all_anchors_expired_fails_explicitly() {
+    let (ca_seed, ca_vk) = generate_ml_dsa_keypair().unwrap();
+    let (_, dev_vk) = generate_ml_dsa_keypair().unwrap();
+
+    // All anchors expired
+    let store = TrustStore::new(make_anchor(ca_vk, "https://ca.test", 0, 999));
+    let cert = make_cert_for_ca(&dev_vk, "https://ca.test", ca_seed.as_bytes());
+
+    assert!(matches!(
+        validate_chain_with_store(&cert, &[], &store, 2_000),
+        Err(PqRascvError::TrustAnchorExpired)
+    ), "stale store must return TrustAnchorExpired, not CertificateInvalid");
+}
+
+#[test]
+fn chain_validation_populates_trust_anchor_audit_fields() {
+    use pqrascv_core::crypto::pub_key_id;
+    let (ca_seed, ca_vk) = generate_ml_dsa_keypair().unwrap();
+    let (_, dev_vk) = generate_ml_dsa_keypair().unwrap();
+    let expected_fingerprint = pub_key_id(&ca_vk);
+    let anchor = make_anchor(ca_vk, "https://ca.audit-test", 1_000, 9_000);
+    let cert = make_cert_for_ca(&dev_vk, "https://ca.audit-test", ca_seed.as_bytes());
+
+    let chain = validate_chain(cert, vec![], &anchor, 5_000).unwrap();
+    assert_eq!(chain.trust_anchor.ca_id, "https://ca.audit-test");
+    assert_eq!(chain.trust_anchor.fingerprint, expected_fingerprint);
+    assert_eq!(chain.trust_anchor.not_before, 1_000);
+    assert_eq!(chain.trust_anchor.not_after, 9_000);
 }
