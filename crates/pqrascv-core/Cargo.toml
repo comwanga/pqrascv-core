@@ -23,6 +23,7 @@ software-rot-unsafe = []
 hardware-tpm = ["dep:tss-esapi"]
 dice         = []
 intel-tdx  = ["dep:libc"]
+amd-sev-snp = ["dep:libc"]
 
 [dependencies]
 serde.workspace       = true

@@ -9,6 +9,7 @@
 //! | `tpm` | `hardware-tpm` | TPM 2.0 backend |
 //! | [`dice`] | `dice` | DICE RoT backend |
 //! | [`tdx`] | `intel-tdx` | Intel TDX backend |
+//! | [`sevsnp`] | `amd-sev-snp` | AMD SEV-SNP backend |
 
 #[cfg(feature = "software-rot-unsafe")]
 pub mod software;
@@ -20,3 +21,5 @@ pub mod tpm;
 pub mod dice;
 
 pub mod tdx;
+
+pub mod sevsnp;
