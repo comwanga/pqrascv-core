@@ -32,6 +32,8 @@ mod inner {
     pub(super) const REPORT_LEN: usize = 0x4A0;
     const MSG_HDR_LEN: usize = 0x20;
 
+    // _IOWR(SEV_GUEST_IOC_TYPE=0x53, 0x0, struct snp_guest_request_ioctl)
+    // linux/sev-guest.h, verified against kernel 6.5.
     #[cfg(target_os = "linux")]
     const SNP_GET_REPORT: u64 = 0xc030_5300;
 

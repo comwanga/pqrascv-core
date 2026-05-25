@@ -325,7 +325,6 @@ mod tests {
 
     const UDS: [u8; 32] = [0x11u8; 32];
     static BL: &[u8] = b"bootloader-v1";
-    static OS: &[u8] = b"os-v1.0";
     static FW: &[u8] = b"firmware-v1.0.0";
 
     #[test]

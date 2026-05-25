@@ -40,6 +40,8 @@ mod inner {
     #[cfg(target_os = "linux")]
     const REPORTDATA_LEN: usize = 64;
 
+    // _IOWR('G', 0x01, struct tdx_report_req) — Linux ≥ 5.19
+    // arch/x86/include/uapi/asm/tdx.h, verified against kernel 6.5.
     #[cfg(target_os = "linux")]
     const TDX_CMD_GET_REPORT0: u64 = 0xc480_4701;
 
