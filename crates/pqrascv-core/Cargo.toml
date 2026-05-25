@@ -43,3 +43,4 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dev-dependencies]
 pqrascv-core = { path = ".", features = ["std", "software-rot-unsafe"] }
+pqrascv-verifier = { path = "../verifier", version = "1.0.0-rc.3" }
