@@ -12,7 +12,7 @@
 //! # Audit Findings Addressed
 //!
 //! - **Finding #1**: `RequireHardwareBackend` rejects `SoftwareRoT` in production.
-//! - **Finding #2**: `RequireExternalProvenance` rejects self-asserted SLSA claims.
+//! - **Finding #2**: `RequireExternalProvenance` — NOT_IMPLEMENTED pending Sigstore integration.
 //! - **Finding #4**: `RequireCertificateChain` enforces PKI validation.
 //! - **Finding #10**: `EnforceProtocolVersion` rejects downgrade attempts.
 
@@ -221,10 +221,11 @@ impl PolicyEngineV2 {
     /// - Protocol version 2
     /// - Hardware-rooted backend (no `SoftwareRoT`)
     /// - Certificate chain required
-    /// - External provenance required
     /// - SLSA level ≥ 2
     /// - Firmware hash required
     /// - Max quote age 300 seconds
+    ///
+    /// Note: `RequireExternalProvenance` is intentionally absent (NOT_IMPLEMENTED — Sigstore pending).
     #[must_use]
     pub fn production() -> Self {
         Self::new(alloc::vec![
