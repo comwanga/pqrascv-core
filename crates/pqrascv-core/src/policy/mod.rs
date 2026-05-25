@@ -29,6 +29,7 @@ use crate::{error::PqRascvError, nonce::ClockEvidence, provenance_v2::VerifiedPr
 use crate::{
     pki::{CertChain, HardwareIdentity},
     quote::QuoteTimestamp,
+    measurement::PcrBank,
 };
 
 #[cfg(feature = "alloc")]
@@ -162,6 +163,13 @@ pub struct PolicyContext<'a> {
     /// will fail. External code cannot forge a `Some` value here.
     pub verified_provenance: Option<&'a VerifiedProvenance>,
     pub bitcoin_confirmations: Option<u32>,
+    /// PCR bank from the attested measurements.
+    /// All values are SHA3-256 (normalized by each backend).
+    /// Used by [`PolicyRule::RequirePcrValues`] to enforce per-slot whitelists.
+    pub pcrs: &'a PcrBank,
+    /// Monotonic event counter from the RoT hardware.
+    /// Used by [`PolicyRule::RequireMinEventCounter`] for anti-replay enforcement.
+    pub event_counter: u64,
 }
 
 #[cfg(feature = "alloc")]
@@ -191,6 +199,9 @@ impl<'a> PolicyContext<'a> {
             QuoteTimestamp::NoRtc => ClockEvidence::NoRtc,
         };
 
+        let pcrs = &quote.body.measurements.pcrs;
+        let event_counter = quote.body.measurements.event_counter;
+
         PolicyContext {
             protocol_version: quote.body.version,
             clock,
@@ -202,6 +213,8 @@ impl<'a> PolicyContext<'a> {
             has_cert_chain: cert_chain.is_some(),
             verified_provenance,
             bitcoin_confirmations,
+            pcrs,
+            event_counter,
         }
     }
 }
@@ -342,6 +355,12 @@ impl PolicyEngineV2 {
 #[cfg(all(test, feature = "alloc"))]
 mod tests {
     use super::*;
+    use crate::measurement::{PcrAlgorithm, PcrBank};
+
+    static ZERO_PCR_BANK: PcrBank = PcrBank {
+        digests: [[0u8; 32]; 8],
+        algorithm: PcrAlgorithm::Sha3_256,
+    };
 
     fn base_ctx() -> PolicyContext<'static> {
         PolicyContext {
@@ -355,6 +374,8 @@ mod tests {
             has_cert_chain: true,
             verified_provenance: None,
             bitcoin_confirmations: None,
+            pcrs: &ZERO_PCR_BANK,
+            event_counter: 0,
         }
     }
 
