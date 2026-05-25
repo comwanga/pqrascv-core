@@ -124,6 +124,7 @@ impl RevocationList {
 /// Available under `software-rot-unsafe` to allow test code in external crates
 /// to bypass the `#[non_exhaustive]` restriction.
 #[cfg(all(feature = "alloc", feature = "software-rot-unsafe"))]
+#[must_use]
 pub fn build_revocation_list(
     issuer_id: String,
     this_update: u64,
@@ -150,7 +151,7 @@ pub struct VerifiedRevocationList<'a> {
 }
 
 #[cfg(feature = "alloc")]
-impl<'a> VerifiedRevocationList<'a> {
+impl VerifiedRevocationList<'_> {
     /// Returns `true` if the certificate with `serial` is listed as revoked.
     #[must_use]
     pub fn is_revoked(&self, serial: &str) -> bool {

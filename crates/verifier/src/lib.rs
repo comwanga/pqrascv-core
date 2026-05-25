@@ -157,6 +157,7 @@ impl Verifier {
     /// - `intermediates`: ordered CA chain from root-adjacent to device-adjacent (may be empty).
     /// - `trust_anchor`: root CA trust anchor.
     /// - `crl`: optional verified CRL; if `Some`, the device serial is checked for revocation.
+    #[allow(clippy::too_many_arguments)]
     pub fn verify_cbor_with_pki(
         &self,
         cbor: &[u8],

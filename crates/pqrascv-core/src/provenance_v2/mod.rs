@@ -142,7 +142,7 @@ impl ExternalProvenanceBundle {
 
     /// Verifies the Sigstore bundle (Fulcio certificate chain + Rekor inclusion proof).
     ///
-    /// # NOT_IMPLEMENTED
+    /// # `NOT_IMPLEMENTED`
     ///
     /// Returns `Err(PqRascvError::ProvenanceBundleInvalid)` unconditionally.
     /// Requires `sigstore-rs` integration for full Fulcio + Rekor verification.

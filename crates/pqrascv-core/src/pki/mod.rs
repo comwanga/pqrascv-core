@@ -134,6 +134,7 @@ pub struct DeviceCertificate {
 /// Available under `software-rot-unsafe` to allow test code in external crates
 /// to bypass the `#[non_exhaustive]` restriction.
 #[cfg(all(feature = "alloc", feature = "software-rot-unsafe"))]
+#[must_use]
 #[allow(clippy::too_many_arguments)]
 pub fn build_device_certificate(
     version: u8,
@@ -159,9 +160,9 @@ pub fn build_device_certificate(
         subject_key_id,
         hardware_identity,
         fw_policy,
-        issuer_signature,
         self_id,
         max_path_length,
+        issuer_signature,
     }
 }
 
@@ -258,6 +259,10 @@ pub struct TrustAnchor {
 
 impl TrustAnchor {
     /// Creates a trust anchor from the root CA's verifying key.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `root_ca.ca_id` is empty.
     #[must_use]
     pub fn new(root_ca: CaPublicKey) -> Self {
         assert!(!root_ca.ca_id.is_empty(), "TrustAnchor ca_id must not be empty");
@@ -318,6 +323,11 @@ impl CertChain {
 ///
 /// Returns [`PqRascvError::CertificateInvalid`] for structural/policy failures
 /// and [`PqRascvError::VerificationFailed`] for cryptographic failures.
+///
+/// # Panics
+///
+/// Panics if the internal issuer-ID list is empty (invariant: always has at
+/// least the root CA entry).
 #[cfg(feature = "alloc")]
 pub fn validate_chain(
     device_cert: DeviceCertificate,

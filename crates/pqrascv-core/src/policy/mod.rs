@@ -159,7 +159,8 @@ impl<'a> PolicyContext<'a> {
     /// All security-sensitive fields are derived from cryptographic evidence:
     /// - `hardware_backend` comes from the certificate's `hardware_identity` field.
     /// - `has_cert_chain` reflects actual certificate chain validation.
-    /// - `has_external_provenance` is always `false` (NOT_IMPLEMENTED).
+    /// - `has_external_provenance` is always `false` (`NOT_IMPLEMENTED`).
+    #[must_use]
     pub fn from_verified_quote(
         quote: &'a crate::quote::AttestationQuote,
         cert_chain: Option<&CertChain>,
@@ -167,8 +168,7 @@ impl<'a> PolicyContext<'a> {
         now_secs: u64,
     ) -> Self {
         let hardware_backend = cert_chain
-            .map(|c| hardware_backend_from_identity(&c.device_cert.hardware_identity))
-            .unwrap_or(HardwareBackendKind::SoftwareUnsafe);
+            .map_or(HardwareBackendKind::SoftwareUnsafe, |c| hardware_backend_from_identity(&c.device_cert.hardware_identity));
 
         let clock = match quote.body.timestamp {
             QuoteTimestamp::Rtc(ts) => ClockEvidence::TrustedRtc(ts),
@@ -225,7 +225,7 @@ impl PolicyEngineV2 {
     /// - Firmware hash required
     /// - Max quote age 300 seconds
     ///
-    /// Note: `RequireExternalProvenance` is intentionally absent (NOT_IMPLEMENTED — Sigstore pending).
+    /// Note: `RequireExternalProvenance` is intentionally absent (`NOT_IMPLEMENTED` — Sigstore pending).
     #[must_use]
     pub fn production() -> Self {
         Self::new(alloc::vec![

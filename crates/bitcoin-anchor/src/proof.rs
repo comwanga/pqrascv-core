@@ -111,11 +111,10 @@ impl SpvVerifier {
 
     pub fn verify(&self, proof: &InclusionProof, quote_hash: &[u8; 32]) -> Result<u32, SpvError> {
         // Step 0: Proof-of-work validation (skip only if max_target_bits == 0)
-        if self.max_target_bits != 0 {
-            if !validate_proof_of_work(&proof.block_header, self.max_target_bits) {
+        if self.max_target_bits != 0
+            && !validate_proof_of_work(&proof.block_header, self.max_target_bits) {
                 return Err(SpvError::InsufficientProofOfWork);
             }
-        }
 
         // Step 1: Confirmation count
         let confirmations = self
@@ -151,7 +150,7 @@ impl SpvVerifier {
             let mut buf = [0u8; 33];
             buf[0] = 0x00; // RFC6962 leaf prefix
             buf[1..].copy_from_slice(quote_hash);
-            let first: [u8; 32] = sha2::Sha256::digest(&buf).into();
+            let first: [u8; 32] = sha2::Sha256::digest(buf).into();
             sha2::Sha256::digest(first).into()
         };
         if proof.quote_merkle_path.leaf_hash != expected_leaf {
@@ -202,7 +201,7 @@ fn bits_to_target(bits: u32) -> Option<[u8; 32]> {
     let mantissa = (bits & 0x007F_FFFF) as u64;
     if bits & 0x0080_0000 != 0 { return None; } // negative
     if mantissa == 0            { return None; } // zero
-    if exp < 3 || exp > 32      { return None; } // invalid exponent
+    if !(3..=32).contains(&exp) { return None; } // invalid exponent
     let mut target = [0u8; 32];
     let start = 32 - exp;
     target[start] = ((mantissa >> 16) & 0xFF) as u8;

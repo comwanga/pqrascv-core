@@ -41,7 +41,7 @@ fn internal_hash(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
 /// Advances a layer of nodes using RFC6962 rules:
 /// pairs are hashed with `internal_hash`; the last odd node is promoted unchanged.
 fn next_layer(nodes: &[[u8; 32]]) -> Vec<[u8; 32]> {
-    let mut out = Vec::with_capacity((nodes.len() + 1) / 2);
+    let mut out = Vec::with_capacity(nodes.len().div_ceil(2));
     let mut i = 0;
     while i + 1 < nodes.len() {
         out.push(internal_hash(&nodes[i], &nodes[i + 1]));
