@@ -448,7 +448,12 @@ mod pki_tests {
         let (ca_seed, ca_vk) = generate_ml_dsa_keypair().unwrap();
         let (dev_seed, dev_vk) = generate_ml_dsa_keypair().unwrap();
 
-        let anchor = TrustAnchor::new(CaPublicKey { key_bytes: ca_vk, ca_id: "https://ca.test" });
+        let anchor = TrustAnchor::new(CaPublicKey {
+            key_bytes: ca_vk,
+            ca_id: "https://ca.test".to_string(),
+            not_before: 0,
+            not_after: u64::MAX,
+        });
         let device_cert = make_device_cert(&dev_vk, "https://ca.test", "DEV-001", ca_seed.as_bytes());
 
         let rot = SoftwareRoT::new(b"fw", None, 1);
@@ -474,7 +479,12 @@ mod pki_tests {
 
         let (ca_seed, ca_vk) = generate_ml_dsa_keypair().unwrap();
         let (dev_seed, dev_vk) = generate_ml_dsa_keypair().unwrap();
-        let anchor = TrustAnchor::new(CaPublicKey { key_bytes: ca_vk, ca_id: "https://ca.test" });
+        let anchor = TrustAnchor::new(CaPublicKey {
+            key_bytes: ca_vk,
+            ca_id: "https://ca.test".to_string(),
+            not_before: 0,
+            not_after: u64::MAX,
+        });
         let device_cert = make_device_cert(&dev_vk, "https://ca.test", "DEV-REVOKED", ca_seed.as_bytes());
 
         let mut crl = build_revocation_list(
@@ -515,7 +525,12 @@ mod pki_tests {
         let (dev_seed, dev_vk) = generate_ml_dsa_keypair().unwrap();
 
         // Anchor uses `other_vk` but cert was signed by `ca_seed`
-        let anchor = TrustAnchor::new(CaPublicKey { key_bytes: other_vk, ca_id: "https://ca.test" });
+        let anchor = TrustAnchor::new(CaPublicKey {
+            key_bytes: other_vk,
+            ca_id: "https://ca.test".to_string(),
+            not_before: 0,
+            not_after: u64::MAX,
+        });
         let device_cert = make_device_cert(&dev_vk, "https://ca.test", "DEV-001", ca_seed.as_bytes());
 
         let rot = SoftwareRoT::new(b"fw", None, 1);
@@ -539,7 +554,12 @@ mod pki_tests {
         let (int_seed, int_vk) = generate_ml_dsa_keypair().unwrap();
         let (dev_seed, dev_vk) = generate_ml_dsa_keypair().unwrap();
 
-        let anchor = TrustAnchor::new(CaPublicKey { key_bytes: root_vk, ca_id: "https://root.test" });
+        let anchor = TrustAnchor::new(CaPublicKey {
+            key_bytes: root_vk,
+            ca_id: "https://root.test".to_string(),
+            not_before: 0,
+            not_after: u64::MAX,
+        });
 
         // Intermediate cert: signed by root, self_id = "https://int.test", max_path_length = None
         let int_subject_key_id = pqrascv_core::crypto::pub_key_id(&int_vk);
