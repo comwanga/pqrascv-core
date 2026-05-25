@@ -167,7 +167,7 @@ pub struct PolicyContext<'a> {
     /// All values are SHA3-256 (normalized by each backend).
     /// Used by [`PolicyRule::RequirePcrValues`] to enforce per-slot whitelists.
     pub pcrs: &'a PcrBank,
-    /// Monotonic event counter from the RoT hardware.
+    /// Monotonic event counter from the `RoT` hardware.
     /// Used by [`PolicyRule::RequireMinEventCounter`] for anti-replay enforcement.
     pub event_counter: u64,
 }

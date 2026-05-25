@@ -121,8 +121,7 @@ fn verify_set_signature(
 
     // Try DER-encoded ECDSA first (real Rekor SET wire format, starts with 0x30).
     // Fall back to raw fixed-size r||s (64 bytes) for PQ-RASCV test bundles.
-    type DerSig = ecdsa::der::Signature<p256::NistP256>;
-    let sig: Signature = DerSig::try_from(set_bytes)
+    let sig: Signature = ecdsa::der::Signature::<p256::NistP256>::try_from(set_bytes)
         .ok()
         .and_then(|ds| Signature::try_from(ds).ok())
         .or_else(|| Signature::try_from(set_bytes).ok())

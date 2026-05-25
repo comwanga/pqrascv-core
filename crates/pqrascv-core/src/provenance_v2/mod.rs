@@ -507,7 +507,7 @@ impl ExternalProvenanceBundle {
     /// | 2 | Fulcio cert chain to trusted root (name + CA sig) | ✅ Implemented |
     /// | 3 | Fulcio cert temporal validity | ✅ Implemented |
     /// | 4 | OIDC identity against allowlist | ✅ Implemented |
-    /// | 5a | Rekor body binds to predicate_hash / sig / cert | ✅ Implemented |
+    /// | 5a | Rekor body binds to `predicate_hash` / sig / cert | ✅ Implemented |
     /// | 5b | Rekor inclusion proof (SET, DER ECDSA) | ✅ Implemented |
     /// | 6 | Rekor integrated time bounds | ✅ Implemented |
     /// | 7 | Artifact digest == firmware hash | ✅ Implemented |

@@ -163,8 +163,7 @@ pub(crate) fn verify_chain(leaf_der: &[u8], root_der: &[u8]) -> Result<(), Fulci
 
     // X.509 signatures are DER-encoded ECDSA (not raw r||s).
     let sig_bytes = leaf.signature.raw_bytes();
-    type DerSig = ecdsa::der::Signature<p256::NistP256>;
-    let sig = DerSig::try_from(sig_bytes)
+    let sig = ecdsa::der::Signature::<p256::NistP256>::try_from(sig_bytes)
         .map_err(|_| FulcioError::ChainValidationFailed)?;
 
     vk.verify(&tbs_der, &sig)
