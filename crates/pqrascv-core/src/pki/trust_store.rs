@@ -6,6 +6,7 @@ extern crate alloc;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
+#[cfg(feature = "alloc")]
 use super::TrustAnchor;
 
 /// A collection of trust anchors supporting CA lifecycle management.

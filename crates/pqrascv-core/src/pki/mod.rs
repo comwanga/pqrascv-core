@@ -35,6 +35,7 @@ extern crate alloc;
 #[cfg(feature = "alloc")]
 use alloc::{string::String, vec::Vec};
 
+#[cfg(feature = "alloc")]
 use crate::crypto::{pub_key_id, ML_DSA_65_VERIFYING_KEY_SIZE};
 
 #[cfg(feature = "alloc")]
