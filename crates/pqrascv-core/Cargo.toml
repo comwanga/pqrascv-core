@@ -16,7 +16,7 @@ categories.workspace   = true
 [features]
 default      = ["std"]
 std          = ["alloc", "serde/std", "ciborium/std", "sha3/std", "zeroize/std", "dep:getrandom"]
-alloc        = ["serde/alloc"]
+alloc        = ["serde/alloc", "der/alloc"]
 # Enables the SoftwareRoT backend. NOT FOR PRODUCTION — see measurement::SoftwareRoT docs.
 software-rot-unsafe = []
 # Hardware backends (opt-in only)
