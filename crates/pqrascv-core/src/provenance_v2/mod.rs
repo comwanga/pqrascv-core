@@ -343,7 +343,25 @@ impl ExternalProvenanceBundle {
         Ok(identity.oidc_subject)
     }
 
-    /// Condition 5 — The Rekor entry inclusion proof validates successfully.
+    /// Condition 5a — The Rekor entry body binds to (`predicate_hash`, `signature`,
+    /// `signing_cert_der`).
+    ///
+    /// Decodes the base64-encoded `body` field from `rekor_entry_json` and
+    /// verifies that the hashedrekord payload references the same predicate hash,
+    /// CI signature, and signing certificate as the Sigstore bundle. This closes
+    /// the decoupling between conditions 1 and 5: an attacker cannot substitute
+    /// a valid Rekor entry for a different artifact.
+    fn check_rekor_content_binding(&self) -> Result<(), PqRascvError> {
+        rekor::verify_content_binding(
+            &self.sigstore_bundle.rekor_entry_json,
+            &self.sigstore_bundle.predicate_hash,
+            &self.sigstore_bundle.signature,
+            &self.sigstore_bundle.signing_cert_der,
+        )
+        .map_err(PqRascvError::from)
+    }
+
+    /// Condition 5b — The Rekor entry inclusion proof validates successfully.
     ///
     /// Verifies the Signed Entry Timestamp (SET) in `rekor_entry_json` using
     /// the `rekor_public_key_der` (ECDSA P-256). Returns `Err` if the SET
@@ -426,6 +444,50 @@ impl ExternalProvenanceBundle {
         Ok(())
     }
 
+    /// Condition 1 (signature part) — The CI provider's ECDSA P-256 signature over the
+    /// CBOR-serialized predicate is valid under the Fulcio leaf certificate's subject key.
+    ///
+    /// Called in [`verify_all`] after conditions 2 and 3 have established that
+    /// the Fulcio certificate is structurally trusted and temporally valid, so
+    /// the subject key extracted here can be trusted.
+    ///
+    /// The signature format is raw r‖s (64 bytes for P-256, SHA-256 hashed internally
+    /// by the P-256 verifier). This is the custom PQ-RASCV CBOR wire format; real
+    /// Sigstore bundles use DER-encoded ECDSA (a future extension).
+    ///
+    /// [`verify_all`]: Self::verify_all
+    fn check_predicate_signature(&self) -> Result<(), PqRascvError> {
+        use der::{Decode, Encode};
+        use p256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
+        use p256::pkcs8::DecodePublicKey;
+        use x509_cert::Certificate;
+
+        // Re-serialize the predicate to the exact CBOR bytes that were signed.
+        let mut predicate_cbor = Vec::new();
+        ciborium::into_writer(&self.predicate, &mut predicate_cbor)
+            .map_err(|_| PqRascvError::SerializationFailed)?;
+
+        // Parse the Fulcio leaf cert (already validated by conditions 2 and 3)
+        // and encode its SubjectPublicKeyInfo as DER for the P-256 key import.
+        let cert = Certificate::from_der(&self.sigstore_bundle.signing_cert_der)
+            .map_err(|_| PqRascvError::ProvenanceBundleInvalid)?;
+        let spki_der = cert
+            .tbs_certificate
+            .subject_public_key_info
+            .to_der()
+            .map_err(|_| PqRascvError::ProvenanceBundleInvalid)?;
+
+        let vk = VerifyingKey::from_public_key_der(&spki_der)
+            .map_err(|_| PqRascvError::ProvenanceBundleInvalid)?;
+
+        // Signature is raw r‖s (64 bytes). P-256 verify hashes with SHA-256 internally.
+        let sig = Signature::try_from(self.sigstore_bundle.signature.as_slice())
+            .map_err(|_| PqRascvError::InvalidProvenance)?;
+
+        vk.verify(&predicate_cbor, &sig)
+            .map_err(|_| PqRascvError::InvalidProvenance)
+    }
+
     // ── Public entry point ────────────────────────────────────────────────
 
     /// Verifies all 10 provenance invariant conditions atomically.
@@ -441,16 +503,24 @@ impl ExternalProvenanceBundle {
     ///
     /// | # | Condition | Status |
     /// |---|-----------|--------|
-    /// | 1 | Predicate hash integrity | ✅ Implemented |
-    /// | 2 | Fulcio cert chain to trusted root | ✅ Issuer/subject binding |
+    /// | 1 | Predicate hash integrity + CI ECDSA signature | ✅ Implemented |
+    /// | 2 | Fulcio cert chain to trusted root (name + CA sig) | ✅ Implemented |
     /// | 3 | Fulcio cert temporal validity | ✅ Implemented |
     /// | 4 | OIDC identity against allowlist | ✅ Implemented |
-    /// | 5 | Rekor inclusion proof (SET) | ✅ Implemented |
+    /// | 5a | Rekor body binds to `predicate_hash` / sig / cert | ✅ Implemented |
+    /// | 5b | Rekor inclusion proof (SET, DER ECDSA) | ✅ Implemented |
     /// | 6 | Rekor integrated time bounds | ✅ Implemented |
     /// | 7 | Artifact digest == firmware hash | ✅ Implemented |
     /// | 8 | Unambiguous artifact binding | ✅ Implemented |
     /// | 9 | No degradation / soft-fail | ✅ Structural (type system) |
     /// | 10 | Authoritative verifier path | ✅ Structural (sealed token) |
+    ///
+    /// # Condition 1 execution order
+    ///
+    /// Condition 1 runs in two phases to avoid trusting an unvalidated key:
+    /// - **1a** (hash consistency) runs first — establishes the predicate bytes are genuine.
+    /// - **1b** (CI ECDSA signature) runs after conditions 2 and 3 — the Fulcio leaf cert's
+    ///   subject key is trusted only after the chain and temporal checks pass.
     ///
     /// # Errors
     ///
@@ -477,11 +547,21 @@ impl ExternalProvenanceBundle {
         // Returns the Rekor integrated time embedded in the cert / bundle.
         let integrated_time = self.check_fulcio_temporal(now_secs)?;
 
+        // Condition 1b: CI ECDSA signature over the CBOR-serialized predicate.
+        // Runs here (after conditions 2 and 3) so the leaf cert's subject key
+        // is trusted before we use it to verify the signature.
+        self.check_predicate_signature()?;
+
         // Condition 4: OIDC identity matches authorized policy.
         // Must follow conditions 2–3 (cert must be parsed and valid first).
         let builder_identity = self.check_oidc_identity(config)?;
 
-        // Condition 5: Rekor inclusion proof validates.
+        // Condition 5a: Rekor entry body binds to (predicate_hash, signature, cert).
+        // Runs before the SET check so we reject mismatched entries even when the
+        // SET is cryptographically valid (valid entry, wrong artifact).
+        self.check_rekor_content_binding()?;
+
+        // Condition 5b: Rekor inclusion proof validates (SET DER ECDSA signature).
         self.check_rekor_inclusion(&config.rekor_public_key_der)?;
 
         // Condition 6: Rekor integrated time within bounds.
@@ -677,6 +757,36 @@ mod tests {
 
         let result = bundle.verify_all(&stub_config(), &firmware_hash(), 1_700_000_000);
         assert_eq!(result.unwrap_err(), PqRascvError::InvalidProvenance);
+    }
+
+    // Condition 1b: signature check ───────────────────────────────────────
+
+    #[test]
+    fn condition_1b_empty_cert_der_fails() {
+        let predicate = make_predicate(alloc::vec![ProvenanceSubject {
+            name: "firmware.bin".to_string(),
+            digest_sha3_256: firmware_hash(),
+        }]);
+        let bundle = make_bundle_with_predicate(predicate);
+        // signing_cert_der is empty — Certificate::from_der must reject it.
+        assert_eq!(
+            bundle.check_predicate_signature().unwrap_err(),
+            PqRascvError::ProvenanceBundleInvalid,
+        );
+    }
+
+    #[test]
+    fn condition_1b_garbage_cert_der_fails() {
+        let predicate = make_predicate(alloc::vec![ProvenanceSubject {
+            name: "firmware.bin".to_string(),
+            digest_sha3_256: firmware_hash(),
+        }]);
+        let mut bundle = make_bundle_with_predicate(predicate);
+        bundle.sigstore_bundle.signing_cert_der = alloc::vec![0xDE, 0xAD, 0xBE, 0xEF];
+        assert_eq!(
+            bundle.check_predicate_signature().unwrap_err(),
+            PqRascvError::ProvenanceBundleInvalid,
+        );
     }
 
     // Conditions 2–5: empty bundle fields always fail ────────────────────

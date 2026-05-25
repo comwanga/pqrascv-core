@@ -27,6 +27,7 @@ use crate::{error::PqRascvError, nonce::ClockEvidence, provenance_v2::VerifiedPr
 
 #[cfg(feature = "alloc")]
 use crate::{
+    measurement::PcrBank,
     pki::{CertChain, HardwareIdentity},
     quote::QuoteTimestamp,
 };
@@ -131,6 +132,19 @@ pub enum PolicyRule {
         /// The only accepted protocol version.
         expected: u16,
     },
+
+    /// Reject quotes where the specified PCR slot does not match the expected digest.
+    ///
+    /// `pcr_slot` must be in `0..PCR_COUNT` (currently 0–7). `expected` is a
+    /// SHA3-256 digest (32 bytes). Setting `expected` to all-zeros means
+    /// "require the PCR to be non-zero" — any measurement value is accepted.
+    RequirePcrValues { pcr_slot: u8, expected: [u8; 32] },
+
+    /// Reject quotes whose monotonic event counter is below this threshold.
+    ///
+    /// Prevents replay of stale quotes on hardware with monotonic counters.
+    /// Set to `0` to accept any counter value (effectively disabled).
+    RequireMinEventCounter(u64),
 }
 
 // ── PolicyContext ─────────────────────────────────────────────────────────
@@ -162,6 +176,13 @@ pub struct PolicyContext<'a> {
     /// will fail. External code cannot forge a `Some` value here.
     pub verified_provenance: Option<&'a VerifiedProvenance>,
     pub bitcoin_confirmations: Option<u32>,
+    /// PCR bank from the attested measurements.
+    /// All values are SHA3-256 (normalized by each backend).
+    /// Used by [`PolicyRule::RequirePcrValues`] to enforce per-slot whitelists.
+    pub pcrs: &'a PcrBank,
+    /// Monotonic event counter from the `RoT` hardware.
+    /// Used by [`PolicyRule::RequireMinEventCounter`] for anti-replay enforcement.
+    pub event_counter: u64,
 }
 
 #[cfg(feature = "alloc")]
@@ -191,6 +212,9 @@ impl<'a> PolicyContext<'a> {
             QuoteTimestamp::NoRtc => ClockEvidence::NoRtc,
         };
 
+        let pcrs = &quote.body.measurements.pcrs;
+        let event_counter = quote.body.measurements.event_counter;
+
         PolicyContext {
             protocol_version: quote.body.version,
             clock,
@@ -202,6 +226,8 @@ impl<'a> PolicyContext<'a> {
             has_cert_chain: cert_chain.is_some(),
             verified_provenance,
             bitcoin_confirmations,
+            pcrs,
+            event_counter,
         }
     }
 }
@@ -332,6 +358,26 @@ impl PolicyEngineV2 {
                     _ => return Err(PqRascvError::PolicyViolation),
                 }
             }
+            PolicyRule::RequirePcrValues { pcr_slot, expected } => {
+                let slot = *pcr_slot as usize;
+                if slot >= crate::measurement::PCR_COUNT {
+                    return Err(PqRascvError::PolicyViolation);
+                }
+                let actual = &ctx.pcrs.digests[slot];
+                if expected == &[0u8; 32] {
+                    // All-zero expected means "require PCR to be non-zero".
+                    if actual == &[0u8; 32] {
+                        return Err(PqRascvError::PolicyViolation);
+                    }
+                } else if actual != expected {
+                    return Err(PqRascvError::PolicyViolation);
+                }
+            }
+            PolicyRule::RequireMinEventCounter(min) => {
+                if ctx.event_counter < *min {
+                    return Err(PqRascvError::PolicyViolation);
+                }
+            }
         }
         Ok(())
     }
@@ -342,6 +388,12 @@ impl PolicyEngineV2 {
 #[cfg(all(test, feature = "alloc"))]
 mod tests {
     use super::*;
+    use crate::measurement::{PcrAlgorithm, PcrBank};
+
+    static ZERO_PCR_BANK: PcrBank = PcrBank {
+        digests: [[0u8; 32]; 8],
+        algorithm: PcrAlgorithm::Sha3_256,
+    };
 
     fn base_ctx() -> PolicyContext<'static> {
         PolicyContext {
@@ -355,6 +407,8 @@ mod tests {
             has_cert_chain: true,
             verified_provenance: None,
             bitcoin_confirmations: None,
+            pcrs: &ZERO_PCR_BANK,
+            event_counter: 0,
         }
     }
 
@@ -423,6 +477,97 @@ mod tests {
         assert_eq!(engine.evaluate(&ctx), Err(PqRascvError::PolicyViolation));
         ctx.bitcoin_confirmations = Some(6);
         assert!(engine.evaluate(&ctx).is_ok());
+    }
+
+    fn ctx_with_pcr(slot: usize, value: [u8; 32]) -> PolicyContext<'static> {
+        use crate::measurement::PCR_COUNT;
+        let mut bank = PcrBank {
+            digests: [[0u8; 32]; PCR_COUNT],
+            algorithm: PcrAlgorithm::Sha3_256,
+        };
+        bank.digests[slot] = value;
+        let leaked: &'static PcrBank = Box::leak(Box::new(bank));
+        PolicyContext {
+            pcrs: leaked,
+            ..base_ctx()
+        }
+    }
+
+    #[test]
+    fn pcr_rule_exact_match_passes() {
+        let expected = [0xabu8; 32];
+        let ctx = ctx_with_pcr(0, expected);
+        let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequirePcrValues {
+            pcr_slot: 0,
+            expected,
+        }]);
+        assert!(engine.evaluate(&ctx).is_ok());
+    }
+
+    #[test]
+    fn pcr_rule_mismatch_fails() {
+        let ctx = ctx_with_pcr(0, [0xabu8; 32]);
+        let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequirePcrValues {
+            pcr_slot: 0,
+            expected: [0xcdu8; 32],
+        }]);
+        assert_eq!(engine.evaluate(&ctx), Err(PqRascvError::PolicyViolation));
+    }
+
+    #[test]
+    fn pcr_rule_zero_expected_rejects_zero_pcr() {
+        let ctx = ctx_with_pcr(0, [0u8; 32]);
+        let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequirePcrValues {
+            pcr_slot: 0,
+            expected: [0u8; 32],
+        }]);
+        assert_eq!(engine.evaluate(&ctx), Err(PqRascvError::PolicyViolation));
+    }
+
+    #[test]
+    fn pcr_rule_zero_expected_accepts_nonzero_pcr() {
+        let ctx = ctx_with_pcr(0, [0x42u8; 32]);
+        let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequirePcrValues {
+            pcr_slot: 0,
+            expected: [0u8; 32],
+        }]);
+        assert!(engine.evaluate(&ctx).is_ok());
+    }
+
+    #[test]
+    fn pcr_rule_out_of_range_slot_fails() {
+        let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequirePcrValues {
+            pcr_slot: 8,
+            expected: [0u8; 32],
+        }]);
+        assert_eq!(
+            engine.evaluate(&base_ctx()),
+            Err(PqRascvError::PolicyViolation)
+        );
+    }
+
+    #[test]
+    fn event_counter_at_minimum_passes() {
+        let mut ctx = base_ctx();
+        ctx.event_counter = 42;
+        let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequireMinEventCounter(42)]);
+        assert!(engine.evaluate(&ctx).is_ok());
+    }
+
+    #[test]
+    fn event_counter_above_minimum_passes() {
+        let mut ctx = base_ctx();
+        ctx.event_counter = 100;
+        let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequireMinEventCounter(42)]);
+        assert!(engine.evaluate(&ctx).is_ok());
+    }
+
+    #[test]
+    fn event_counter_below_minimum_fails() {
+        let mut ctx = base_ctx();
+        ctx.event_counter = 41;
+        let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequireMinEventCounter(42)]);
+        assert_eq!(engine.evaluate(&ctx), Err(PqRascvError::PolicyViolation));
     }
 }
 
