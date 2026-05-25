@@ -237,18 +237,23 @@ impl PolicyEngineV2 {
     /// - Protocol version 2
     /// - Hardware-rooted backend (no `SoftwareRoT`)
     /// - Certificate chain required
+    /// - External provenance (Sigstore bundle verification)
     /// - SLSA level ≥ 2
     /// - Firmware hash required
     /// - Max quote age 300 seconds
     ///
-    /// Note: `RequireExternalProvenance` is intentionally absent (`NOT_IMPLEMENTED` — Sigstore pending).
+    /// `RequireExternalProvenance` is satisfied only by a [`VerifiedProvenance`]
+    /// token produced by [`ExternalProvenanceBundle::verify_all`]. External code
+    /// cannot forge this token — see [`PolicyContext::verified_provenance`].
+    ///
+    /// [`ExternalProvenanceBundle::verify_all`]: crate::provenance_v2::ExternalProvenanceBundle::verify_all
     #[must_use]
     pub fn production() -> Self {
         Self::new(alloc::vec![
             PolicyRule::EnforceProtocolVersion { expected: 2 },
             PolicyRule::RequireHardwareBackend,
             PolicyRule::RequireCertificateChain,
-            // PolicyRule::RequireExternalProvenance — NOT_IMPLEMENTED: Sigstore pending
+            PolicyRule::RequireExternalProvenance,
             PolicyRule::MinSlsaLevel(2),
             PolicyRule::RequireFirmwareHash,
             PolicyRule::MaxQuoteAgeSecs(300),
@@ -348,17 +353,19 @@ mod tests {
             builder_id: Some("https://github.com/actions/runner"),
             hardware_backend: HardwareBackendKind::Tpm2,
             has_cert_chain: true,
-            // None: production policy does not yet require external provenance.
-            // RequireExternalProvenance tests use their own context.
             verified_provenance: None,
             bitcoin_confirmations: None,
         }
     }
 
     #[test]
-    fn production_policy_accepts_valid_context() {
+    fn production_policy_requires_external_provenance() {
+        // production() includes RequireExternalProvenance; a context without a
+        // VerifiedProvenance token must be rejected.  VerifiedProvenance is sealed —
+        // it cannot be constructed outside verify_all() — so this invariant is
+        // enforced for all callers.
         let engine = PolicyEngineV2::production();
-        assert!(engine.evaluate(&base_ctx()).is_ok());
+        assert_eq!(engine.evaluate(&base_ctx()), Err(PqRascvError::PolicyViolation));
     }
 
     #[test]
