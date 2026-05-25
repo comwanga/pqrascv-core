@@ -509,7 +509,7 @@ mod pki_tests {
 
     #[test]
     fn pki_verification_rejects_wrong_trust_anchor() {
-        let (ca_seed, ca_vk) = generate_ml_dsa_keypair().unwrap();
+        let (ca_seed, _ca_vk) = generate_ml_dsa_keypair().unwrap();
         let (_other_seed, other_vk) = generate_ml_dsa_keypair().unwrap();
         let (dev_seed, dev_vk) = generate_ml_dsa_keypair().unwrap();
 
@@ -529,5 +529,51 @@ mod pki_tests {
         assert!(verifier.verify_cbor_with_pki(
             &cbor, device_cert, vec![], &anchor, None, &nonce, 1_700_000_100,
         ).is_err());
+    }
+
+    #[test]
+    fn pki_verification_succeeds_with_intermediate_chain() {
+        // root CA signs intermediate CA; intermediate CA signs device cert
+        let (root_seed, root_vk) = generate_ml_dsa_keypair().unwrap();
+        let (int_seed, int_vk) = generate_ml_dsa_keypair().unwrap();
+        let (dev_seed, dev_vk) = generate_ml_dsa_keypair().unwrap();
+
+        let anchor = TrustAnchor::new(CaPublicKey { key_bytes: root_vk, ca_id: "https://root.test" });
+
+        // Intermediate cert: signed by root, self_id = "https://int.test", max_path_length = None
+        let int_subject_key_id = pqrascv_core::crypto::pub_key_id(&int_vk);
+        let mut intermediate = build_device_certificate(
+            CERT_VERSION,
+            "INT-001".to_string(),
+            "https://root.test".to_string(), // issuer_id must match root ca_id
+            0,
+            u64::MAX,
+            int_vk.to_vec(),
+            int_subject_key_id,
+            HardwareIdentity::TpmEkCertHash([0u8; 32]),
+            None,
+            vec![],  // issuer_signature filled in below
+            "https://int.test".to_string(), // self_id
+            None, // no path length constraint — can sign device cert
+        );
+        sign_cert(&mut intermediate, root_seed.as_bytes());
+
+        // Device cert: signed by intermediate
+        let device_cert = make_device_cert(&dev_vk, "https://int.test", "DEV-CHAIN-001", int_seed.as_bytes());
+
+        let rot = SoftwareRoT::new(b"fw", None, 1);
+        let nonce = [0xDDu8; 32];
+        let quote = generate_quote(
+            &rot, &MlDsaBackend, dev_seed.as_bytes(), &dev_vk,
+            &nonce, make_provenance(), QuoteTimestamp::Rtc(1_700_000_000),
+        ).unwrap();
+        let cbor = quote.to_cbor().unwrap();
+
+        let verifier = Verifier::new(PolicyConfig::default());
+        let result = verifier.verify_cbor_with_pki(
+            &cbor, device_cert, vec![intermediate], &anchor, None, &nonce, 1_700_000_100,
+        );
+        assert!(result.is_ok(), "intermediate chain verification failed: {result:?}");
+        assert_eq!(result.unwrap().device_serial(), "DEV-CHAIN-001");
     }
 }
