@@ -22,6 +22,7 @@ software-rot-unsafe = []
 # Hardware backends (opt-in only)
 hardware-tpm = ["dep:tss-esapi"]
 dice         = []
+intel-tdx  = ["dep:libc"]
 
 [dependencies]
 serde.workspace       = true
@@ -33,6 +34,7 @@ sha2.workspace        = true
 zeroize.workspace     = true
 getrandom             = { workspace = true, optional = true }
 tss-esapi             = { version = "8.0.0-alpha.2", optional = true }
+libc = { version = "0.2", optional = true }
 
 # Sigstore / Fulcio / Rekor provenance verification (conditions 2–5)
 x509-cert    = { version = "0.2", default-features = false }

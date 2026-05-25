@@ -946,6 +946,7 @@ dependencies = [
  "der",
  "ecdsa",
  "getrandom 0.4.2",
+ "libc",
  "ml-dsa",
  "p256",
  "pqrascv-core",
