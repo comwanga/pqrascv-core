@@ -41,6 +41,8 @@ pub enum PqRascvError {
     CertificateInvalid,
     /// Certificate has been revoked.
     CertificateRevoked,
+    /// The trust anchor is outside its valid time window (`not_before`/`not_after`).
+    TrustAnchorExpired,
     /// The external provenance bundle signature is invalid (v2 Sigstore).
     ProvenanceBundleInvalid,
     /// Something that should never happen did. This is a bug in the library — please file an issue.
@@ -68,6 +70,9 @@ impl fmt::Display for PqRascvError {
             }
             Self::CertificateInvalid => f.write_str("certificate chain validation failed"),
             Self::CertificateRevoked => f.write_str("certificate has been revoked"),
+            Self::TrustAnchorExpired => {
+                f.write_str("trust anchor is outside its valid time window")
+            }
             Self::ProvenanceBundleInvalid => {
                 f.write_str("external provenance bundle signature is invalid")
             }
@@ -78,3 +83,17 @@ impl fmt::Display for PqRascvError {
 
 #[cfg(feature = "std")]
 impl std::error::Error for PqRascvError {}
+
+#[cfg(all(test, feature = "std"))]
+mod error_tests {
+    use super::*;
+
+    #[test]
+    fn trust_anchor_expired_displays_correctly() {
+        let e = PqRascvError::TrustAnchorExpired;
+        assert_eq!(
+            e.to_string(),
+            "trust anchor is outside its valid time window"
+        );
+    }
+}

@@ -84,14 +84,6 @@ enum Command {
         #[arg(long)]
         nonce: Option<String>,
 
-        /// Optional Epoch ID (simulated).
-        #[arg(long)]
-        epoch: Option<u64>,
-
-        /// Optional State Root (simulated).
-        #[arg(long)]
-        state_root: Option<String>,
-
         /// Output path for the CBOR-encoded quote.
         #[arg(long, default_value = "quote.cbor")]
         out: PathBuf,
@@ -114,14 +106,6 @@ enum Command {
         /// Expected firmware hash (SHA3-256 hex).
         #[arg(long)]
         expected_hash: Option<String>,
-
-        /// Expected Consensus Epoch.
-        #[arg(long)]
-        epoch: Option<u64>,
-
-        /// Expected State Root (hex).
-        #[arg(long)]
-        state_root: Option<String>,
 
         /// Output results in JSON format.
         #[arg(long)]
@@ -164,8 +148,6 @@ fn run() -> anyhow::Result<()> {
             builder,
             slsa_level,
             nonce,
-            epoch: _,
-            state_root: _,
             out,
         } => cmd_attest(
             seed,
@@ -182,8 +164,6 @@ fn run() -> anyhow::Result<()> {
             quote,
             nonce,
             expected_hash,
-            epoch,
-            state_root,
             json,
             min_slsa_level,
             max_age,
@@ -193,8 +173,6 @@ fn run() -> anyhow::Result<()> {
             quote,
             &nonce,
             expected_hash.as_deref(),
-            epoch,
-            state_root.as_deref(),
             json,
             min_slsa_level,
             max_age,
@@ -234,6 +212,11 @@ fn cmd_attest(
     nonce_hex: Option<&str>,
     out: PathBuf,
 ) -> anyhow::Result<()> {
+    eprintln!(
+        "WARNING: Using SoftwareRoT — no hardware attestation boundary.\n\
+         Measurements are derived from caller-supplied bytes, not hardware.\n\
+         For production, use a build with `hardware-tpm` or `dice` feature.\n"
+    );
     let seed_bytes = fs::read(&seed_path)?;
     let vk_bytes = fs::read(&vk_path)?;
     let firmware = fs::read(&fw_path)?;
@@ -315,8 +298,6 @@ fn cmd_verify(
     quote_path: PathBuf,
     nonce_hex: &str,
     expected_hash_hex: Option<&str>,
-    epoch: Option<u64>,
-    state_root_hex: Option<&str>,
     json: bool,
     min_slsa_level: u8,
     max_age: u64,
@@ -330,13 +311,18 @@ fn cmd_verify(
     vk_array.copy_from_slice(&vk_bytes);
 
     let quote_bytes = fs::read(&quote_path)?;
-
     let mut nonce = [0u8; 32];
     hex::decode_to_slice(nonce_hex, &mut nonce)
         .map_err(|_| anyhow::anyhow!("Invalid nonce format: must be 64 hex chars"))?;
 
-    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    // Validate expected_hash_hex is safe hex before any interpolation into JSON
+    if let Some(expected) = expected_hash_hex {
+        if !expected.chars().all(|c| c.is_ascii_hexdigit()) {
+            anyhow::bail!("--expected-hash must be a hex string");
+        }
+    }
 
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     let policy = PolicyConfig {
         min_slsa_level,
         max_quote_age_secs: max_age,
@@ -344,7 +330,6 @@ fn cmd_verify(
         require_event_counter: false,
         allow_rtcless_devices: allow_rtcless,
     };
-
     let verifier = Verifier::new(policy);
 
     match verifier.verify_cbor(&quote_bytes, &vk_array, &nonce, now) {
@@ -355,7 +340,8 @@ fn cmd_verify(
                 if actual_hash != expected {
                     if json {
                         println!(
-                            r#"{{"verification":"FAILED","reason":"Firmware hash mismatch"}}"#
+                            r#"{{"verification":"FAILED","reason":"Firmware hash mismatch","expected":"{}","actual":"{}"}}"#,
+                            expected, actual_hash
                         );
                     } else {
                         println!("✗  Verification FAILED: Firmware hash mismatch");
@@ -366,55 +352,36 @@ fn cmd_verify(
                 }
             }
 
-            let sim_epoch = epoch.unwrap_or(42);
-            let expected_root = "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4";
-            let sim_root = state_root_hex.unwrap_or(expected_root);
-
-            if sim_root != expected_root {
-                if json {
-                    println!(r#"{{"verification":"FAILED","reason":"Consensus Root: INVALID"}}"#);
-                } else {
-                    println!("✗  Verification FAILED: Consensus Root: INVALID");
-                    println!("   Expected: {expected_root}");
-                    println!("   Actual:   {sim_root}");
-                }
-                std::process::exit(2);
-            }
-
             if json {
                 println!(
                     r#"{{
   "verification": "VALID",
   "replay_protection": "PASSED",
-  "audit_lineage": "VERIFIED",
-  "consensus_epoch": {},
-  "state_root": "{}",
-  "finality_state": "StrongFinality",
-  "slsa_requirement": "SATISFIED"
+  "firmware_hash": "{}",
+  "nonce": "{}",
+  "slsa_level": {},
+  "slsa_level_note": "self-reported; independent CI verification NOT_IMPLEMENTED",
+  "bitcoin_anchoring": "NOT_IMPLEMENTED",
+  "external_provenance": "NOT_IMPLEMENTED"
 }}"#,
-                    sim_epoch, sim_root
+                    actual_hash,
+                    hex::encode(result.nonce()),
+                    result.slsa_level(),
                 );
             } else {
-                println!("✓  Attestation Quote verified successfully.\n");
-                println!("   Verification:      VALID (ML-DSA-65 Post-Quantum Signature)");
-                println!("   Replay Protection: PASSED (32-byte Nonce Binding)");
-                println!("   Audit Lineage:     VERIFIED (Deterministic Merkle Trace)");
-                println!(
-                    "   Consensus Epoch:   Epoch {} (State Root: {})",
-                    sim_epoch, sim_root
-                );
-                println!("   Finality State:    StrongFinality (6 confirmations)");
-                println!(
-                    "   Anchor Reference:  bitcoin:9a8f2c31eab917d84b2c0f99a3b2184a4439c@842109"
-                );
-                println!(
-                    "   SLSA Requirement:  SATISFIED (Level {} >= {})",
-                    result.slsa_level(),
-                    min_slsa_level
-                );
-                println!("\n   Payload:           {}", quote_path.display());
-                println!("   Firmware Hash:     {}", actual_hash);
+                println!("✓  Attestation Quote signature verified.\n");
+                println!("   Verification:      VALID (ML-DSA-65 post-quantum signature)");
+                println!("   Replay Protection: PASSED (32-byte nonce matched)");
+                println!("   Firmware Hash:     {actual_hash}");
                 println!("   Nonce:             {}", hex::encode(result.nonce()));
+                println!(
+                    "   SLSA Level:        {} (self-reported; CI verification NOT_IMPLEMENTED)",
+                    result.slsa_level()
+                );
+                println!("\n   Payload: {}", quote_path.display());
+                println!("\n   NOTE: Bitcoin anchoring, consensus verification, and external");
+                println!("   provenance validation are NOT YET IMPLEMENTED.");
+                println!("   The above confirms ML-DSA-65 signature validity only.");
             }
         }
         Err(e) => {
@@ -426,7 +393,6 @@ fn cmd_verify(
             std::process::exit(2);
         }
     }
-
     Ok(())
 }
 

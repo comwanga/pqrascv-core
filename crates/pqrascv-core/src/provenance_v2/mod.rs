@@ -1,14 +1,15 @@
 //! External provenance bundles — CI-signed, independently verifiable.
 //!
-//! # Audit Finding #2 Fix
+//! # ⚠ NOT_IMPLEMENTED: Sigstore Verification
 //!
-//! In v1, the device self-asserted its SLSA provenance. A compromised device
-//! could claim any SLSA level. This is cryptographically meaningless.
+//! [`ExternalProvenanceBundle`] is a forward-compatible type definition.
+//! The `verify_sigstore()` method currently returns
+//! `Err(PqRascvError::ProvenanceBundleInvalid)` unconditionally.
 //!
-//! v2 requires provenance to be signed by the CI/CD pipeline using Sigstore
-//! (Fulcio + Rekor). The device embeds the CI-signed bundle in its quote.
-//! The verifier validates the Sigstore bundle independently — the device's
-//! signature does NOT cover the provenance authenticity claim.
+//! `PolicyRule::RequireExternalProvenance` is intentionally absent from
+//! `PolicyEngineV2::production()` until this is implemented.
+//!
+//! Implementing this requires integrating `sigstore-rs` (Fulcio + Rekor).
 //!
 //! # Trust Flow
 //!
@@ -138,6 +139,16 @@ impl ExternalProvenanceBundle {
         }
         Ok(())
     }
+
+    /// Verifies the Sigstore bundle (Fulcio certificate chain + Rekor inclusion proof).
+    ///
+    /// # `NOT_IMPLEMENTED`
+    ///
+    /// Returns `Err(PqRascvError::ProvenanceBundleInvalid)` unconditionally.
+    /// Requires `sigstore-rs` integration for full Fulcio + Rekor verification.
+    pub fn verify_sigstore(&self) -> Result<(), crate::error::PqRascvError> {
+        Err(crate::error::PqRascvError::ProvenanceBundleInvalid)
+    }
 }
 
 // ── ProvenancePredicate ───────────────────────────────────────────────────
@@ -176,4 +187,43 @@ pub struct ProvenanceSubject {
     pub name: String,
     /// SHA3-256 digest of the artifact.
     pub digest_sha3_256: [u8; 32],
+}
+
+#[cfg(all(test, feature = "alloc"))]
+mod tests {
+    use super::*;
+    use crate::error::PqRascvError;
+
+    fn dummy_bundle() -> ExternalProvenanceBundle {
+        ExternalProvenanceBundle {
+            predicate: ProvenancePredicate {
+                predicate_type: "https://slsa.dev/provenance/v1".to_string(),
+                builder_id: "https://ci.test".to_string(),
+                build_config_ref: "abc123".to_string(),
+                build_started_on: 0,
+                build_finished_on: 0,
+                sbom_hash: [0u8; 32],
+                slsa_level: 2,
+                subjects: alloc::vec![],
+            },
+            sigstore_bundle: SigstoreBundle {
+                signature: alloc::vec![],
+                signing_cert_der: alloc::vec![],
+                rekor_entry_json: alloc::string::String::new(),
+                predicate_hash: [0u8; 32],
+            },
+        }
+    }
+
+    #[test]
+    fn verify_sigstore_always_returns_not_implemented() {
+        let bundle = dummy_bundle();
+        assert!(
+            matches!(
+                bundle.verify_sigstore(),
+                Err(PqRascvError::ProvenanceBundleInvalid)
+            ),
+            "verify_sigstore must fail explicitly until Sigstore integration is complete"
+        );
+    }
 }

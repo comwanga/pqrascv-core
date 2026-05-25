@@ -1,28 +1,56 @@
 //! Binary Merkle tree aggregation for attestation quote batches.
 //!
-//! Uses double-SHA256 (Bitcoin's native hash) for the Merkle tree so that
-//! the root can be verified by any Bitcoin SPV client without additional
-//! hash function support.
+//! Implements RFC6962-style prefix-separated hashing to prevent second-preimage
+//! attacks (CVE-2012-2459). Odd-level nodes are promoted unchanged rather than
+//! duplicated with themselves.
 //!
-//! # Leaf hashing
+//! # Hash functions
 //!
-//! Each leaf is `SHA256d(SHA3-256(quote_cbor))` — we first hash the quote
-//! with SHA3-256 (the PQ-RASCV canonical hash), then double-SHA256 the result
-//! to produce a Bitcoin-compatible leaf hash.
-//!
-//! # Tree construction
-//!
-//! Standard Bitcoin Merkle tree: pairs of nodes are hashed together left-to-right.
-//! If the number of nodes at a level is odd, the last node is duplicated.
+//! - Leaf:     `SHA256d(0x00 || sha3_256_quote_hash)`
+//! - Internal: `SHA256d(0x01 || left_hash || right_hash)`
 
 extern crate alloc;
 use alloc::vec::Vec;
 use sha2::{Digest, Sha256};
 
-/// Double-SHA256 as used in Bitcoin.
+const LEAF_PREFIX: u8 = 0x00;
+const INTERNAL_PREFIX: u8 = 0x01;
+
 fn sha256d(data: &[u8]) -> [u8; 32] {
     let first: [u8; 32] = Sha256::digest(data).into();
     Sha256::digest(first).into()
+}
+
+/// RFC6962 leaf hash: `SHA256d(0x00 || data)`
+fn leaf_hash(data: &[u8]) -> [u8; 32] {
+    let mut buf = Vec::with_capacity(1 + data.len());
+    buf.push(LEAF_PREFIX);
+    buf.extend_from_slice(data);
+    sha256d(&buf)
+}
+
+/// RFC6962 internal hash: `SHA256d(0x01 || left || right)`
+fn internal_hash(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
+    let mut buf = [0u8; 65];
+    buf[0] = INTERNAL_PREFIX;
+    buf[1..33].copy_from_slice(left);
+    buf[33..65].copy_from_slice(right);
+    sha256d(&buf)
+}
+
+/// Advances a layer of nodes using RFC6962 rules:
+/// pairs are hashed with `internal_hash`; the last odd node is promoted unchanged.
+fn next_layer(nodes: &[[u8; 32]]) -> Vec<[u8; 32]> {
+    let mut out = Vec::with_capacity(nodes.len().div_ceil(2));
+    let mut i = 0;
+    while i + 1 < nodes.len() {
+        out.push(internal_hash(&nodes[i], &nodes[i + 1]));
+        i += 2;
+    }
+    if nodes.len() % 2 == 1 {
+        out.push(nodes[nodes.len() - 1]); // promote last node unchanged
+    }
+    out
 }
 
 /// Aggregates attestation quote hashes into a Merkle tree.
@@ -39,120 +67,73 @@ fn sha256d(data: &[u8]) -> [u8; 32] {
 /// ```
 #[derive(Default)]
 pub struct MerkleAggregator {
-    /// SHA3-256 hashes of quote CBOR bytes, one per quote.
     quote_hashes: Vec<[u8; 32]>,
 }
 
 impl MerkleAggregator {
-    /// Creates an empty aggregator.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Adds a SHA3-256 quote hash to the batch.
     pub fn add_quote_hash(&mut self, hash: [u8; 32]) {
         self.quote_hashes.push(hash);
     }
 
-    /// Returns the number of quotes in the current batch.
     #[must_use]
     pub fn len(&self) -> usize {
         self.quote_hashes.len()
     }
 
-    /// Returns `true` if no quotes have been added.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.quote_hashes.is_empty()
     }
 
-    /// Computes the Merkle root of the current batch.
-    ///
-    /// Returns `None` if the batch is empty.
-    ///
-    /// The root is a double-SHA256 Merkle root over Bitcoin-compatible leaf
-    /// hashes derived from the SHA3-256 quote hashes.
     #[must_use]
     pub fn root(&self) -> Option<[u8; 32]> {
         if self.quote_hashes.is_empty() {
             return None;
         }
-
-        let mut nodes: Vec<[u8; 32]> = self.quote_hashes.iter().map(|h| sha256d(h)).collect();
-
+        let mut nodes: Vec<[u8; 32]> = self.quote_hashes.iter().map(|h| leaf_hash(h)).collect();
         while nodes.len() > 1 {
-            let mut next_level = Vec::with_capacity(nodes.len().div_ceil(2));
-            let mut i = 0;
-            while i < nodes.len() {
-                let left = nodes[i];
-                let right = if i + 1 < nodes.len() {
-                    nodes[i + 1]
-                } else {
-                    nodes[i]
-                };
-                let mut combined = [0u8; 64];
-                combined[..32].copy_from_slice(&left);
-                combined[32..].copy_from_slice(&right);
-                next_level.push(sha256d(&combined));
-                i += 2;
-            }
-            nodes = next_level;
+            nodes = next_layer(&nodes);
         }
-
         Some(nodes[0])
     }
 
-    /// Generates a Merkle inclusion proof for the quote at `index`.
-    ///
-    /// Returns `None` if `index` is out of bounds or the batch is empty.
     #[must_use]
     pub fn inclusion_proof(&self, index: usize) -> Option<MerkleProofPath> {
         if index >= self.quote_hashes.len() {
             return None;
         }
 
-        let mut nodes: Vec<[u8; 32]> = self.quote_hashes.iter().map(|h| sha256d(h)).collect();
-
-        let leaf_hash = nodes[index];
+        let mut nodes: Vec<[u8; 32]> = self.quote_hashes.iter().map(|h| leaf_hash(h)).collect();
+        let leaf = nodes[index];
         let mut path = Vec::new();
-        let mut current_index = index;
+        let mut idx = index;
 
         while nodes.len() > 1 {
-            let sibling_index = if current_index % 2 == 0 {
-                // Left node — sibling is to the right (or duplicate if last).
-                (current_index + 1).min(nodes.len() - 1)
+            let is_last_odd = idx == nodes.len() - 1 && nodes.len() % 2 == 1;
+            if is_last_odd {
+                // Promoted — no sibling at this level
+                path.push(ProofStep {
+                    sibling_hash: None,
+                    is_left: false,
+                });
             } else {
-                // Right node — sibling is to the left.
-                current_index - 1
-            };
-
-            path.push(ProofStep {
-                sibling_hash: nodes[sibling_index],
-                is_left: current_index % 2 != 0,
-            });
-
-            let mut next_level = Vec::with_capacity(nodes.len().div_ceil(2));
-            let mut i = 0;
-            while i < nodes.len() {
-                let left = nodes[i];
-                let right = if i + 1 < nodes.len() {
-                    nodes[i + 1]
-                } else {
-                    nodes[i]
-                };
-                let mut combined = [0u8; 64];
-                combined[..32].copy_from_slice(&left);
-                combined[32..].copy_from_slice(&right);
-                next_level.push(sha256d(&combined));
-                i += 2;
+                let sibling = if idx % 2 == 0 { idx + 1 } else { idx - 1 };
+                path.push(ProofStep {
+                    sibling_hash: Some(nodes[sibling]),
+                    is_left: idx % 2 != 0,
+                });
             }
-            current_index /= 2;
-            nodes = next_level;
+            nodes = next_layer(&nodes);
+            idx /= 2;
         }
 
         Some(MerkleProofPath {
-            leaf_hash,
+            leaf_hash: leaf,
             path,
             root: nodes[0],
         })
@@ -162,8 +143,8 @@ impl MerkleAggregator {
 /// A single step in a Merkle inclusion proof.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ProofStep {
-    /// The sibling node's hash.
-    pub sibling_hash: [u8; 32],
+    /// Sibling hash. `None` if this node was promoted (no sibling at this level).
+    pub sibling_hash: Option<[u8; 32]>,
     /// `true` if the sibling is to the left of the current node.
     pub is_left: bool,
 }
@@ -171,35 +152,30 @@ pub struct ProofStep {
 /// A Merkle inclusion proof path for a single quote.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MerkleProofPath {
-    /// The leaf hash (double-SHA256 of the SHA3-256 quote hash).
     pub leaf_hash: [u8; 32],
-    /// Proof steps from leaf to root.
     pub path: Vec<ProofStep>,
-    /// The computed Merkle root.
     pub root: [u8; 32],
 }
 
 impl MerkleProofPath {
-    /// Verifies this proof path, returning `true` if the leaf is in the tree.
     #[must_use]
     pub fn verify(&self) -> bool {
         let mut current = self.leaf_hash;
         for step in &self.path {
-            let mut combined = [0u8; 64];
-            if step.is_left {
-                combined[..32].copy_from_slice(&step.sibling_hash);
-                combined[32..].copy_from_slice(&current);
-            } else {
-                combined[..32].copy_from_slice(&current);
-                combined[32..].copy_from_slice(&step.sibling_hash);
-            }
-            current = sha256d(&combined);
+            current = match step.sibling_hash {
+                None => current, // promoted: no change
+                Some(sib) => {
+                    if step.is_left {
+                        internal_hash(&sib, &current)
+                    } else {
+                        internal_hash(&current, &sib)
+                    }
+                }
+            };
         }
         current == self.root
     }
 }
-
-// ── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -211,42 +187,37 @@ mod tests {
     }
 
     #[test]
-    fn single_quote_root_is_sha256d_of_leaf() {
+    fn single_quote_root_is_leaf_hash() {
         let mut agg = MerkleAggregator::new();
         let hash = [0x42u8; 32];
         agg.add_quote_hash(hash);
-        let root = agg.root().unwrap();
-        assert_eq!(root, sha256d(&hash));
+        assert_eq!(agg.root().unwrap(), leaf_hash(&hash));
     }
 
     #[test]
     fn two_quotes_produce_deterministic_root() {
-        let mut agg1 = MerkleAggregator::new();
-        agg1.add_quote_hash([0x01u8; 32]);
-        agg1.add_quote_hash([0x02u8; 32]);
-
-        let mut agg2 = MerkleAggregator::new();
-        agg2.add_quote_hash([0x01u8; 32]);
-        agg2.add_quote_hash([0x02u8; 32]);
-
-        assert_eq!(agg1.root(), agg2.root());
+        let make = || {
+            let mut a = MerkleAggregator::new();
+            a.add_quote_hash([0x01u8; 32]);
+            a.add_quote_hash([0x02u8; 32]);
+            a
+        };
+        assert_eq!(make().root(), make().root());
     }
 
     #[test]
     fn order_matters_for_root() {
-        let mut agg1 = MerkleAggregator::new();
-        agg1.add_quote_hash([0x01u8; 32]);
-        agg1.add_quote_hash([0x02u8; 32]);
-
-        let mut agg2 = MerkleAggregator::new();
-        agg2.add_quote_hash([0x02u8; 32]);
-        agg2.add_quote_hash([0x01u8; 32]);
-
-        assert_ne!(agg1.root(), agg2.root());
+        let mut a1 = MerkleAggregator::new();
+        a1.add_quote_hash([0x01u8; 32]);
+        a1.add_quote_hash([0x02u8; 32]);
+        let mut a2 = MerkleAggregator::new();
+        a2.add_quote_hash([0x02u8; 32]);
+        a2.add_quote_hash([0x01u8; 32]);
+        assert_ne!(a1.root(), a2.root());
     }
 
     #[test]
-    fn inclusion_proof_verifies() {
+    fn inclusion_proof_verifies_all_indices() {
         let mut agg = MerkleAggregator::new();
         for i in 0u8..8 {
             agg.add_quote_hash([i; 32]);
@@ -256,6 +227,48 @@ mod tests {
             assert!(proof.verify(), "proof for index {i} must verify");
             assert_eq!(proof.root, agg.root().unwrap());
         }
+    }
+
+    #[test]
+    fn inclusion_proof_verifies_odd_count() {
+        let mut agg = MerkleAggregator::new();
+        for i in 0u8..5 {
+            agg.add_quote_hash([i; 32]);
+        }
+        for i in 0..5 {
+            let proof = agg.inclusion_proof(i).unwrap();
+            assert!(proof.verify(), "odd-tree proof for index {i} must verify");
+        }
+    }
+
+    #[test]
+    fn cve_2012_2459_duplicate_node_attack_rejected() {
+        let mut agg3 = MerkleAggregator::new();
+        agg3.add_quote_hash([0x01u8; 32]);
+        agg3.add_quote_hash([0x02u8; 32]);
+        agg3.add_quote_hash([0x03u8; 32]);
+
+        let mut agg4 = MerkleAggregator::new();
+        agg4.add_quote_hash([0x01u8; 32]);
+        agg4.add_quote_hash([0x02u8; 32]);
+        agg4.add_quote_hash([0x03u8; 32]);
+        agg4.add_quote_hash([0x03u8; 32]);
+
+        assert_ne!(
+            agg3.root(),
+            agg4.root(),
+            "CVE-2012-2459: 3-leaf and [A,B,C,C] trees must not share a root"
+        );
+    }
+
+    #[test]
+    fn leaf_hash_differs_from_internal_hash_of_same_data() {
+        let data = [0x42u8; 32];
+        assert_ne!(
+            leaf_hash(&data),
+            internal_hash(&data, &data),
+            "prefix domain separation must produce distinct hashes"
+        );
     }
 
     #[test]

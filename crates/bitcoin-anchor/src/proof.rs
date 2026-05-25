@@ -64,13 +64,17 @@ impl TxMerklePath {
     pub fn verify(&self) -> bool {
         let mut current = self.txid;
         for step in &self.steps {
+            let Some(sibling) = step.sibling_hash else {
+                // Promoted node — pass through unchanged
+                continue;
+            };
             let mut combined = [0u8; 64];
             if step.is_left {
-                combined[..32].copy_from_slice(&step.sibling_hash);
+                combined[..32].copy_from_slice(&sibling);
                 combined[32..].copy_from_slice(&current);
             } else {
                 combined[..32].copy_from_slice(&current);
-                combined[32..].copy_from_slice(&step.sibling_hash);
+                combined[32..].copy_from_slice(&sibling);
             }
             current = sha256d(&combined);
         }
@@ -81,42 +85,43 @@ impl TxMerklePath {
 // ── SpvVerifier ───────────────────────────────────────────────────────────
 
 /// Verifies Bitcoin SPV inclusion proofs for PQ-RASCV attestation anchors.
-///
-/// Does not require a full Bitcoin node. Requires only:
-/// - Block headers (obtainable from any SPV client or Electrum server)
-/// - The local anchor database (maps PQ-RASCV Merkle roots to txids)
 pub struct SpvVerifier {
-    /// Minimum number of Bitcoin block confirmations required.
     pub min_confirmations: u32,
-    /// Current Bitcoin chain tip height (for confirmation counting).
     pub chain_tip_height: u32,
+    /// Maximum acceptable target as compact `bits`.
+    /// Lower value = harder difficulty.
+    /// Bitcoin mainnet genesis: `0x1d00ffff`.
+    /// Set to `0` to skip PoW validation (for unit tests with fake headers only).
+    pub max_target_bits: u32,
 }
 
 impl SpvVerifier {
-    /// Creates a new SPV verifier.
+    /// Creates a verifier with Bitcoin mainnet minimum difficulty (`0x1d00ffff`).
     #[must_use]
     pub fn new(min_confirmations: u32, chain_tip_height: u32) -> Self {
         Self {
             min_confirmations,
             chain_tip_height,
+            max_target_bits: 0x1d00ffff,
         }
     }
 
-    /// Verifies that `quote_hash` (SHA3-256 of quote CBOR) is included in
-    /// the given `proof` and that the proof is anchored in Bitcoin.
-    ///
-    /// # Verification Steps
-    ///
-    /// 1. Check confirmation count.
-    /// 2. Verify the block header Merkle root matches the tx Merkle path.
-    /// 3. Verify the tx Merkle path (anchor tx is in the block).
-    /// 4. Verify the PQ-RASCV Merkle root matches the proof's stored root.
-    /// 5. Verify the quote Merkle path (quote hash is in the PQ-RASCV tree).
-    ///
-    /// # Returns
-    ///
-    /// The confirmed block height on success.
+    /// Override the maximum target bits (lower = more secure).
+    #[must_use]
+    pub fn with_max_target_bits(mut self, bits: u32) -> Self {
+        self.max_target_bits = bits;
+        self
+    }
+
     pub fn verify(&self, proof: &InclusionProof, quote_hash: &[u8; 32]) -> Result<u32, SpvError> {
+        // Step 0: Proof-of-work validation (skip only if max_target_bits == 0)
+        if self.max_target_bits != 0
+            && !validate_proof_of_work(&proof.block_header, self.max_target_bits)
+        {
+            return Err(SpvError::InsufficientProofOfWork);
+        }
+
+        // Step 1: Confirmation count
         let confirmations = self
             .chain_tip_height
             .saturating_sub(proof.block_height)
@@ -128,25 +133,30 @@ impl SpvVerifier {
             });
         }
 
+        // Step 2: Block header Merkle root consistency
         let header_merkle_root =
             extract_block_merkle_root(&proof.block_header).ok_or(SpvError::InvalidBlockHeader)?;
         if header_merkle_root != proof.tx_merkle_path.block_merkle_root {
             return Err(SpvError::MerkleRootMismatch);
         }
 
+        // Step 3: Transaction in block
         if !proof.tx_merkle_path.verify() {
             return Err(SpvError::TxNotInBlock);
         }
 
+        // Step 4: PQ-RASCV Merkle root match
         if proof.quote_merkle_path.root != proof.pqrascv_merkle_root {
             return Err(SpvError::MerkleRootMismatch);
         }
 
-        // The leaf hash in the proof must match SHA256d(quote_hash).
-        let expected_leaf = {
-            let first: [u8; 32] = sha2::Sha256::digest(quote_hash).into();
-            let second: [u8; 32] = sha2::Sha256::digest(first).into();
-            second
+        // Step 5: Quote hash in PQ-RASCV tree (RFC6962 leaf hash)
+        let expected_leaf: [u8; 32] = {
+            let mut buf = [0u8; 33];
+            buf[0] = 0x00; // RFC6962 leaf prefix
+            buf[1..].copy_from_slice(quote_hash);
+            let first: [u8; 32] = sha2::Sha256::digest(buf).into();
+            sha2::Sha256::digest(first).into()
         };
         if proof.quote_merkle_path.leaf_hash != expected_leaf {
             return Err(SpvError::QuoteNotInAnchor);
@@ -177,6 +187,61 @@ fn extract_block_merkle_root(header: &[u8]) -> Option<[u8; 32]> {
     Some(root)
 }
 
+/// Returns `true` if the block header satisfies the given maximum target difficulty.
+fn validate_proof_of_work(header: &[u8], max_target_bits: u32) -> bool {
+    if header.len() < 80 {
+        return false;
+    }
+    let block_bits = u32::from_le_bytes([header[72], header[73], header[74], header[75]]);
+    let block_target = match bits_to_target(block_bits) {
+        Some(t) => t,
+        None => return false,
+    };
+    let max_target = match bits_to_target(max_target_bits) {
+        Some(t) => t,
+        None => return false,
+    };
+    // Block's claimed target must be at most as easy as the maximum allowed
+    if block_target > max_target {
+        return false;
+    }
+    // SHA256d(header) must be below the block's target
+    hash_below_target(&sha256d(header), &block_target)
+}
+
+/// Converts Bitcoin compact `bits` to a 32-byte big-endian target value.
+/// Returns `None` for negative, zero, or out-of-range values.
+fn bits_to_target(bits: u32) -> Option<[u8; 32]> {
+    let exp = (bits >> 24) as usize;
+    let mantissa = (bits & 0x007F_FFFF) as u64;
+    if bits & 0x0080_0000 != 0 {
+        return None;
+    } // negative
+    if mantissa == 0 {
+        return None;
+    } // zero
+    if !(3..=32).contains(&exp) {
+        return None;
+    } // invalid exponent
+    let mut target = [0u8; 32];
+    let start = 32 - exp;
+    target[start] = ((mantissa >> 16) & 0xFF) as u8;
+    if start + 1 < 32 {
+        target[start + 1] = ((mantissa >> 8) & 0xFF) as u8;
+    }
+    if start + 2 < 32 {
+        target[start + 2] = (mantissa & 0xFF) as u8;
+    }
+    Some(target)
+}
+
+/// Returns `true` if `hash` (SHA256d output, little-endian) is below `target` (big-endian).
+fn hash_below_target(hash: &[u8; 32], target: &[u8; 32]) -> bool {
+    let mut h_be = *hash;
+    h_be.reverse(); // convert from little-endian to big-endian for comparison
+    h_be < *target
+}
+
 // ── SpvError ──────────────────────────────────────────────────────────────
 
 /// Errors from SPV proof verification.
@@ -192,6 +257,8 @@ pub enum SpvError {
     TxNotInBlock,
     /// The quote hash is not in the PQ-RASCV Merkle tree.
     QuoteNotInAnchor,
+    /// Block header does not satisfy the claimed or minimum proof-of-work target.
+    InsufficientProofOfWork,
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────
@@ -248,7 +315,7 @@ mod tests {
             quote_merkle_path,
         };
 
-        let verifier = SpvVerifier::new(1, 800_000);
+        let verifier = SpvVerifier::new(1, 800_000).with_max_target_bits(0); // skip PoW for fake header
         let height = verifier.verify(&proof, &quote_hashes[2]).unwrap();
         assert_eq!(height, 800_000);
     }
@@ -274,10 +341,43 @@ mod tests {
         };
 
         // Chain tip = block_height, so confirmations = 1, but we require 6.
-        let verifier = SpvVerifier::new(6, 800_000);
+        let verifier = SpvVerifier::new(6, 800_000).with_max_target_bits(0);
         assert!(matches!(
             verifier.verify(&proof, &[0x01u8; 32]),
             Err(SpvError::InsufficientConfirmations { .. })
         ));
+    }
+
+    #[test]
+    fn forged_zero_work_block_header_rejected() {
+        let quote_hash = [0x42u8; 32];
+        let mut agg = MerkleAggregator::new();
+        agg.add_quote_hash(quote_hash);
+        let pqrascv_root = agg.root().unwrap();
+        let quote_path = agg.inclusion_proof(0).unwrap();
+
+        let fake_header = make_fake_block_header(pqrascv_root);
+        let tx_path = TxMerklePath {
+            txid: pqrascv_root,
+            steps: alloc::vec![],
+            block_merkle_root: pqrascv_root,
+        };
+        let proof = InclusionProof {
+            block_height: 800_000,
+            block_header: fake_header,
+            tx_merkle_path: tx_path,
+            pqrascv_merkle_root: pqrascv_root,
+            quote_merkle_path: quote_path,
+        };
+
+        // Default SpvVerifier enforces mainnet minimum difficulty
+        let verifier = SpvVerifier::new(1, 800_001);
+        assert!(
+            matches!(
+                verifier.verify(&proof, &quote_hash),
+                Err(SpvError::InsufficientProofOfWork)
+            ),
+            "zero-work header must be rejected"
+        );
     }
 }

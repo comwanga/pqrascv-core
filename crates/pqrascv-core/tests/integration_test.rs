@@ -5,6 +5,7 @@ use pqrascv_core::{
     config::PolicyConfig,
     crypto::{
         generate_ml_dsa_keypair, pub_key_id, CryptoBackend, MlDsaBackend, ML_DSA_65_SIGNATURE_SIZE,
+        SIGNING_CONTEXT_QUOTE,
     },
     measurement::SoftwareRoT,
     provenance::SlsaPredicateBuilder,
@@ -43,7 +44,7 @@ fn full_pipeline_sign_and_verify() {
 
     let body_cbor = decoded.body.to_cbor().expect("body serialisation failed");
     MlDsaBackend
-        .verify(&body_cbor, &vk, &decoded.signature)
+        .verify(&body_cbor, &vk, &decoded.signature, SIGNING_CONTEXT_QUOTE)
         .expect("signature verification failed");
 
     assert_eq!(decoded.body.nonce, nonce);
@@ -110,7 +111,7 @@ fn tampered_quote_fails_verification() {
     quote.body.measurements.event_counter = 999;
     let body_cbor = quote.body.to_cbor().unwrap();
     assert!(MlDsaBackend
-        .verify(&body_cbor, &vk, &quote.signature)
+        .verify(&body_cbor, &vk, &quote.signature, SIGNING_CONTEXT_QUOTE)
         .is_err());
 }
 

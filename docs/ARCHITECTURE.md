@@ -1,4 +1,4 @@
-# PQ-RASCV v2 Architecture
+# PQ-RASCV Architecture
 ## Bitcoin-Anchored Post-Quantum Remote Attestation for Sovereign Infrastructure
 
 ---
@@ -246,6 +246,28 @@ CRLs are distributed as signed CBOR lists. Verifiers cache the CRL locally
 and refresh on a configurable schedule. For offline operation, the last known
 CRL is used with a staleness warning.
 
+### Trust Anchor Lifecycle
+
+`CaPublicKey` carries `not_before` and `not_after` (Unix seconds) controlling
+the temporal validity window of each root CA. `validate_chain` checks this
+window **before** any signature work (fail-closed).
+
+`TrustStore` holds one or more `TrustAnchor` entries and enables:
+
+- **Rollover** — old and new root CAs coexist during migration windows.
+- **Staged migration** — devices continue using the old CA until re-provisioned.
+- **Multi-root** — different device classes may use different root CAs.
+
+```rust
+let store = TrustStore::new(primary_anchor)
+    .with_rollover(new_anchor);
+
+// validate_chain_with_store tries each valid anchor in order;
+// returns TrustAnchorExpired if none are in their validity window.
+let cert_chain = validate_chain_with_store(&device_cert, &[], &store, now_secs)?;
+println!("anchor: {}", cert_chain.trust_anchor.ca_id);
+```
+
 ---
 
 ## 10. Provenance Design (v2)
@@ -296,7 +318,7 @@ MerkleAggregator (batch N quotes per block)
       │ SHA3-256 Merkle root
       ▼
 BitcoinAnchor::commit(merkle_root)
-      │ OP_RETURN output: "PQRASCV" || version || merkle_root[0..20]
+      │ OP_RETURN output: "PQRASCV" || version || merkle_root[0..32]
       ▼
 Bitcoin Transaction (broadcast)
       │
@@ -313,8 +335,8 @@ SPVVerifier::verify(proof, quote_hash) → Ok(BlockHeight)
 ### OP_RETURN Format
 
 ```
-OP_RETURN <magic: 7 bytes "PQRASCV"> <version: 1 byte> <merkle_root: 20 bytes>
-Total: 28 bytes (well within 80-byte OP_RETURN limit)
+OP_RETURN <magic: 7 bytes "PQRASCV"> <version: 1 byte 0x02> <merkle_root: 32 bytes>
+Total: 40 bytes (well within 80-byte OP_RETURN limit)
 ```
 
 ### Security Properties

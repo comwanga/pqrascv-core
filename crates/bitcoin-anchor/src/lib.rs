@@ -13,7 +13,7 @@
 //!       │
 //!       ▼
 //! AnchorCommitment::new(merkle_root)
-//!       │  OP_RETURN: "PQRASCV" || version || merkle_root[0..20]
+//!       │  OP_RETURN: "PQRASCV" || version || merkle_root[0..32]
 //!       ▼
 //! Bitcoin transaction (broadcast via node RPC or Electrum)
 //!       │
@@ -27,8 +27,8 @@
 //! # OP_RETURN Format
 //!
 //! ```text
-//! OP_RETURN <magic: 7 bytes "PQRASCV"> <version: 1 byte 0x02> <merkle_root: 20 bytes>
-//! Total: 28 bytes (well within the 80-byte OP_RETURN limit)
+//! OP_RETURN <magic: 7 bytes "PQRASCV"> <version: 1 byte 0x02> <merkle_root: 32 bytes>
+//! Total: 40 bytes (well within the 80-byte OP_RETURN limit)
 //! ```
 //!
 //! # Security Properties
@@ -75,8 +75,8 @@ pub const ANCHOR_MAGIC: &[u8; 7] = b"PQRASCV";
 /// Protocol version byte embedded in the OP_RETURN payload.
 pub const ANCHOR_VERSION: u8 = 0x02;
 
-/// Total OP_RETURN payload size: 7 (magic) + 1 (version) + 20 (root prefix).
-pub const ANCHOR_PAYLOAD_SIZE: usize = 28;
+/// Total OP_RETURN payload size: 7 (magic) + 1 (version) + 32 (full Merkle root) = 40 bytes.
+pub const ANCHOR_PAYLOAD_SIZE: usize = 40;
 
 // ── AnchorCommitment ──────────────────────────────────────────────────────
 
@@ -97,19 +97,15 @@ impl AnchorCommitment {
         Self { merkle_root }
     }
 
-    /// Serializes to the 28-byte OP_RETURN payload.
+    /// Serializes to the 40-byte OP_RETURN payload.
     ///
-    /// Format: `"PQRASCV" || 0x02 || merkle_root[0..20]`
-    ///
-    /// We truncate the Merkle root to 20 bytes to stay well within the
-    /// 80-byte OP_RETURN limit while leaving room for future extensions.
-    /// The full root is stored off-chain in the anchor database.
+    /// Format: `"PQRASCV" || 0x02 || merkle_root[0..32]` (full 32 bytes)
     #[must_use]
     pub fn to_op_return_payload(&self) -> [u8; ANCHOR_PAYLOAD_SIZE] {
         let mut payload = [0u8; ANCHOR_PAYLOAD_SIZE];
         payload[..7].copy_from_slice(ANCHOR_MAGIC);
         payload[7] = ANCHOR_VERSION;
-        payload[8..28].copy_from_slice(&self.merkle_root[..20]);
+        payload[8..40].copy_from_slice(&self.merkle_root); // full 32 bytes
         payload
     }
 
@@ -127,21 +123,15 @@ impl AnchorCommitment {
         if payload[7] != ANCHOR_VERSION {
             return None;
         }
-        // We only have the first 20 bytes of the root in the OP_RETURN.
-        // The full root must be looked up from the local anchor database.
-        let mut partial_root = [0u8; 32];
-        partial_root[..20].copy_from_slice(&payload[8..28]);
-        Some(Self {
-            merkle_root: partial_root,
-        })
+        let mut root = [0u8; 32];
+        root.copy_from_slice(&payload[8..40]);
+        Some(Self { merkle_root: root })
     }
 
-    /// Returns `true` if the first 20 bytes of `full_root` match this commitment.
-    ///
-    /// Used to correlate an OP_RETURN commitment with a locally stored full root.
+    /// Returns `true` if this commitment's root exactly matches `full_root`.
     #[must_use]
     pub fn matches_full_root(&self, full_root: &[u8; 32]) -> bool {
-        self.merkle_root[..20] == full_root[..20]
+        self.merkle_root == *full_root // full 256-bit comparison
     }
 }
 
@@ -174,22 +164,21 @@ mod tests {
         let root = [0x42u8; 32];
         let commitment = AnchorCommitment::new(root);
         let payload = commitment.to_op_return_payload();
-
         assert_eq!(&payload[..7], b"PQRASCV");
         assert_eq!(payload[7], 0x02);
-        assert_eq!(&payload[8..28], &root[..20]);
+        assert_eq!(&payload[8..40], &root[..]);
     }
 
     #[test]
     fn from_op_return_rejects_wrong_magic() {
-        let mut payload = [0u8; 28];
+        let mut payload = [0u8; 40];
         payload[..7].copy_from_slice(b"INVALID");
         assert!(AnchorCommitment::from_op_return_payload(&payload).is_none());
     }
 
     #[test]
     fn from_op_return_rejects_wrong_version() {
-        let mut payload = [0u8; 28];
+        let mut payload = [0u8; 40];
         payload[..7].copy_from_slice(b"PQRASCV");
         payload[7] = 0x01; // wrong version
         assert!(AnchorCommitment::from_op_return_payload(&payload).is_none());
@@ -198,11 +187,33 @@ mod tests {
     #[test]
     fn matches_full_root() {
         let root = [0xabu8; 32];
-        let commitment = AnchorCommitment::new({
-            let mut partial = [0u8; 32];
-            partial[..20].copy_from_slice(&root[..20]);
-            partial
-        });
+        let commitment = AnchorCommitment::new(root);
         assert!(commitment.matches_full_root(&root));
+    }
+
+    #[test]
+    fn full_32_byte_root_committed() {
+        let root = [0xabu8; 32];
+        let commitment = AnchorCommitment::new(root);
+        let payload = commitment.to_op_return_payload();
+        assert_eq!(
+            &payload[8..40],
+            &root,
+            "all 32 root bytes must appear in OP_RETURN payload"
+        );
+        assert_eq!(payload.len(), 40);
+    }
+
+    #[test]
+    fn roots_differing_only_after_byte_20_produce_distinct_commitments() {
+        let mut root_a = [0u8; 32];
+        let mut root_b = [0u8; 32];
+        root_a[..20].fill(0x42);
+        root_b[..20].fill(0x42);
+        root_b[20] = 0x01; // differs only beyond the old 20-byte boundary
+        let c_a = AnchorCommitment::new(root_a);
+        let c_b = AnchorCommitment::new(root_b);
+        assert_ne!(c_a.to_op_return_payload(), c_b.to_op_return_payload());
+        assert!(!c_a.matches_full_root(&root_b));
     }
 }
