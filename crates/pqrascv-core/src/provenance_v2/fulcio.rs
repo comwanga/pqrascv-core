@@ -62,8 +62,8 @@ impl FulcioCert {
     /// extracts the OIDC subject from the Subject Alternative Name extension
     /// and the OIDC issuer from the Fulcio-specific OID extension.
     pub fn from_der(der: &[u8], now_secs: u64) -> Result<Self, FulcioError> {
-        use x509_cert::Certificate;
         use der::Decode;
+        use x509_cert::Certificate;
 
         let cert = Certificate::from_der(der).map_err(|_| FulcioError::ParseError)?;
 
@@ -78,15 +78,20 @@ impl FulcioCert {
         }
 
         let (oidc_subject, oidc_issuer) = extract_oidc_claims(&cert)?;
-        Ok(Self { oidc_subject, oidc_issuer, not_before, not_after })
+        Ok(Self {
+            oidc_subject,
+            oidc_issuer,
+            not_before,
+            not_after,
+        })
     }
 
     /// Parse a Fulcio cert and extract OIDC claims without temporal validation.
     ///
     /// Use only after condition 3 has already confirmed temporal validity.
     pub(crate) fn parse_oidc_claims(der: &[u8]) -> Result<(String, String), FulcioError> {
-        use x509_cert::Certificate;
         use der::Decode;
+        use x509_cert::Certificate;
 
         let cert = Certificate::from_der(der).map_err(|_| FulcioError::ParseError)?;
         extract_oidc_claims(&cert)
@@ -121,8 +126,8 @@ impl FulcioCert {
 /// planned extension requiring `p256::ecdsa` over the cert's `TBSCertificate`.
 #[cfg(feature = "alloc")]
 pub(crate) fn verify_chain(leaf_der: &[u8], root_der: &[u8]) -> Result<(), FulcioError> {
-    use x509_cert::Certificate;
     use der::Decode;
+    use x509_cert::Certificate;
 
     if leaf_der.is_empty() || root_der.is_empty() {
         return Err(FulcioError::ParseError);

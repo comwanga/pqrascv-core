@@ -67,8 +67,8 @@ impl RekorEntry {
             return Err(RekorError::InvalidRekorKey);
         }
 
-        let entry: Value = serde_json::from_str(entry_json)
-            .map_err(|_| RekorError::MalformedEntry)?;
+        let entry: Value =
+            serde_json::from_str(entry_json).map_err(|_| RekorError::MalformedEntry)?;
 
         let integrated_time = entry["integratedTime"]
             .as_u64()
@@ -114,8 +114,8 @@ fn verify_set_signature(
     use p256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
     use p256::pkcs8::DecodePublicKey;
 
-    let vk = VerifyingKey::from_public_key_der(rekor_vk_der)
-        .map_err(|_| RekorError::InvalidRekorKey)?;
+    let vk =
+        VerifyingKey::from_public_key_der(rekor_vk_der).map_err(|_| RekorError::InvalidRekorKey)?;
 
     // Expect raw fixed-size r||s (64 bytes for P-256).
     let sig = Signature::try_from(set_bytes).map_err(|_| RekorError::SetSignatureInvalid)?;
@@ -129,7 +129,9 @@ fn verify_set_signature(
 #[cfg(feature = "alloc")]
 fn base64_decode(encoded: &str) -> Option<alloc::vec::Vec<u8>> {
     use base64::Engine;
-    base64::engine::general_purpose::STANDARD.decode(encoded).ok()
+    base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .ok()
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -146,7 +148,8 @@ mod tests {
 
     #[test]
     fn empty_rekor_key_returns_invalid_key() {
-        let json = r#"{"integratedTime": 1234567890, "verification": {"signedEntryTimestamp": "AAAA"}}"#;
+        let json =
+            r#"{"integratedTime": 1234567890, "verification": {"signedEntryTimestamp": "AAAA"}}"#;
         let err = RekorEntry::from_entry_json(json, &[]).unwrap_err();
         assert_eq!(err, RekorError::InvalidRekorKey);
     }

@@ -497,7 +497,10 @@ mod tests {
             "https://slsa.dev/provenance/v1".to_string(),
             "https://github.com/actions/runner".to_string(),
             "abc123".to_string(),
-            0, 0, [0u8; 32], 2,
+            0,
+            0,
+            [0u8; 32],
+            2,
             vec![ProvenanceSubject {
                 name: "firmware.bin".to_string(),
                 digest_sha3_256: [0xabu8; 32],
@@ -540,7 +543,10 @@ mod tests {
             "https://slsa.dev/provenance/v1".to_string(),
             "https://github.com/actions/runner".to_string(),
             "abc123".to_string(),
-            0, 0, [0u8; 32], 2,
+            0,
+            0,
+            [0u8; 32],
+            2,
             vec![ProvenanceSubject {
                 name: "firmware.bin".to_string(),
                 digest_sha3_256: [0xabu8; 32],

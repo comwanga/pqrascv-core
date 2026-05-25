@@ -365,7 +365,10 @@ mod tests {
         // it cannot be constructed outside verify_all() — so this invariant is
         // enforced for all callers.
         let engine = PolicyEngineV2::production();
-        assert_eq!(engine.evaluate(&base_ctx()), Err(PqRascvError::PolicyViolation));
+        assert_eq!(
+            engine.evaluate(&base_ctx()),
+            Err(PqRascvError::PolicyViolation)
+        );
     }
 
     #[test]

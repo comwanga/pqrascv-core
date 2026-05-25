@@ -139,10 +139,9 @@ mod tests {
             oidc_issuer: GITHUB_ISSUER.to_string(),
             oidc_subject: "https://github.com/evil/repo/.github/workflows/attack.yml".to_string(),
         };
-        let err =
-            IdentityConstraint::AllowedWorkflows(alloc::vec![ALLOWED_WORKFLOW.to_string()])
-                .check(&identity)
-                .unwrap_err();
+        let err = IdentityConstraint::AllowedWorkflows(alloc::vec![ALLOWED_WORKFLOW.to_string()])
+            .check(&identity)
+            .unwrap_err();
         assert_eq!(err, IdentityError::SubjectNotAllowed);
     }
 
@@ -156,9 +155,7 @@ mod tests {
 
     #[test]
     fn subject_prefix_accepts_matching() {
-        let constraint = IdentityConstraint::SubjectPrefix(
-            "https://github.com/acme/".to_string(),
-        );
+        let constraint = IdentityConstraint::SubjectPrefix("https://github.com/acme/".to_string());
         constraint.check(&allowed_identity()).unwrap();
     }
 

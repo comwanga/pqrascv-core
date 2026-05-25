@@ -220,7 +220,12 @@ impl SigstoreBundle {
         rekor_entry_json: String,
         predicate_hash: [u8; 32],
     ) -> Self {
-        Self { signature, signing_cert_der, rekor_entry_json, predicate_hash }
+        Self {
+            signature,
+            signing_cert_der,
+            rekor_entry_json,
+            predicate_hash,
+        }
     }
 }
 
@@ -229,7 +234,10 @@ impl ExternalProvenanceBundle {
     /// Construct an [`ExternalProvenanceBundle`] from a predicate and its Sigstore proof.
     #[must_use]
     pub fn new(predicate: ProvenancePredicate, sigstore_bundle: SigstoreBundle) -> Self {
-        Self { predicate, sigstore_bundle }
+        Self {
+            predicate,
+            sigstore_bundle,
+        }
     }
 
     /// Returns the SLSA level claimed in the predicate.
@@ -318,7 +326,10 @@ impl ExternalProvenanceBundle {
             fulcio::FulcioCert::parse_oidc_claims(&self.sigstore_bundle.signing_cert_der)
                 .map_err(PqRascvError::from)?;
 
-        let identity = BuilderIdentity { oidc_issuer, oidc_subject };
+        let identity = BuilderIdentity {
+            oidc_issuer,
+            oidc_subject,
+        };
 
         IdentityConstraint::RequireIssuer(config.required_issuer.clone())
             .check(&identity)
@@ -489,7 +500,11 @@ impl ExternalProvenanceBundle {
         // `VerifiedProvenance::new` is private to this module. It is unreachable
         // without all prior conditions returning `Ok`. The sealed token returned
         // here is the only way for `PolicyContext` to record verified provenance.
-        Ok(VerifiedProvenance::new(builder_identity, *firmware_hash, integrated_time))
+        Ok(VerifiedProvenance::new(
+            builder_identity,
+            *firmware_hash,
+            integrated_time,
+        ))
     }
 
     /// Compatibility accessor: returns the firmware hash from predicate subjects.
@@ -646,8 +661,11 @@ mod tests {
         bundle.predicate.builder_id = "https://evil.com/attack".to_string();
 
         let result = bundle.verify_all(&stub_config(), &firmware_hash(), 1_700_000_000);
-        assert_eq!(result.unwrap_err(), PqRascvError::InvalidProvenance,
-            "Condition 1: tampered predicate must be rejected before any other check");
+        assert_eq!(
+            result.unwrap_err(),
+            PqRascvError::InvalidProvenance,
+            "Condition 1: tampered predicate must be rejected before any other check"
+        );
     }
 
     #[test]
@@ -718,8 +736,11 @@ mod tests {
         let bundle = make_bundle_with_predicate(predicate);
 
         let err = bundle.check_unambiguous_binding(&firmware).unwrap_err();
-        assert_eq!(err, PqRascvError::InvalidProvenance,
-            "Condition 8: non-canonical subject name must be rejected as ambiguous");
+        assert_eq!(
+            err,
+            PqRascvError::InvalidProvenance,
+            "Condition 8: non-canonical subject name must be rejected as ambiguous"
+        );
     }
 
     #[test]
@@ -738,8 +759,11 @@ mod tests {
         let bundle = make_bundle_with_predicate(predicate);
 
         let err = bundle.check_unambiguous_binding(&firmware).unwrap_err();
-        assert_eq!(err, PqRascvError::InvalidProvenance,
-            "Condition 8: same hash under multiple subjects is ambiguous");
+        assert_eq!(
+            err,
+            PqRascvError::InvalidProvenance,
+            "Condition 8: same hash under multiple subjects is ambiguous"
+        );
     }
 
     #[test]
@@ -775,9 +799,14 @@ mod tests {
         // integrated_time is 120 seconds in the future; max skew is 60 s.
         let now = 1_700_000_000u64;
         let integrated_time = now + 120;
-        let err = bundle.check_rekor_time_bounds(integrated_time, now, 60).unwrap_err();
-        assert_eq!(err, PqRascvError::ProvenanceBundleInvalid,
-            "Condition 6: Rekor time too far in the future must be rejected");
+        let err = bundle
+            .check_rekor_time_bounds(integrated_time, now, 60)
+            .unwrap_err();
+        assert_eq!(
+            err,
+            PqRascvError::ProvenanceBundleInvalid,
+            "Condition 6: Rekor time too far in the future must be rejected"
+        );
     }
 
     #[test]
@@ -787,6 +816,8 @@ mod tests {
 
         let now = 1_700_000_000u64;
         let integrated_time = now + 30; // within 60 s skew
-        bundle.check_rekor_time_bounds(integrated_time, now, 60).unwrap();
+        bundle
+            .check_rekor_time_bounds(integrated_time, now, 60)
+            .unwrap();
     }
 }
