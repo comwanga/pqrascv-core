@@ -12,7 +12,7 @@
 //! # Audit Findings Addressed
 //!
 //! - **Finding #1**: `RequireHardwareBackend` rejects `SoftwareRoT` in production.
-//! - **Finding #2**: `RequireExternalProvenance` — NOT_IMPLEMENTED pending Sigstore integration.
+//! - **Finding #2**: `RequireExternalProvenance` enforced via [`VerifiedProvenance`] sealed token.
 //! - **Finding #4**: `RequireCertificateChain` enforces PKI validation.
 //! - **Finding #10**: `EnforceProtocolVersion` rejects downgrade attempts.
 
@@ -23,7 +23,7 @@ extern crate alloc;
 use alloc::{string::String, vec::Vec};
 
 #[cfg(feature = "alloc")]
-use crate::{error::PqRascvError, nonce::ClockEvidence};
+use crate::{error::PqRascvError, nonce::ClockEvidence, provenance_v2::VerifiedProvenance};
 
 #[cfg(feature = "alloc")]
 use crate::{
@@ -138,6 +138,14 @@ pub enum PolicyRule {
 /// All data available to the policy engine during evaluation.
 ///
 /// Populated by the verifier from the parsed quote and verification results.
+///
+/// # Provenance enforcement
+///
+/// `verified_provenance` holds the sealed [`VerifiedProvenance`] token produced
+/// by [`ExternalProvenanceBundle::verify_all`]. It is the only field that can
+/// satisfy `RequireExternalProvenance`. Because [`VerifiedProvenance`] has a
+/// private constructor, external code cannot set this field to `Some` without
+/// actually running the full 10-condition verification chain.
 #[cfg(feature = "alloc")]
 pub struct PolicyContext<'a> {
     pub protocol_version: u16,
@@ -148,7 +156,11 @@ pub struct PolicyContext<'a> {
     pub builder_id: Option<&'a str>,
     pub hardware_backend: HardwareBackendKind,
     pub has_cert_chain: bool,
-    pub has_external_provenance: bool,
+    /// Sealed proof that all 10 provenance invariant conditions passed.
+    ///
+    /// `None` means provenance was not verified — `RequireExternalProvenance`
+    /// will fail. External code cannot forge a `Some` value here.
+    pub verified_provenance: Option<&'a VerifiedProvenance>,
     pub bitcoin_confirmations: Option<u32>,
 }
 
@@ -159,13 +171,16 @@ impl<'a> PolicyContext<'a> {
     /// All security-sensitive fields are derived from cryptographic evidence:
     /// - `hardware_backend` comes from the certificate's `hardware_identity` field.
     /// - `has_cert_chain` reflects actual certificate chain validation.
-    /// - `has_external_provenance` is always `false` (`NOT_IMPLEMENTED`).
+    /// - `verified_provenance` carries the sealed proof from
+    ///   [`ExternalProvenanceBundle::verify_all`], or `None` if provenance was
+    ///   not verified.
     #[must_use]
     pub fn from_verified_quote(
         quote: &'a crate::quote::AttestationQuote,
         cert_chain: Option<&CertChain>,
         bitcoin_confirmations: Option<u32>,
         now_secs: u64,
+        verified_provenance: Option<&'a VerifiedProvenance>,
     ) -> Self {
         let hardware_backend = cert_chain.map_or(HardwareBackendKind::SoftwareUnsafe, |c| {
             hardware_backend_from_identity(&c.device_cert.hardware_identity)
@@ -185,7 +200,7 @@ impl<'a> PolicyContext<'a> {
             builder_id: Some(quote.body.provenance.build.builder_id.as_str()),
             hardware_backend,
             has_cert_chain: cert_chain.is_some(),
-            has_external_provenance: false, // NOT_IMPLEMENTED until Sigstore lands
+            verified_provenance,
             bitcoin_confirmations,
         }
     }
@@ -268,7 +283,7 @@ impl PolicyEngineV2 {
                 }
             }
             PolicyRule::RequireExternalProvenance => {
-                if !ctx.has_external_provenance {
+                if ctx.verified_provenance.is_none() {
                     return Err(PqRascvError::PolicyViolation);
                 }
             }
@@ -333,7 +348,9 @@ mod tests {
             builder_id: Some("https://github.com/actions/runner"),
             hardware_backend: HardwareBackendKind::Tpm2,
             has_cert_chain: true,
-            has_external_provenance: true,
+            // None: production policy does not yet require external provenance.
+            // RequireExternalProvenance tests use their own context.
+            verified_provenance: None,
             bitcoin_confirmations: None,
         }
     }
@@ -361,12 +378,11 @@ mod tests {
     }
 
     #[test]
-    fn rejects_self_asserted_provenance() {
-        // RequireExternalProvenance is not in production() (NOT_IMPLEMENTED),
-        // but the rule itself must still work when explicitly added.
+    fn rejects_unverified_provenance() {
+        // `verified_provenance: None` means provenance was not verified.
+        // External code cannot forge a Some(VerifiedProvenance) — the type is sealed.
         let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequireExternalProvenance]);
-        let mut ctx = base_ctx();
-        ctx.has_external_provenance = false;
+        let ctx = base_ctx(); // verified_provenance is None
         assert_eq!(engine.evaluate(&ctx), Err(PqRascvError::PolicyViolation));
     }
 
@@ -434,39 +450,41 @@ mod context_builder_tests {
     #[test]
     fn no_cert_chain_gives_software_unsafe_backend() {
         let quote = make_quote(QuoteTimestamp::Rtc(1_700_000_000));
-        let ctx = PolicyContext::from_verified_quote(&quote, None, None, 1_700_000_100);
+        let ctx = PolicyContext::from_verified_quote(&quote, None, None, 1_700_000_100, None);
         assert_eq!(ctx.hardware_backend, HardwareBackendKind::SoftwareUnsafe);
         assert!(!ctx.has_cert_chain);
     }
 
     #[test]
-    fn external_provenance_always_false() {
+    fn verified_provenance_is_none_without_verify_all() {
+        // verified_provenance is always None unless the caller ran verify_all().
+        // External code cannot construct a VerifiedProvenance — it is sealed.
         let quote = make_quote(QuoteTimestamp::Rtc(1_700_000_000));
-        let ctx = PolicyContext::from_verified_quote(&quote, None, None, 1_700_000_100);
+        let ctx = PolicyContext::from_verified_quote(&quote, None, None, 1_700_000_100, None);
         assert!(
-            !ctx.has_external_provenance,
-            "has_external_provenance must be false until Sigstore is implemented"
+            ctx.verified_provenance.is_none(),
+            "verified_provenance must be None without a VerifiedProvenance token"
         );
     }
 
     #[test]
     fn rtc_timestamp_produces_trusted_rtc_clock() {
         let quote = make_quote(QuoteTimestamp::Rtc(1_700_000_000));
-        let ctx = PolicyContext::from_verified_quote(&quote, None, None, 1_700_000_100);
+        let ctx = PolicyContext::from_verified_quote(&quote, None, None, 1_700_000_100, None);
         assert_eq!(ctx.clock, ClockEvidence::TrustedRtc(1_700_000_000));
     }
 
     #[test]
     fn no_rtc_produces_no_rtc_clock() {
         let quote = make_quote(QuoteTimestamp::NoRtc);
-        let ctx = PolicyContext::from_verified_quote(&quote, None, None, 999_999);
+        let ctx = PolicyContext::from_verified_quote(&quote, None, None, 999_999, None);
         assert_eq!(ctx.clock, ClockEvidence::NoRtc);
     }
 
     #[test]
     fn production_policy_rejects_software_backend_via_context_builder() {
         let quote = make_quote(QuoteTimestamp::Rtc(1_700_000_000));
-        let ctx = PolicyContext::from_verified_quote(&quote, None, None, 1_700_000_100);
+        let ctx = PolicyContext::from_verified_quote(&quote, None, None, 1_700_000_100, None);
         let engine = PolicyEngineV2::production();
         // Quote uses PROTOCOL_VERSION (1); production requires version 2 — rejected.
         // Even if version matched, no cert chain → SoftwareUnsafe → RequireHardwareBackend fires.
