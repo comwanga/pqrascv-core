@@ -211,7 +211,27 @@ pub struct ExternalProvenanceBundle {
 }
 
 #[cfg(feature = "alloc")]
+impl SigstoreBundle {
+    /// Construct a [`SigstoreBundle`] from its constituent fields.
+    #[must_use]
+    pub fn new(
+        signature: Vec<u8>,
+        signing_cert_der: Vec<u8>,
+        rekor_entry_json: String,
+        predicate_hash: [u8; 32],
+    ) -> Self {
+        Self { signature, signing_cert_der, rekor_entry_json, predicate_hash }
+    }
+}
+
+#[cfg(feature = "alloc")]
 impl ExternalProvenanceBundle {
+    /// Construct an [`ExternalProvenanceBundle`] from a predicate and its Sigstore proof.
+    #[must_use]
+    pub fn new(predicate: ProvenancePredicate, sigstore_bundle: SigstoreBundle) -> Self {
+        Self { predicate, sigstore_bundle }
+    }
+
     /// Returns the SLSA level claimed in the predicate.
     #[must_use]
     pub fn slsa_level(&self) -> u8 {
@@ -521,6 +541,34 @@ pub struct ProvenancePredicate {
     pub slsa_level: u8,
     /// Attested subjects (firmware artifacts).
     pub subjects: Vec<ProvenanceSubject>,
+}
+
+#[cfg(feature = "alloc")]
+impl ProvenancePredicate {
+    /// Construct a [`ProvenancePredicate`] from its fields.
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        predicate_type: String,
+        builder_id: String,
+        build_config_ref: String,
+        build_started_on: u64,
+        build_finished_on: u64,
+        sbom_hash: [u8; 32],
+        slsa_level: u8,
+        subjects: Vec<ProvenanceSubject>,
+    ) -> Self {
+        Self {
+            predicate_type,
+            builder_id,
+            build_config_ref,
+            build_started_on,
+            build_finished_on,
+            sbom_hash,
+            slsa_level,
+            subjects,
+        }
+    }
 }
 
 /// A subject in a provenance predicate.

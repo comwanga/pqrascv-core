@@ -21,6 +21,7 @@ use pqrascv_core::{
         validate_chain, validate_chain_with_store, CertChain, DeviceCertificate, TrustAnchor,
         TrustStore,
     },
+    provenance_v2::{ExternalProvenanceBundle, SigstoreConfig},
     quote::{AttestationQuote, Challenge, PROTOCOL_VERSION},
 };
 
@@ -255,6 +256,37 @@ impl Verifier {
         })
     }
 
+    /// Verifies a CBOR quote and an accompanying Sigstore provenance bundle.
+    ///
+    /// Runs the standard quote verification first (ML-DSA-65 signature, nonce, policy),
+    /// then verifies all 10 conditions of the Provenance Enforcement Invariant via
+    /// [`ExternalProvenanceBundle::verify_all`].  Both checks must pass — an error
+    /// from either is returned immediately.
+    ///
+    /// The `firmware_hash` used for provenance binding is the one measured and signed
+    /// inside the quote (`body.measurements.firmware_hash`).  The Sigstore bundle must
+    /// bind the same hash to pass condition 7.
+    ///
+    /// # Arguments
+    ///
+    /// - `bundle`: Sigstore provenance bundle provided by the CI/CD pipeline alongside
+    ///   the quote.  Must bind the same firmware hash measured in the quote.
+    /// - `sigstore_config`: Rekor public key, Fulcio root cert, OIDC issuer, and
+    ///   allowed builder list.  There are no insecure defaults — every field is required.
+    pub fn verify_cbor_with_sigstore(
+        &self,
+        cbor: &[u8],
+        verifying_key: &[u8],
+        expected_nonce: &[u8; 32],
+        now_secs: u64,
+        bundle: &ExternalProvenanceBundle,
+        sigstore_config: &SigstoreConfig,
+    ) -> Result<VerificationResult, PqRascvError> {
+        let result = self.verify_cbor(cbor, verifying_key, expected_nonce, now_secs)?;
+        bundle.verify_all(sigstore_config, result.firmware_hash(), now_secs)?;
+        Ok(result)
+    }
+
     /// Verifies an already-parsed [`AttestationQuote`]. Useful if you've already
     /// deserialized the CBOR yourself and don't want to do it twice.
     pub fn verify_quote(
@@ -448,6 +480,94 @@ mod tests {
         let challenge = pqrascv_core::quote::Challenge::new([0x00u8; 32]);
         let result = verifier.verify_with_challenge(&cbor, &vk, &challenge, 1_700_000_600);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn verify_cbor_with_sigstore_rejects_invalid_bundle() {
+        use pqrascv_core::provenance_v2::{
+            ExternalProvenanceBundle, ProvenancePredicate, ProvenanceSubject, SigstoreBundle,
+            SigstoreConfig,
+        };
+
+        let (_, vk, quote) = setup();
+        let cbor = quote.to_cbor().unwrap();
+
+        // Predicate with a valid subject, but predicate_hash is wrong — condition 1 fails.
+        let predicate = ProvenancePredicate::new(
+            "https://slsa.dev/provenance/v1".to_string(),
+            "https://github.com/actions/runner".to_string(),
+            "abc123".to_string(),
+            0, 0, [0u8; 32], 2,
+            vec![ProvenanceSubject {
+                name: "firmware.bin".to_string(),
+                digest_sha3_256: [0xabu8; 32],
+            }],
+        );
+        let bundle = ExternalProvenanceBundle::new(
+            predicate,
+            SigstoreBundle::new(vec![], vec![], "{}".to_string(), [0xffu8; 32]),
+        );
+        let config = SigstoreConfig {
+            rekor_public_key_der: vec![],
+            fulcio_root_der: vec![],
+            required_issuer: "https://token.actions.githubusercontent.com".to_string(),
+            allowed_builders: vec![],
+            max_clock_skew_secs: 60,
+        };
+
+        let result = Verifier::new(PolicyConfig::default()).verify_cbor_with_sigstore(
+            &cbor,
+            &vk,
+            &[0x77u8; 32],
+            1_700_000_600,
+            &bundle,
+            &config,
+        );
+        assert!(matches!(result, Err(PqRascvError::InvalidProvenance)));
+    }
+
+    #[test]
+    fn verify_cbor_with_sigstore_fails_quote_before_bundle() {
+        use pqrascv_core::provenance_v2::{
+            ExternalProvenanceBundle, ProvenancePredicate, ProvenanceSubject, SigstoreBundle,
+            SigstoreConfig,
+        };
+
+        let (_, vk, quote) = setup();
+        let cbor = quote.to_cbor().unwrap();
+
+        let predicate = ProvenancePredicate::new(
+            "https://slsa.dev/provenance/v1".to_string(),
+            "https://github.com/actions/runner".to_string(),
+            "abc123".to_string(),
+            0, 0, [0u8; 32], 2,
+            vec![ProvenanceSubject {
+                name: "firmware.bin".to_string(),
+                digest_sha3_256: [0xabu8; 32],
+            }],
+        );
+        let bundle = ExternalProvenanceBundle::new(
+            predicate,
+            SigstoreBundle::new(vec![], vec![], "{}".to_string(), [0xffu8; 32]),
+        );
+        let config = SigstoreConfig {
+            rekor_public_key_der: vec![],
+            fulcio_root_der: vec![],
+            required_issuer: "https://token.actions.githubusercontent.com".to_string(),
+            allowed_builders: vec![],
+            max_clock_skew_secs: 60,
+        };
+
+        // Wrong nonce → quote fails before bundle is checked.
+        let result = Verifier::new(PolicyConfig::default()).verify_cbor_with_sigstore(
+            &cbor,
+            &vk,
+            &[0x00u8; 32],
+            1_700_000_600,
+            &bundle,
+            &config,
+        );
+        assert!(matches!(result, Err(PqRascvError::VerificationFailed)));
     }
 
     #[test]
