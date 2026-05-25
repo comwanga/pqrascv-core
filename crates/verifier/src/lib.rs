@@ -16,7 +16,7 @@ use pqrascv_core::{
     config::PolicyConfig,
     crypto::{pub_key_id, CryptoBackend, MlDsaBackend, SIGNING_CONTEXT_QUOTE},
     error::PqRascvError,
-    pki::{validate_chain, CertChain, DeviceCertificate, TrustAnchor},
+    pki::{validate_chain, validate_chain_with_store, CertChain, DeviceCertificate, TrustAnchor, TrustStore},
     pki::revocation::VerifiedRevocationList,
     quote::{AttestationQuote, Challenge, PROTOCOL_VERSION},
 };
@@ -77,6 +77,24 @@ impl PkiVerificationResult {
     pub fn nonce(&self) -> &[u8; 32] { &self.quote.body.nonce }
     #[must_use]
     pub fn device_serial(&self) -> &str { &self.cert_chain.device_cert.serial }
+
+    /// The CA identifier URI of the trust anchor that validated this chain.
+    #[must_use]
+    pub fn trust_anchor_id(&self) -> &str {
+        &self.cert_chain.trust_anchor.ca_id
+    }
+
+    /// SHA3-256 fingerprint of the trust anchor's public key.
+    #[must_use]
+    pub fn trust_anchor_fingerprint(&self) -> &[u8; 32] {
+        &self.cert_chain.trust_anchor.fingerprint
+    }
+
+    /// Unix timestamp after which the trust anchor must not be used.
+    #[must_use]
+    pub fn trust_anchor_valid_until(&self) -> u64 {
+        self.cert_chain.trust_anchor.not_after
+    }
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -179,6 +197,42 @@ impl Verifier {
         }
 
         // Step 3: Verify the quote against the key from the validated certificate
+        let verifying_key = &chain.device_cert.subject_key;
+        let result = self.verify_cbor(cbor, verifying_key, expected_nonce, now_secs)?;
+
+        Ok(PkiVerificationResult { quote: result.quote, cert_chain: chain })
+    }
+
+    /// Verifies a CBOR quote using any currently-valid anchor in a [`TrustStore`].
+    ///
+    /// Tries each valid (temporally active) anchor in insertion order. Returns
+    /// [`PqRascvError::TrustAnchorExpired`] if the store has no valid anchor,
+    /// or [`PqRascvError::CertificateInvalid`] if no valid anchor accepts the chain.
+    ///
+    /// # Arguments
+    ///
+    /// - `trust_store`: holds primary and rollover root CA anchors.
+    /// - `crl`: optional verified CRL; if `Some`, the device serial is checked for revocation.
+    #[allow(clippy::too_many_arguments)]
+    pub fn verify_cbor_with_trust_store(
+        &self,
+        cbor: &[u8],
+        device_cert: DeviceCertificate,
+        intermediates: Vec<DeviceCertificate>,
+        trust_store: &TrustStore,
+        crl: Option<&VerifiedRevocationList<'_>>,
+        expected_nonce: &[u8; 32],
+        now_secs: u64,
+    ) -> Result<PkiVerificationResult, PqRascvError> {
+        let chain =
+            validate_chain_with_store(&device_cert, &intermediates, trust_store, now_secs)?;
+
+        if let Some(crl) = crl {
+            if crl.is_revoked(&chain.device_cert.serial) {
+                return Err(PqRascvError::CertificateRevoked);
+            }
+        }
+
         let verifying_key = &chain.device_cert.subject_key;
         let result = self.verify_cbor(cbor, verifying_key, expected_nonce, now_secs)?;
 
@@ -399,7 +453,7 @@ mod pki_tests {
         crypto::{generate_ml_dsa_keypair, MlDsaBackend, CryptoBackend, SIGNING_CONTEXT_CERT,
                  ML_DSA_65_VERIFYING_KEY_SIZE},
         measurement::SoftwareRoT,
-        pki::{build_device_certificate, CaPublicKey, HardwareIdentity, CERT_VERSION},
+        pki::{build_device_certificate, CaPublicKey, HardwareIdentity, TrustStore, CERT_VERSION},
         provenance::SlsaPredicateBuilder,
         quote::{generate_quote, QuoteTimestamp},
     };
@@ -596,5 +650,94 @@ mod pki_tests {
         );
         assert!(result.is_ok(), "intermediate chain verification failed: {result:?}");
         assert_eq!(result.unwrap().device_serial(), "DEV-CHAIN-001");
+    }
+
+    #[test]
+    fn pki_result_exposes_trust_anchor_metadata() {
+        let (ca_seed, ca_vk) = generate_ml_dsa_keypair().unwrap();
+        let (dev_seed, dev_vk) = generate_ml_dsa_keypair().unwrap();
+
+        let expected_fingerprint = pqrascv_core::crypto::pub_key_id(&ca_vk);
+        let anchor = TrustAnchor::new(CaPublicKey {
+            key_bytes: ca_vk,
+            ca_id: "https://audit.ca".to_string(),
+            not_before: 0,
+            not_after: u64::MAX,
+        });
+        let device_cert = make_device_cert(&dev_vk, "https://audit.ca", "DEV-AUDIT", ca_seed.as_bytes());
+
+        let rot = SoftwareRoT::new(b"fw", None, 1);
+        let nonce = [0xCCu8; 32];
+        let quote = generate_quote(
+            &rot, &MlDsaBackend, dev_seed.as_bytes(), &dev_vk,
+            &nonce, make_provenance(), QuoteTimestamp::Rtc(1_700_000_000),
+        ).unwrap();
+        let cbor = quote.to_cbor().unwrap();
+
+        let verifier = Verifier::new(PolicyConfig::default());
+        let result = verifier
+            .verify_cbor_with_pki(&cbor, device_cert, vec![], &anchor, None, &nonce, 1_700_000_100)
+            .unwrap();
+
+        assert_eq!(result.trust_anchor_id(), "https://audit.ca");
+        assert_eq!(result.trust_anchor_fingerprint(), &expected_fingerprint);
+        assert_eq!(result.trust_anchor_valid_until(), u64::MAX);
+    }
+
+    #[test]
+    fn verify_cbor_with_trust_store_accepts_valid_chain() {
+        let (ca_seed, ca_vk) = generate_ml_dsa_keypair().unwrap();
+        let (dev_seed, dev_vk) = generate_ml_dsa_keypair().unwrap();
+
+        let store = TrustStore::new(TrustAnchor::new(CaPublicKey {
+            key_bytes: ca_vk,
+            ca_id: "https://store.ca".to_string(),
+            not_before: 0,
+            not_after: u64::MAX,
+        }));
+        let device_cert = make_device_cert(&dev_vk, "https://store.ca", "DEV-STORE", ca_seed.as_bytes());
+
+        let rot = SoftwareRoT::new(b"fw", None, 1);
+        let nonce = [0xDDu8; 32];
+        let quote = generate_quote(
+            &rot, &MlDsaBackend, dev_seed.as_bytes(), &dev_vk,
+            &nonce, make_provenance(), QuoteTimestamp::Rtc(1_700_000_000),
+        ).unwrap();
+        let cbor = quote.to_cbor().unwrap();
+
+        let verifier = Verifier::new(PolicyConfig::default());
+        let result = verifier.verify_cbor_with_trust_store(
+            &cbor, device_cert, vec![], &store, None, &nonce, 1_700_000_100,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().trust_anchor_id(), "https://store.ca");
+    }
+
+    #[test]
+    fn verify_cbor_with_trust_store_rejects_expired_store() {
+        let (ca_seed, ca_vk) = generate_ml_dsa_keypair().unwrap();
+        let (dev_seed, dev_vk) = generate_ml_dsa_keypair().unwrap();
+
+        let store = TrustStore::new(TrustAnchor::new(CaPublicKey {
+            key_bytes: ca_vk,
+            ca_id: "https://expired.ca".to_string(),
+            not_before: 0,
+            not_after: 999,
+        }));
+        let device_cert = make_device_cert(&dev_vk, "https://expired.ca", "DEV-EXP", ca_seed.as_bytes());
+
+        let rot = SoftwareRoT::new(b"fw", None, 1);
+        let nonce = [0xEEu8; 32];
+        let quote = generate_quote(
+            &rot, &MlDsaBackend, dev_seed.as_bytes(), &dev_vk,
+            &nonce, make_provenance(), QuoteTimestamp::Rtc(1_700_000_000),
+        ).unwrap();
+        let cbor = quote.to_cbor().unwrap();
+
+        let verifier = Verifier::new(PolicyConfig::default());
+        let result = verifier.verify_cbor_with_trust_store(
+            &cbor, device_cert, vec![], &store, None, &nonce, 1_700_000_100,
+        );
+        assert!(matches!(result, Err(PqRascvError::TrustAnchorExpired)));
     }
 }
