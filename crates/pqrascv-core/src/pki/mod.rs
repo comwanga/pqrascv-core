@@ -505,6 +505,42 @@ pub fn validate_chain(
     Ok(CertChain { device_cert, intermediates, trust_anchor: trust_anchor_info })
 }
 
+/// Validates a certificate chain against any currently-valid anchor in a [`TrustStore`].
+///
+/// Anchors are tried in insertion order; the chain is accepted on the first match.
+/// Returns [`PqRascvError::TrustAnchorExpired`] if no anchor is valid at `now_secs`,
+/// or [`PqRascvError::CertificateInvalid`] if no valid anchor accepts the chain.
+///
+/// # Errors
+///
+/// Returns [`PqRascvError::TrustAnchorExpired`] when the store has no valid anchor,
+/// [`PqRascvError::CertificateInvalid`] when every valid anchor rejects the chain,
+/// or propagates errors from signature/CBOR operations.
+#[cfg(feature = "alloc")]
+pub fn validate_chain_with_store(
+    device_cert: DeviceCertificate,
+    intermediates: Vec<DeviceCertificate>,
+    trust_store: &trust_store::TrustStore,
+    now_secs: u64,
+) -> Result<CertChain, PqRascvError> {
+    let valid_anchors: Vec<&TrustAnchor> =
+        trust_store.valid_anchors_at(now_secs).collect();
+
+    if valid_anchors.is_empty() {
+        return Err(PqRascvError::TrustAnchorExpired);
+    }
+
+    for anchor in valid_anchors {
+        if let Ok(chain) =
+            validate_chain(device_cert.clone(), intermediates.clone(), anchor, now_secs)
+        {
+            return Ok(chain);
+        }
+    }
+
+    Err(PqRascvError::CertificateInvalid)
+}
+
 #[cfg(all(test, feature = "alloc", feature = "std"))]
 mod chain_tests {
     use super::*;
@@ -675,6 +711,73 @@ mod chain_tests {
         assert!(matches!(
             validate_chain(device_cert, vec![intermediate], &anchor, 1_000),
             Err(PqRascvError::CertificateInvalid)
+        ));
+    }
+
+    #[test]
+    fn trust_store_with_single_valid_anchor_validates_chain() {
+        use super::trust_store::TrustStore;
+        let (ca_seed, ca_vk) = make_ca();
+        let (_, dev_vk) = make_ca();
+        let store = TrustStore::new(TrustAnchor::new(CaPublicKey {
+            key_bytes: ca_vk,
+            ca_id: "https://ca.test".to_string(),
+            not_before: 0,
+            not_after: u64::MAX,
+        }));
+        let cert = make_device_cert(
+            &dev_vk, "https://ca.test", "https://dev.test", "DEV-001", ca_seed.as_bytes(),
+        );
+        let result = validate_chain_with_store(cert, vec![], &store, 1_000);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().trust_anchor.ca_id, "https://ca.test");
+    }
+
+    #[test]
+    fn trust_store_tries_all_valid_anchors() {
+        use super::trust_store::TrustStore;
+        // Two CAs; cert is signed by the second one
+        let (_ca1_seed, ca1_vk) = make_ca();
+        let (ca2_seed, ca2_vk) = make_ca();
+        let (_, dev_vk) = make_ca();
+        let store = TrustStore::new(TrustAnchor::new(CaPublicKey {
+            key_bytes: ca1_vk,
+            ca_id: "https://ca1.test".to_string(),
+            not_before: 0,
+            not_after: u64::MAX,
+        }))
+        .with_rollover(TrustAnchor::new(CaPublicKey {
+            key_bytes: ca2_vk,
+            ca_id: "https://ca2.test".to_string(),
+            not_before: 0,
+            not_after: u64::MAX,
+        }));
+        // Cert signed by CA2
+        let cert = make_device_cert(
+            &dev_vk, "https://ca2.test", "https://dev.test", "DEV-001", ca2_seed.as_bytes(),
+        );
+        let result = validate_chain_with_store(cert, vec![], &store, 1_000);
+        assert!(result.is_ok(), "CA2-signed cert must be accepted by store containing CA2");
+        assert_eq!(result.unwrap().trust_anchor.ca_id, "https://ca2.test");
+    }
+
+    #[test]
+    fn trust_store_no_valid_anchors_returns_expired() {
+        use super::trust_store::TrustStore;
+        let (ca_seed, ca_vk) = make_ca();
+        let (_, dev_vk) = make_ca();
+        let store = TrustStore::new(TrustAnchor::new(CaPublicKey {
+            key_bytes: ca_vk,
+            ca_id: "https://ca.test".to_string(),
+            not_before: 0,
+            not_after: 999, // already expired
+        }));
+        let cert = make_device_cert(
+            &dev_vk, "https://ca.test", "https://dev.test", "DEV-001", ca_seed.as_bytes(),
+        );
+        assert!(matches!(
+            validate_chain_with_store(cert, vec![], &store, 1_000),
+            Err(PqRascvError::TrustAnchorExpired)
         ));
     }
 }
