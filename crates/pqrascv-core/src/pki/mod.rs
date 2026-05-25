@@ -282,7 +282,10 @@ impl TrustAnchor {
     /// Panics if `root_ca.ca_id` is empty or if `root_ca.not_before > root_ca.not_after`.
     #[must_use]
     pub fn new(root_ca: CaPublicKey) -> Self {
-        assert!(!root_ca.ca_id.is_empty(), "TrustAnchor ca_id must not be empty");
+        assert!(
+            !root_ca.ca_id.is_empty(),
+            "TrustAnchor ca_id must not be empty"
+        );
         assert!(
             root_ca.not_before <= root_ca.not_after,
             "TrustAnchor not_before must not exceed not_after"
@@ -454,7 +457,12 @@ pub fn validate_chain(
 
         // Signature verification
         let tbs = intermediate.tbs_cbor()?;
-        MlDsaBackend.verify(&tbs, &signing_keys[d], &intermediate.issuer_signature, SIGNING_CONTEXT_CERT)?;
+        MlDsaBackend.verify(
+            &tbs,
+            &signing_keys[d],
+            &intermediate.issuer_signature,
+            SIGNING_CONTEXT_CERT,
+        )?;
     }
 
     // Validate device certificate
@@ -483,7 +491,12 @@ pub fn validate_chain(
 
     let device_tbs = device_cert.tbs_cbor()?;
     let device_signing_key = signing_keys.last().expect("always has root key");
-    MlDsaBackend.verify(&device_tbs, device_signing_key, &device_cert.issuer_signature, SIGNING_CONTEXT_CERT)?;
+    MlDsaBackend.verify(
+        &device_tbs,
+        device_signing_key,
+        &device_cert.issuer_signature,
+        SIGNING_CONTEXT_CERT,
+    )?;
 
     // subject_key_id consistency
     let computed_id = {
@@ -497,12 +510,16 @@ pub fn validate_chain(
     }
 
     let trust_anchor_info = TrustAnchorInfo {
-        ca_id:       trust_anchor.root_ca.ca_id.clone(),
+        ca_id: trust_anchor.root_ca.ca_id.clone(),
         fingerprint: trust_anchor.root_fingerprint(),
-        not_before:  trust_anchor.root_ca.not_before,
-        not_after:   trust_anchor.root_ca.not_after,
+        not_before: trust_anchor.root_ca.not_before,
+        not_after: trust_anchor.root_ca.not_after,
     };
-    Ok(CertChain { device_cert, intermediates, trust_anchor: trust_anchor_info })
+    Ok(CertChain {
+        device_cert,
+        intermediates,
+        trust_anchor: trust_anchor_info,
+    })
 }
 
 /// Validates a certificate chain against any currently-valid anchor in a [`TrustStore`].
@@ -523,17 +540,19 @@ pub fn validate_chain_with_store(
     trust_store: &trust_store::TrustStore,
     now_secs: u64,
 ) -> Result<CertChain, PqRascvError> {
-    let valid_anchors: Vec<&TrustAnchor> =
-        trust_store.valid_anchors_at(now_secs).collect();
+    let valid_anchors: Vec<&TrustAnchor> = trust_store.valid_anchors_at(now_secs).collect();
 
     if valid_anchors.is_empty() {
         return Err(PqRascvError::TrustAnchorExpired);
     }
 
     for anchor in valid_anchors {
-        if let Ok(chain) =
-            validate_chain(device_cert.clone(), intermediates.to_vec(), anchor, now_secs)
-        {
+        if let Ok(chain) = validate_chain(
+            device_cert.clone(),
+            intermediates.to_vec(),
+            anchor,
+            now_secs,
+        ) {
             return Ok(chain);
         }
     }
@@ -544,15 +563,22 @@ pub fn validate_chain_with_store(
 #[cfg(all(test, feature = "alloc", feature = "std"))]
 mod chain_tests {
     use super::*;
-    use crate::crypto::{generate_ml_dsa_keypair, MlDsaBackend, CryptoBackend, SIGNING_CONTEXT_CERT};
+    use crate::crypto::{
+        generate_ml_dsa_keypair, CryptoBackend, MlDsaBackend, SIGNING_CONTEXT_CERT,
+    };
 
     fn sign_cert(cert: &mut DeviceCertificate, signer_seed: &[u8]) {
         let tbs = cert.tbs_cbor().expect("tbs_cbor");
-        let sig = MlDsaBackend.sign(&tbs, signer_seed, SIGNING_CONTEXT_CERT).expect("sign");
+        let sig = MlDsaBackend
+            .sign(&tbs, signer_seed, SIGNING_CONTEXT_CERT)
+            .expect("sign");
         cert.issuer_signature = sig.as_ref().to_vec();
     }
 
-    fn make_ca() -> (crate::crypto::SigningKeySeed, [u8; crate::crypto::ML_DSA_65_VERIFYING_KEY_SIZE]) {
+    fn make_ca() -> (
+        crate::crypto::SigningKeySeed,
+        [u8; crate::crypto::ML_DSA_65_VERIFYING_KEY_SIZE],
+    ) {
         generate_ml_dsa_keypair().unwrap()
     }
 
@@ -592,7 +618,13 @@ mod chain_tests {
             not_before: 0,
             not_after: u64::MAX,
         });
-        let device_cert = make_device_cert(&dev_vk, "https://ca.test", "https://dev.test", "DEV-001", ca_seed.as_bytes());
+        let device_cert = make_device_cert(
+            &dev_vk,
+            "https://ca.test",
+            "https://dev.test",
+            "DEV-001",
+            ca_seed.as_bytes(),
+        );
         assert!(validate_chain(device_cert, vec![], &anchor, 1_000).is_ok());
     }
 
@@ -607,7 +639,13 @@ mod chain_tests {
             not_after: u64::MAX,
         });
         // Wrong issuer_id (claims "https://evil.ca" instead of "https://ca.test")
-        let device_cert = make_device_cert(&dev_vk, "https://evil.ca", "https://dev.test", "DEV-001", ca_seed.as_bytes());
+        let device_cert = make_device_cert(
+            &dev_vk,
+            "https://evil.ca",
+            "https://dev.test",
+            "DEV-001",
+            ca_seed.as_bytes(),
+        );
         assert!(matches!(
             validate_chain(device_cert, vec![], &anchor, 1_000),
             Err(PqRascvError::CertificateInvalid)
@@ -627,11 +665,23 @@ mod chain_tests {
         });
 
         // Intermediate with max_path_length = Some(0) — cannot sign the device cert
-        let mut intermediate = make_device_cert(&int_vk, "https://root.test", "https://int.test", "INT-001", root_seed.as_bytes());
+        let mut intermediate = make_device_cert(
+            &int_vk,
+            "https://root.test",
+            "https://int.test",
+            "INT-001",
+            root_seed.as_bytes(),
+        );
         intermediate.max_path_length = Some(0); // re-sign after field change
         sign_cert(&mut intermediate, root_seed.as_bytes());
 
-        let device_cert = make_device_cert(&dev_vk, "https://int.test", "https://dev.test", "DEV-001", int_seed.as_bytes());
+        let device_cert = make_device_cert(
+            &dev_vk,
+            "https://int.test",
+            "https://dev.test",
+            "DEV-001",
+            int_seed.as_bytes(),
+        );
 
         assert!(matches!(
             validate_chain(device_cert, vec![intermediate], &anchor, 1_000),
@@ -650,7 +700,11 @@ mod chain_tests {
             not_after: 999, // expired
         });
         let cert = make_device_cert(
-            &dev_vk, "https://ca.test", "https://dev.test", "DEV-001", ca_seed.as_bytes(),
+            &dev_vk,
+            "https://ca.test",
+            "https://dev.test",
+            "DEV-001",
+            ca_seed.as_bytes(),
         );
         assert!(matches!(
             validate_chain(cert, vec![], &anchor, 1_000), // now=1000 > not_after=999
@@ -669,7 +723,11 @@ mod chain_tests {
             not_after: u64::MAX,
         });
         let cert = make_device_cert(
-            &dev_vk, "https://ca.test", "https://dev.test", "DEV-001", ca_seed.as_bytes(),
+            &dev_vk,
+            "https://ca.test",
+            "https://dev.test",
+            "DEV-001",
+            ca_seed.as_bytes(),
         );
         assert!(matches!(
             validate_chain(cert, vec![], &anchor, 1_000), // now=1000 < not_before=5000
@@ -706,7 +764,13 @@ mod chain_tests {
         };
         sign_cert(&mut intermediate, root_seed.as_bytes());
 
-        let device_cert = make_device_cert(&dev_vk, "https://int.test", "https://dev.test", "DEV-001", int_seed.as_bytes());
+        let device_cert = make_device_cert(
+            &dev_vk,
+            "https://int.test",
+            "https://dev.test",
+            "DEV-001",
+            int_seed.as_bytes(),
+        );
 
         assert!(matches!(
             validate_chain(device_cert, vec![intermediate], &anchor, 1_000),
@@ -726,7 +790,11 @@ mod chain_tests {
             not_after: u64::MAX,
         }));
         let cert = make_device_cert(
-            &dev_vk, "https://ca.test", "https://dev.test", "DEV-001", ca_seed.as_bytes(),
+            &dev_vk,
+            "https://ca.test",
+            "https://dev.test",
+            "DEV-001",
+            ca_seed.as_bytes(),
         );
         let result = validate_chain_with_store(&cert, &[], &store, 1_000);
         assert!(result.is_ok());
@@ -754,10 +822,17 @@ mod chain_tests {
         }));
         // Cert signed by CA2
         let cert = make_device_cert(
-            &dev_vk, "https://ca2.test", "https://dev.test", "DEV-001", ca2_seed.as_bytes(),
+            &dev_vk,
+            "https://ca2.test",
+            "https://dev.test",
+            "DEV-001",
+            ca2_seed.as_bytes(),
         );
         let result = validate_chain_with_store(&cert, &[], &store, 1_000);
-        assert!(result.is_ok(), "CA2-signed cert must be accepted by store containing CA2");
+        assert!(
+            result.is_ok(),
+            "CA2-signed cert must be accepted by store containing CA2"
+        );
         assert_eq!(result.unwrap().trust_anchor.ca_id, "https://ca2.test");
     }
 
@@ -773,7 +848,11 @@ mod chain_tests {
             not_after: 999, // already expired
         }));
         let cert = make_device_cert(
-            &dev_vk, "https://ca.test", "https://dev.test", "DEV-001", ca_seed.as_bytes(),
+            &dev_vk,
+            "https://ca.test",
+            "https://dev.test",
+            "DEV-001",
+            ca_seed.as_bytes(),
         );
         assert!(matches!(
             validate_chain_with_store(&cert, &[], &store, 1_000),

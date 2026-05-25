@@ -6,15 +6,15 @@
 use pqrascv_core::{
     config::PolicyConfig,
     crypto::{
-        generate_ml_dsa_keypair, CryptoBackend, MlDsaBackend,
-        SIGNING_CONTEXT_CERT, SIGNING_CONTEXT_CRL, SIGNING_CONTEXT_QUOTE,
+        generate_ml_dsa_keypair, CryptoBackend, MlDsaBackend, SIGNING_CONTEXT_CERT,
+        SIGNING_CONTEXT_CRL, SIGNING_CONTEXT_QUOTE,
     },
     error::PqRascvError,
     measurement::SoftwareRoT,
     nonce::{InMemoryNonceLedger, NonceLedger},
     pki::{
-        build_device_certificate, validate_chain, validate_chain_with_store,
-        CaPublicKey, HardwareIdentity, TrustAnchor, TrustStore, CERT_VERSION,
+        build_device_certificate, validate_chain, validate_chain_with_store, CaPublicKey,
+        HardwareIdentity, TrustAnchor, TrustStore, CERT_VERSION,
     },
     provenance::SlsaPredicateBuilder,
     quote::{generate_quote, AttestationQuote, QuoteTimestamp},
@@ -345,10 +345,13 @@ fn compromised_historical_root_cannot_validate_new_device_cert() {
     // Old CA was valid 0–1999; attacker uses it at t=2000
     let old_anchor = make_anchor(old_ca_vk, "https://old-ca.test", 0, 1_999);
     let cert = make_cert_for_ca(&dev_vk, "https://old-ca.test", old_ca_seed.as_bytes());
-    assert!(matches!(
-        validate_chain(cert, vec![], &old_anchor, 2_000),
-        Err(PqRascvError::TrustAnchorExpired)
-    ), "cert signed by expired root must be rejected even with valid signature");
+    assert!(
+        matches!(
+            validate_chain(cert, vec![], &old_anchor, 2_000),
+            Err(PqRascvError::TrustAnchorExpired)
+        ),
+        "cert signed by expired root must be rejected even with valid signature"
+    );
 }
 
 #[test]
@@ -391,7 +394,10 @@ fn retired_rollover_anchor_does_not_validate_after_expiry() {
 
     // At t=3000 old CA is expired; new CA is valid but ca_id doesn't match
     let result = validate_chain_with_store(&cert, &[], &store, 3_000);
-    assert!(result.is_err(), "cert signed by expired anchor must be rejected");
+    assert!(
+        result.is_err(),
+        "cert signed by expired anchor must be rejected"
+    );
 }
 
 #[test]
@@ -403,10 +409,13 @@ fn stale_trust_store_with_all_anchors_expired_fails_explicitly() {
     let store = TrustStore::new(make_anchor(ca_vk, "https://ca.test", 0, 999));
     let cert = make_cert_for_ca(&dev_vk, "https://ca.test", ca_seed.as_bytes());
 
-    assert!(matches!(
-        validate_chain_with_store(&cert, &[], &store, 2_000),
-        Err(PqRascvError::TrustAnchorExpired)
-    ), "stale store must return TrustAnchorExpired, not CertificateInvalid");
+    assert!(
+        matches!(
+            validate_chain_with_store(&cert, &[], &store, 2_000),
+            Err(PqRascvError::TrustAnchorExpired)
+        ),
+        "stale store must return TrustAnchorExpired, not CertificateInvalid"
+    );
 }
 
 #[test]

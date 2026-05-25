@@ -196,7 +196,11 @@ mod tests {
         let root = [0xabu8; 32];
         let commitment = AnchorCommitment::new(root);
         let payload = commitment.to_op_return_payload();
-        assert_eq!(&payload[8..40], &root, "all 32 root bytes must appear in OP_RETURN payload");
+        assert_eq!(
+            &payload[8..40],
+            &root,
+            "all 32 root bytes must appear in OP_RETURN payload"
+        );
         assert_eq!(payload.len(), 40);
     }
 

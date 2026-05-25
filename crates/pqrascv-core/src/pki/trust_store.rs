@@ -26,7 +26,9 @@ impl TrustStore {
     /// Creates a trust store from a single primary trust anchor.
     #[must_use]
     pub fn new(primary: TrustAnchor) -> Self {
-        Self { anchors: alloc::vec![primary] }
+        Self {
+            anchors: alloc::vec![primary],
+        }
     }
 
     /// Adds a rollover anchor.

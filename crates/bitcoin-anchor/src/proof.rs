@@ -99,7 +99,11 @@ impl SpvVerifier {
     /// Creates a verifier with Bitcoin mainnet minimum difficulty (`0x1d00ffff`).
     #[must_use]
     pub fn new(min_confirmations: u32, chain_tip_height: u32) -> Self {
-        Self { min_confirmations, chain_tip_height, max_target_bits: 0x1d00ffff }
+        Self {
+            min_confirmations,
+            chain_tip_height,
+            max_target_bits: 0x1d00ffff,
+        }
     }
 
     /// Override the maximum target bits (lower = more secure).
@@ -112,9 +116,10 @@ impl SpvVerifier {
     pub fn verify(&self, proof: &InclusionProof, quote_hash: &[u8; 32]) -> Result<u32, SpvError> {
         // Step 0: Proof-of-work validation (skip only if max_target_bits == 0)
         if self.max_target_bits != 0
-            && !validate_proof_of_work(&proof.block_header, self.max_target_bits) {
-                return Err(SpvError::InsufficientProofOfWork);
-            }
+            && !validate_proof_of_work(&proof.block_header, self.max_target_bits)
+        {
+            return Err(SpvError::InsufficientProofOfWork);
+        }
 
         // Step 1: Confirmation count
         let confirmations = self
@@ -184,12 +189,22 @@ fn extract_block_merkle_root(header: &[u8]) -> Option<[u8; 32]> {
 
 /// Returns `true` if the block header satisfies the given maximum target difficulty.
 fn validate_proof_of_work(header: &[u8], max_target_bits: u32) -> bool {
-    if header.len() < 80 { return false; }
+    if header.len() < 80 {
+        return false;
+    }
     let block_bits = u32::from_le_bytes([header[72], header[73], header[74], header[75]]);
-    let block_target = match bits_to_target(block_bits) { Some(t) => t, None => return false };
-    let max_target   = match bits_to_target(max_target_bits) { Some(t) => t, None => return false };
+    let block_target = match bits_to_target(block_bits) {
+        Some(t) => t,
+        None => return false,
+    };
+    let max_target = match bits_to_target(max_target_bits) {
+        Some(t) => t,
+        None => return false,
+    };
     // Block's claimed target must be at most as easy as the maximum allowed
-    if block_target > max_target { return false; }
+    if block_target > max_target {
+        return false;
+    }
     // SHA256d(header) must be below the block's target
     hash_below_target(&sha256d(header), &block_target)
 }
@@ -197,16 +212,26 @@ fn validate_proof_of_work(header: &[u8], max_target_bits: u32) -> bool {
 /// Converts Bitcoin compact `bits` to a 32-byte big-endian target value.
 /// Returns `None` for negative, zero, or out-of-range values.
 fn bits_to_target(bits: u32) -> Option<[u8; 32]> {
-    let exp      = (bits >> 24) as usize;
+    let exp = (bits >> 24) as usize;
     let mantissa = (bits & 0x007F_FFFF) as u64;
-    if bits & 0x0080_0000 != 0 { return None; } // negative
-    if mantissa == 0            { return None; } // zero
-    if !(3..=32).contains(&exp) { return None; } // invalid exponent
+    if bits & 0x0080_0000 != 0 {
+        return None;
+    } // negative
+    if mantissa == 0 {
+        return None;
+    } // zero
+    if !(3..=32).contains(&exp) {
+        return None;
+    } // invalid exponent
     let mut target = [0u8; 32];
     let start = 32 - exp;
     target[start] = ((mantissa >> 16) & 0xFF) as u8;
-    if start + 1 < 32 { target[start + 1] = ((mantissa >> 8)  & 0xFF) as u8; }
-    if start + 2 < 32 { target[start + 2] = (mantissa         & 0xFF) as u8; }
+    if start + 1 < 32 {
+        target[start + 1] = ((mantissa >> 8) & 0xFF) as u8;
+    }
+    if start + 2 < 32 {
+        target[start + 2] = (mantissa & 0xFF) as u8;
+    }
     Some(target)
 }
 
@@ -348,7 +373,10 @@ mod tests {
         // Default SpvVerifier enforces mainnet minimum difficulty
         let verifier = SpvVerifier::new(1, 800_001);
         assert!(
-            matches!(verifier.verify(&proof, &quote_hash), Err(SpvError::InsufficientProofOfWork)),
+            matches!(
+                verifier.verify(&proof, &quote_hash),
+                Err(SpvError::InsufficientProofOfWork)
+            ),
             "zero-work header must be rejected"
         );
     }

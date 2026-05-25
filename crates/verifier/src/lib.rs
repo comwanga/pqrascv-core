@@ -16,8 +16,11 @@ use pqrascv_core::{
     config::PolicyConfig,
     crypto::{pub_key_id, CryptoBackend, MlDsaBackend, SIGNING_CONTEXT_QUOTE},
     error::PqRascvError,
-    pki::{validate_chain, validate_chain_with_store, CertChain, DeviceCertificate, TrustAnchor, TrustStore},
     pki::revocation::VerifiedRevocationList,
+    pki::{
+        validate_chain, validate_chain_with_store, CertChain, DeviceCertificate, TrustAnchor,
+        TrustStore,
+    },
     quote::{AttestationQuote, Challenge, PROTOCOL_VERSION},
 };
 
@@ -70,13 +73,21 @@ pub struct PkiVerificationResult {
 
 impl PkiVerificationResult {
     #[must_use]
-    pub fn slsa_level(&self) -> u8 { self.quote.body.provenance.slsa_level() }
+    pub fn slsa_level(&self) -> u8 {
+        self.quote.body.provenance.slsa_level()
+    }
     #[must_use]
-    pub fn firmware_hash(&self) -> &[u8; 32] { &self.quote.body.measurements.firmware_hash }
+    pub fn firmware_hash(&self) -> &[u8; 32] {
+        &self.quote.body.measurements.firmware_hash
+    }
     #[must_use]
-    pub fn nonce(&self) -> &[u8; 32] { &self.quote.body.nonce }
+    pub fn nonce(&self) -> &[u8; 32] {
+        &self.quote.body.nonce
+    }
     #[must_use]
-    pub fn device_serial(&self) -> &str { &self.cert_chain.device_cert.serial }
+    pub fn device_serial(&self) -> &str {
+        &self.cert_chain.device_cert.serial
+    }
 
     /// The CA identifier URI of the trust anchor that validated this chain.
     #[must_use]
@@ -200,7 +211,10 @@ impl Verifier {
         let verifying_key = &chain.device_cert.subject_key;
         let result = self.verify_cbor(cbor, verifying_key, expected_nonce, now_secs)?;
 
-        Ok(PkiVerificationResult { quote: result.quote, cert_chain: chain })
+        Ok(PkiVerificationResult {
+            quote: result.quote,
+            cert_chain: chain,
+        })
     }
 
     /// Verifies a CBOR quote using any currently-valid anchor in a [`TrustStore`].
@@ -224,8 +238,7 @@ impl Verifier {
         expected_nonce: &[u8; 32],
         now_secs: u64,
     ) -> Result<PkiVerificationResult, PqRascvError> {
-        let chain =
-            validate_chain_with_store(&device_cert, &intermediates, trust_store, now_secs)?;
+        let chain = validate_chain_with_store(&device_cert, &intermediates, trust_store, now_secs)?;
 
         if let Some(crl) = crl {
             if crl.is_revoked(&chain.device_cert.serial) {
@@ -236,7 +249,10 @@ impl Verifier {
         let verifying_key = &chain.device_cert.subject_key;
         let result = self.verify_cbor(cbor, verifying_key, expected_nonce, now_secs)?;
 
-        Ok(PkiVerificationResult { quote: result.quote, cert_chain: chain })
+        Ok(PkiVerificationResult {
+            quote: result.quote,
+            cert_chain: chain,
+        })
     }
 
     /// Verifies an already-parsed [`AttestationQuote`]. Useful if you've already
@@ -266,7 +282,12 @@ impl Verifier {
 
         // Re-serialize the body and check the signature over it.
         let body_cbor = quote.body.to_cbor()?;
-        MlDsaBackend.verify(&body_cbor, verifying_key, &quote.signature, SIGNING_CONTEXT_QUOTE)?;
+        MlDsaBackend.verify(
+            &body_cbor,
+            verifying_key,
+            &quote.signature,
+            SIGNING_CONTEXT_QUOTE,
+        )?;
 
         // Finally, check that the quote meets our policy (SLSA level, age, firmware hash, etc.).
         self.policy.evaluate(
@@ -450,8 +471,10 @@ mod tests {
 mod pki_tests {
     use super::*;
     use pqrascv_core::{
-        crypto::{generate_ml_dsa_keypair, MlDsaBackend, CryptoBackend, SIGNING_CONTEXT_CERT,
-                 ML_DSA_65_VERIFYING_KEY_SIZE},
+        crypto::{
+            generate_ml_dsa_keypair, CryptoBackend, MlDsaBackend, ML_DSA_65_VERIFYING_KEY_SIZE,
+            SIGNING_CONTEXT_CERT,
+        },
         measurement::SoftwareRoT,
         pki::{build_device_certificate, CaPublicKey, HardwareIdentity, TrustStore, CERT_VERSION},
         provenance::SlsaPredicateBuilder,
@@ -508,19 +531,32 @@ mod pki_tests {
             not_before: 0,
             not_after: u64::MAX,
         });
-        let device_cert = make_device_cert(&dev_vk, "https://ca.test", "DEV-001", ca_seed.as_bytes());
+        let device_cert =
+            make_device_cert(&dev_vk, "https://ca.test", "DEV-001", ca_seed.as_bytes());
 
         let rot = SoftwareRoT::new(b"fw", None, 1);
         let nonce = [0xAAu8; 32];
         let quote = generate_quote(
-            &rot, &MlDsaBackend, dev_seed.as_bytes(), &dev_vk,
-            &nonce, make_provenance(), QuoteTimestamp::Rtc(1_700_000_000),
-        ).unwrap();
+            &rot,
+            &MlDsaBackend,
+            dev_seed.as_bytes(),
+            &dev_vk,
+            &nonce,
+            make_provenance(),
+            QuoteTimestamp::Rtc(1_700_000_000),
+        )
+        .unwrap();
         let cbor = quote.to_cbor().unwrap();
 
         let verifier = Verifier::new(PolicyConfig::default());
         let result = verifier.verify_cbor_with_pki(
-            &cbor, device_cert, vec![], &anchor, None, &nonce, 1_700_000_100,
+            &cbor,
+            device_cert,
+            vec![],
+            &anchor,
+            None,
+            &nonce,
+            1_700_000_100,
         );
         assert!(result.is_ok());
         assert_eq!(result.unwrap().device_serial(), "DEV-001");
@@ -528,8 +564,10 @@ mod pki_tests {
 
     #[test]
     fn pki_verification_rejects_revoked_device() {
-        use pqrascv_core::pki::revocation::{build_revocation_list, RevocationEntry, RevocationReason};
         use pqrascv_core::crypto::SIGNING_CONTEXT_CRL;
+        use pqrascv_core::pki::revocation::{
+            build_revocation_list, RevocationEntry, RevocationReason,
+        };
 
         let (ca_seed, ca_vk) = generate_ml_dsa_keypair().unwrap();
         let (dev_seed, dev_vk) = generate_ml_dsa_keypair().unwrap();
@@ -539,7 +577,12 @@ mod pki_tests {
             not_before: 0,
             not_after: u64::MAX,
         });
-        let device_cert = make_device_cert(&dev_vk, "https://ca.test", "DEV-REVOKED", ca_seed.as_bytes());
+        let device_cert = make_device_cert(
+            &dev_vk,
+            "https://ca.test",
+            "DEV-REVOKED",
+            ca_seed.as_bytes(),
+        );
 
         let mut crl = build_revocation_list(
             "https://ca.test".to_string(),
@@ -553,21 +596,35 @@ mod pki_tests {
             vec![],
         );
         let crl_tbs = crl.tbs_cbor().unwrap();
-        let crl_sig = MlDsaBackend.sign(&crl_tbs, ca_seed.as_bytes(), SIGNING_CONTEXT_CRL).unwrap();
+        let crl_sig = MlDsaBackend
+            .sign(&crl_tbs, ca_seed.as_bytes(), SIGNING_CONTEXT_CRL)
+            .unwrap();
         crl.issuer_signature = crl_sig.as_ref().to_vec();
         let verified_crl = crl.verify(&ca_vk, 2_000).unwrap();
 
         let rot = SoftwareRoT::new(b"fw", None, 1);
         let nonce = [0xBBu8; 32];
         let quote = generate_quote(
-            &rot, &MlDsaBackend, dev_seed.as_bytes(), &dev_vk,
-            &nonce, make_provenance(), QuoteTimestamp::Rtc(1_700_000_000),
-        ).unwrap();
+            &rot,
+            &MlDsaBackend,
+            dev_seed.as_bytes(),
+            &dev_vk,
+            &nonce,
+            make_provenance(),
+            QuoteTimestamp::Rtc(1_700_000_000),
+        )
+        .unwrap();
         let cbor = quote.to_cbor().unwrap();
 
         let verifier = Verifier::new(PolicyConfig::default());
         let result = verifier.verify_cbor_with_pki(
-            &cbor, device_cert, vec![], &anchor, Some(&verified_crl), &nonce, 1_700_000_100,
+            &cbor,
+            device_cert,
+            vec![],
+            &anchor,
+            Some(&verified_crl),
+            &nonce,
+            1_700_000_100,
         );
         assert!(matches!(result, Err(PqRascvError::CertificateRevoked)));
     }
@@ -585,20 +642,35 @@ mod pki_tests {
             not_before: 0,
             not_after: u64::MAX,
         });
-        let device_cert = make_device_cert(&dev_vk, "https://ca.test", "DEV-001", ca_seed.as_bytes());
+        let device_cert =
+            make_device_cert(&dev_vk, "https://ca.test", "DEV-001", ca_seed.as_bytes());
 
         let rot = SoftwareRoT::new(b"fw", None, 1);
         let nonce = [0xCCu8; 32];
         let quote = generate_quote(
-            &rot, &MlDsaBackend, dev_seed.as_bytes(), &dev_vk,
-            &nonce, make_provenance(), QuoteTimestamp::Rtc(1_700_000_000),
-        ).unwrap();
+            &rot,
+            &MlDsaBackend,
+            dev_seed.as_bytes(),
+            &dev_vk,
+            &nonce,
+            make_provenance(),
+            QuoteTimestamp::Rtc(1_700_000_000),
+        )
+        .unwrap();
         let cbor = quote.to_cbor().unwrap();
 
         let verifier = Verifier::new(PolicyConfig::default());
-        assert!(verifier.verify_cbor_with_pki(
-            &cbor, device_cert, vec![], &anchor, None, &nonce, 1_700_000_100,
-        ).is_err());
+        assert!(verifier
+            .verify_cbor_with_pki(
+                &cbor,
+                device_cert,
+                vec![],
+                &anchor,
+                None,
+                &nonce,
+                1_700_000_100,
+            )
+            .is_err());
     }
 
     #[test]
@@ -627,28 +699,48 @@ mod pki_tests {
             int_subject_key_id,
             HardwareIdentity::TpmEkCertHash([0u8; 32]),
             None,
-            vec![],  // issuer_signature filled in below
+            vec![],                         // issuer_signature filled in below
             "https://int.test".to_string(), // self_id
-            None, // no path length constraint — can sign device cert
+            None,                           // no path length constraint — can sign device cert
         );
         sign_cert(&mut intermediate, root_seed.as_bytes());
 
         // Device cert: signed by intermediate
-        let device_cert = make_device_cert(&dev_vk, "https://int.test", "DEV-CHAIN-001", int_seed.as_bytes());
+        let device_cert = make_device_cert(
+            &dev_vk,
+            "https://int.test",
+            "DEV-CHAIN-001",
+            int_seed.as_bytes(),
+        );
 
         let rot = SoftwareRoT::new(b"fw", None, 1);
         let nonce = [0xDDu8; 32];
         let quote = generate_quote(
-            &rot, &MlDsaBackend, dev_seed.as_bytes(), &dev_vk,
-            &nonce, make_provenance(), QuoteTimestamp::Rtc(1_700_000_000),
-        ).unwrap();
+            &rot,
+            &MlDsaBackend,
+            dev_seed.as_bytes(),
+            &dev_vk,
+            &nonce,
+            make_provenance(),
+            QuoteTimestamp::Rtc(1_700_000_000),
+        )
+        .unwrap();
         let cbor = quote.to_cbor().unwrap();
 
         let verifier = Verifier::new(PolicyConfig::default());
         let result = verifier.verify_cbor_with_pki(
-            &cbor, device_cert, vec![intermediate], &anchor, None, &nonce, 1_700_000_100,
+            &cbor,
+            device_cert,
+            vec![intermediate],
+            &anchor,
+            None,
+            &nonce,
+            1_700_000_100,
         );
-        assert!(result.is_ok(), "intermediate chain verification failed: {result:?}");
+        assert!(
+            result.is_ok(),
+            "intermediate chain verification failed: {result:?}"
+        );
         assert_eq!(result.unwrap().device_serial(), "DEV-CHAIN-001");
     }
 
@@ -664,19 +756,34 @@ mod pki_tests {
             not_before: 0,
             not_after: u64::MAX,
         });
-        let device_cert = make_device_cert(&dev_vk, "https://audit.ca", "DEV-AUDIT", ca_seed.as_bytes());
+        let device_cert =
+            make_device_cert(&dev_vk, "https://audit.ca", "DEV-AUDIT", ca_seed.as_bytes());
 
         let rot = SoftwareRoT::new(b"fw", None, 1);
         let nonce = [0xCCu8; 32];
         let quote = generate_quote(
-            &rot, &MlDsaBackend, dev_seed.as_bytes(), &dev_vk,
-            &nonce, make_provenance(), QuoteTimestamp::Rtc(1_700_000_000),
-        ).unwrap();
+            &rot,
+            &MlDsaBackend,
+            dev_seed.as_bytes(),
+            &dev_vk,
+            &nonce,
+            make_provenance(),
+            QuoteTimestamp::Rtc(1_700_000_000),
+        )
+        .unwrap();
         let cbor = quote.to_cbor().unwrap();
 
         let verifier = Verifier::new(PolicyConfig::default());
         let result = verifier
-            .verify_cbor_with_pki(&cbor, device_cert, vec![], &anchor, None, &nonce, 1_700_000_100)
+            .verify_cbor_with_pki(
+                &cbor,
+                device_cert,
+                vec![],
+                &anchor,
+                None,
+                &nonce,
+                1_700_000_100,
+            )
             .unwrap();
 
         assert_eq!(result.trust_anchor_id(), "https://audit.ca");
@@ -695,19 +802,32 @@ mod pki_tests {
             not_before: 0,
             not_after: u64::MAX,
         }));
-        let device_cert = make_device_cert(&dev_vk, "https://store.ca", "DEV-STORE", ca_seed.as_bytes());
+        let device_cert =
+            make_device_cert(&dev_vk, "https://store.ca", "DEV-STORE", ca_seed.as_bytes());
 
         let rot = SoftwareRoT::new(b"fw", None, 1);
         let nonce = [0xDDu8; 32];
         let quote = generate_quote(
-            &rot, &MlDsaBackend, dev_seed.as_bytes(), &dev_vk,
-            &nonce, make_provenance(), QuoteTimestamp::Rtc(1_700_000_000),
-        ).unwrap();
+            &rot,
+            &MlDsaBackend,
+            dev_seed.as_bytes(),
+            &dev_vk,
+            &nonce,
+            make_provenance(),
+            QuoteTimestamp::Rtc(1_700_000_000),
+        )
+        .unwrap();
         let cbor = quote.to_cbor().unwrap();
 
         let verifier = Verifier::new(PolicyConfig::default());
         let result = verifier.verify_cbor_with_trust_store(
-            &cbor, device_cert, vec![], &store, None, &nonce, 1_700_000_100,
+            &cbor,
+            device_cert,
+            vec![],
+            &store,
+            None,
+            &nonce,
+            1_700_000_100,
         );
         assert!(result.is_ok());
         assert_eq!(result.unwrap().trust_anchor_id(), "https://store.ca");
@@ -724,19 +844,32 @@ mod pki_tests {
             not_before: 0,
             not_after: 999,
         }));
-        let device_cert = make_device_cert(&dev_vk, "https://expired.ca", "DEV-EXP", ca_seed.as_bytes());
+        let device_cert =
+            make_device_cert(&dev_vk, "https://expired.ca", "DEV-EXP", ca_seed.as_bytes());
 
         let rot = SoftwareRoT::new(b"fw", None, 1);
         let nonce = [0xEEu8; 32];
         let quote = generate_quote(
-            &rot, &MlDsaBackend, dev_seed.as_bytes(), &dev_vk,
-            &nonce, make_provenance(), QuoteTimestamp::Rtc(1_700_000_000),
-        ).unwrap();
+            &rot,
+            &MlDsaBackend,
+            dev_seed.as_bytes(),
+            &dev_vk,
+            &nonce,
+            make_provenance(),
+            QuoteTimestamp::Rtc(1_700_000_000),
+        )
+        .unwrap();
         let cbor = quote.to_cbor().unwrap();
 
         let verifier = Verifier::new(PolicyConfig::default());
         let result = verifier.verify_cbor_with_trust_store(
-            &cbor, device_cert, vec![], &store, None, &nonce, 1_700_000_100,
+            &cbor,
+            device_cert,
+            vec![],
+            &store,
+            None,
+            &nonce,
+            1_700_000_100,
         );
         assert!(matches!(result, Err(PqRascvError::TrustAnchorExpired)));
     }

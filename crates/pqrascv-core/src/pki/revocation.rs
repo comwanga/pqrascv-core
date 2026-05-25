@@ -171,7 +171,9 @@ struct CrlTbs<'a> {
 #[cfg(all(test, feature = "alloc", feature = "std"))]
 mod tests {
     use super::*;
-    use crate::crypto::{generate_ml_dsa_keypair, MlDsaBackend, CryptoBackend, SIGNING_CONTEXT_CRL};
+    use crate::crypto::{
+        generate_ml_dsa_keypair, CryptoBackend, MlDsaBackend, SIGNING_CONTEXT_CRL,
+    };
 
     fn make_signed_crl(
         entries: Vec<RevocationEntry>,
@@ -217,7 +219,10 @@ mod tests {
         let (ca_seed, ca_vk) = generate_ml_dsa_keypair().unwrap();
         let crl = make_signed_crl(vec![], ca_seed.as_bytes(), 1_000, 2_000);
         // now_secs = 3_000 > next_update = 2_000
-        assert!(matches!(crl.verify(&ca_vk, 3_000), Err(PqRascvError::PolicyViolation)));
+        assert!(matches!(
+            crl.verify(&ca_vk, 3_000),
+            Err(PqRascvError::PolicyViolation)
+        ));
     }
 
     #[test]

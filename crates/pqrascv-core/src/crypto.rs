@@ -262,7 +262,9 @@ mod tests {
         let backend = MlDsaBackend;
         let message = b"hello pqrascv-core";
 
-        let sig = backend.sign(message, seed.as_bytes(), b"test-ctx").expect("sign failed");
+        let sig = backend
+            .sign(message, seed.as_bytes(), b"test-ctx")
+            .expect("sign failed");
         backend
             .verify(message, &vk, sig.as_ref(), b"test-ctx")
             .expect("verify failed");
@@ -277,7 +279,9 @@ mod tests {
         let sig = backend
             .sign(b"original", seed.as_bytes(), b"test-ctx")
             .expect("sign failed");
-        assert!(backend.verify(b"tampered", &vk, sig.as_ref(), b"test-ctx").is_err());
+        assert!(backend
+            .verify(b"tampered", &vk, sig.as_ref(), b"test-ctx")
+            .is_err());
     }
 
     #[cfg(feature = "std")]
@@ -331,11 +335,15 @@ mod tests {
         assert_ne!(sig_a, sig_b, "contexts must produce distinct signatures");
 
         assert!(
-            backend.verify(message, &vk, sig_a.as_ref(), SIGNING_CONTEXT_CERT).is_err(),
+            backend
+                .verify(message, &vk, sig_a.as_ref(), SIGNING_CONTEXT_CERT)
+                .is_err(),
             "quote sig must not verify under cert context"
         );
         assert!(
-            backend.verify(message, &vk, sig_b.as_ref(), SIGNING_CONTEXT_QUOTE).is_err(),
+            backend
+                .verify(message, &vk, sig_b.as_ref(), SIGNING_CONTEXT_QUOTE)
+                .is_err(),
             "cert sig must not verify under quote context"
         );
     }

@@ -34,9 +34,9 @@ use crate::{
 #[cfg(feature = "alloc")]
 fn hardware_backend_from_identity(identity: &HardwareIdentity) -> HardwareBackendKind {
     match identity {
-        HardwareIdentity::TpmEkCertHash(_)     => HardwareBackendKind::Tpm2,
+        HardwareIdentity::TpmEkCertHash(_) => HardwareBackendKind::Tpm2,
         HardwareIdentity::DiceCdiPublicHash(_) => HardwareBackendKind::Dice,
-        HardwareIdentity::TdxMrtd(_)           => HardwareBackendKind::IntelTdx,
+        HardwareIdentity::TdxMrtd(_) => HardwareBackendKind::IntelTdx,
         HardwareIdentity::SevSnpMeasurement(_) => HardwareBackendKind::AmdSevSnp,
     }
 }
@@ -167,23 +167,24 @@ impl<'a> PolicyContext<'a> {
         bitcoin_confirmations: Option<u32>,
         now_secs: u64,
     ) -> Self {
-        let hardware_backend = cert_chain
-            .map_or(HardwareBackendKind::SoftwareUnsafe, |c| hardware_backend_from_identity(&c.device_cert.hardware_identity));
+        let hardware_backend = cert_chain.map_or(HardwareBackendKind::SoftwareUnsafe, |c| {
+            hardware_backend_from_identity(&c.device_cert.hardware_identity)
+        });
 
         let clock = match quote.body.timestamp {
             QuoteTimestamp::Rtc(ts) => ClockEvidence::TrustedRtc(ts),
-            QuoteTimestamp::NoRtc  => ClockEvidence::NoRtc,
+            QuoteTimestamp::NoRtc => ClockEvidence::NoRtc,
         };
 
         PolicyContext {
-            protocol_version:       quote.body.version,
+            protocol_version: quote.body.version,
             clock,
             now_secs,
-            firmware_hash:          &quote.body.measurements.firmware_hash,
-            slsa_level:             quote.body.provenance.slsa_level(),
-            builder_id:             Some(quote.body.provenance.build.builder_id.as_str()),
+            firmware_hash: &quote.body.measurements.firmware_hash,
+            slsa_level: quote.body.provenance.slsa_level(),
+            builder_id: Some(quote.body.provenance.build.builder_id.as_str()),
             hardware_backend,
-            has_cert_chain:         cert_chain.is_some(),
+            has_cert_chain: cert_chain.is_some(),
             has_external_provenance: false, // NOT_IMPLEMENTED until Sigstore lands
             bitcoin_confirmations,
         }
@@ -418,7 +419,16 @@ mod context_builder_tests {
             .with_slsa_level(2)
             .build()
             .unwrap();
-        generate_quote(&rot, &MlDsaBackend, sk.as_bytes(), &vk, &[0x42u8; 32], prov, ts).unwrap()
+        generate_quote(
+            &rot,
+            &MlDsaBackend,
+            sk.as_bytes(),
+            &vk,
+            &[0x42u8; 32],
+            prov,
+            ts,
+        )
+        .unwrap()
     }
 
     #[test]

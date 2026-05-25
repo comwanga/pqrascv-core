@@ -219,7 +219,10 @@ mod tests {
     fn verify_sigstore_always_returns_not_implemented() {
         let bundle = dummy_bundle();
         assert!(
-            matches!(bundle.verify_sigstore(), Err(PqRascvError::ProvenanceBundleInvalid)),
+            matches!(
+                bundle.verify_sigstore(),
+                Err(PqRascvError::ProvenanceBundleInvalid)
+            ),
             "verify_sigstore must fail explicitly until Sigstore integration is complete"
         );
     }

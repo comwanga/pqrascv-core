@@ -91,6 +91,9 @@ mod error_tests {
     #[test]
     fn trust_anchor_expired_displays_correctly() {
         let e = PqRascvError::TrustAnchorExpired;
-        assert_eq!(e.to_string(), "trust anchor is outside its valid time window");
+        assert_eq!(
+            e.to_string(),
+            "trust anchor is outside its valid time window"
+        );
     }
 }

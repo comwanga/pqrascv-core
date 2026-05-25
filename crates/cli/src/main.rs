@@ -149,7 +149,16 @@ fn run() -> anyhow::Result<()> {
             slsa_level,
             nonce,
             out,
-        } => cmd_attest(seed, vk, firmware, model, builder, slsa_level, nonce.as_deref(), out),
+        } => cmd_attest(
+            seed,
+            vk,
+            firmware,
+            model,
+            builder,
+            slsa_level,
+            nonce.as_deref(),
+            out,
+        ),
         Command::Verify {
             vk,
             quote,
@@ -159,7 +168,16 @@ fn run() -> anyhow::Result<()> {
             min_slsa_level,
             max_age,
             allow_rtcless,
-        } => cmd_verify(vk, quote, &nonce, expected_hash.as_deref(), json, min_slsa_level, max_age, allow_rtcless),
+        } => cmd_verify(
+            vk,
+            quote,
+            &nonce,
+            expected_hash.as_deref(),
+            json,
+            min_slsa_level,
+            max_age,
+            allow_rtcless,
+        ),
     }
 }
 
@@ -321,7 +339,10 @@ fn cmd_verify(
             if let Some(expected) = expected_hash_hex {
                 if actual_hash != expected {
                     if json {
-                        println!(r#"{{"verification":"FAILED","reason":"Firmware hash mismatch","expected":"{}","actual":"{}"}}"#, expected, actual_hash);
+                        println!(
+                            r#"{{"verification":"FAILED","reason":"Firmware hash mismatch","expected":"{}","actual":"{}"}}"#,
+                            expected, actual_hash
+                        );
                     } else {
                         println!("✗  Verification FAILED: Firmware hash mismatch");
                         println!("   Expected: {expected}");

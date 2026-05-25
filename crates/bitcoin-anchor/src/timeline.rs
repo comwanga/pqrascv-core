@@ -89,7 +89,10 @@ impl TimelineMerkleAggregator {
         while nodes.len() > 1 {
             let is_last_odd = current_index == nodes.len() - 1 && nodes.len() % 2 == 1;
             if is_last_odd {
-                path.push(ProofStep { sibling_hash: None, is_left: false });
+                path.push(ProofStep {
+                    sibling_hash: None,
+                    is_left: false,
+                });
             } else {
                 let sibling_index = if current_index % 2 == 0 {
                     current_index + 1

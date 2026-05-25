@@ -72,21 +72,29 @@ pub struct MerkleAggregator {
 
 impl MerkleAggregator {
     #[must_use]
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     pub fn add_quote_hash(&mut self, hash: [u8; 32]) {
         self.quote_hashes.push(hash);
     }
 
     #[must_use]
-    pub fn len(&self) -> usize { self.quote_hashes.len() }
+    pub fn len(&self) -> usize {
+        self.quote_hashes.len()
+    }
 
     #[must_use]
-    pub fn is_empty(&self) -> bool { self.quote_hashes.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.quote_hashes.is_empty()
+    }
 
     #[must_use]
     pub fn root(&self) -> Option<[u8; 32]> {
-        if self.quote_hashes.is_empty() { return None; }
+        if self.quote_hashes.is_empty() {
+            return None;
+        }
         let mut nodes: Vec<[u8; 32]> = self.quote_hashes.iter().map(|h| leaf_hash(h)).collect();
         while nodes.len() > 1 {
             nodes = next_layer(&nodes);
@@ -96,7 +104,9 @@ impl MerkleAggregator {
 
     #[must_use]
     pub fn inclusion_proof(&self, index: usize) -> Option<MerkleProofPath> {
-        if index >= self.quote_hashes.len() { return None; }
+        if index >= self.quote_hashes.len() {
+            return None;
+        }
 
         let mut nodes: Vec<[u8; 32]> = self.quote_hashes.iter().map(|h| leaf_hash(h)).collect();
         let leaf = nodes[index];
@@ -107,7 +117,10 @@ impl MerkleAggregator {
             let is_last_odd = idx == nodes.len() - 1 && nodes.len() % 2 == 1;
             if is_last_odd {
                 // Promoted — no sibling at this level
-                path.push(ProofStep { sibling_hash: None, is_left: false });
+                path.push(ProofStep {
+                    sibling_hash: None,
+                    is_left: false,
+                });
             } else {
                 let sibling = if idx % 2 == 0 { idx + 1 } else { idx - 1 };
                 path.push(ProofStep {
@@ -119,7 +132,11 @@ impl MerkleAggregator {
             idx /= 2;
         }
 
-        Some(MerkleProofPath { leaf_hash: leaf, path, root: nodes[0] })
+        Some(MerkleProofPath {
+            leaf_hash: leaf,
+            path,
+            root: nodes[0],
+        })
     }
 }
 
@@ -202,7 +219,9 @@ mod tests {
     #[test]
     fn inclusion_proof_verifies_all_indices() {
         let mut agg = MerkleAggregator::new();
-        for i in 0u8..8 { agg.add_quote_hash([i; 32]); }
+        for i in 0u8..8 {
+            agg.add_quote_hash([i; 32]);
+        }
         for i in 0..8 {
             let proof = agg.inclusion_proof(i).unwrap();
             assert!(proof.verify(), "proof for index {i} must verify");
@@ -213,7 +232,9 @@ mod tests {
     #[test]
     fn inclusion_proof_verifies_odd_count() {
         let mut agg = MerkleAggregator::new();
-        for i in 0u8..5 { agg.add_quote_hash([i; 32]); }
+        for i in 0u8..5 {
+            agg.add_quote_hash([i; 32]);
+        }
         for i in 0..5 {
             let proof = agg.inclusion_proof(i).unwrap();
             assert!(proof.verify(), "odd-tree proof for index {i} must verify");
