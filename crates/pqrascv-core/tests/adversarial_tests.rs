@@ -188,7 +188,9 @@ fn cert_with_forged_tbs_fails_chain_validation() {
     let (_, dev_vk) = generate_ml_dsa_keypair().unwrap();
     let anchor = TrustAnchor::new(CaPublicKey {
         key_bytes: ca_vk,
-        ca_id: "https://ca.test",
+        ca_id: "https://ca.test".to_string(),
+        not_before: 0,
+        not_after: u64::MAX,
     });
 
     let subject_key_id = pqrascv_core::crypto::pub_key_id(&dev_vk);
@@ -223,7 +225,9 @@ fn cert_with_wrong_issuer_id_fails_chain_validation() {
     let (_, dev_vk) = generate_ml_dsa_keypair().unwrap();
     let anchor = TrustAnchor::new(CaPublicKey {
         key_bytes: ca_vk,
-        ca_id: "https://ca.test",
+        ca_id: "https://ca.test".to_string(),
+        not_before: 0,
+        not_after: u64::MAX,
     });
 
     let subject_key_id = pqrascv_core::crypto::pub_key_id(&dev_vk);
