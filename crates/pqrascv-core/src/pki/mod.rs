@@ -419,7 +419,7 @@ pub fn validate_chain(
 
     // Build expected issuer ID sequence: root_ca.ca_id, int[0].self_id, int[1].self_id, ...
     let mut issuer_ids: Vec<String> = Vec::with_capacity(intermediates.len() + 1);
-    issuer_ids.push(trust_anchor.root_ca.ca_id.to_owned());
+    issuer_ids.push(trust_anchor.root_ca.ca_id.clone());
     for int in &intermediates {
         issuer_ids.push(int.self_id.clone());
     }
@@ -518,8 +518,8 @@ pub fn validate_chain(
 /// or propagates errors from signature/CBOR operations.
 #[cfg(feature = "alloc")]
 pub fn validate_chain_with_store(
-    device_cert: DeviceCertificate,
-    intermediates: Vec<DeviceCertificate>,
+    device_cert: &DeviceCertificate,
+    intermediates: &[DeviceCertificate],
     trust_store: &trust_store::TrustStore,
     now_secs: u64,
 ) -> Result<CertChain, PqRascvError> {
@@ -532,7 +532,7 @@ pub fn validate_chain_with_store(
 
     for anchor in valid_anchors {
         if let Ok(chain) =
-            validate_chain(device_cert.clone(), intermediates.clone(), anchor, now_secs)
+            validate_chain(device_cert.clone(), intermediates.to_vec(), anchor, now_secs)
         {
             return Ok(chain);
         }
@@ -728,7 +728,7 @@ mod chain_tests {
         let cert = make_device_cert(
             &dev_vk, "https://ca.test", "https://dev.test", "DEV-001", ca_seed.as_bytes(),
         );
-        let result = validate_chain_with_store(cert, vec![], &store, 1_000);
+        let result = validate_chain_with_store(&cert, &[], &store, 1_000);
         assert!(result.is_ok());
         assert_eq!(result.unwrap().trust_anchor.ca_id, "https://ca.test");
     }
@@ -756,7 +756,7 @@ mod chain_tests {
         let cert = make_device_cert(
             &dev_vk, "https://ca2.test", "https://dev.test", "DEV-001", ca2_seed.as_bytes(),
         );
-        let result = validate_chain_with_store(cert, vec![], &store, 1_000);
+        let result = validate_chain_with_store(&cert, &[], &store, 1_000);
         assert!(result.is_ok(), "CA2-signed cert must be accepted by store containing CA2");
         assert_eq!(result.unwrap().trust_anchor.ca_id, "https://ca2.test");
     }
@@ -776,7 +776,7 @@ mod chain_tests {
             &dev_vk, "https://ca.test", "https://dev.test", "DEV-001", ca_seed.as_bytes(),
         );
         assert!(matches!(
-            validate_chain_with_store(cert, vec![], &store, 1_000),
+            validate_chain_with_store(&cert, &[], &store, 1_000),
             Err(PqRascvError::TrustAnchorExpired)
         ));
     }
