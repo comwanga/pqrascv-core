@@ -21,7 +21,8 @@ use pqrascv_core::{
         validate_chain, validate_chain_with_store, CertChain, DeviceCertificate, TrustAnchor,
         TrustStore,
     },
-    provenance_v2::{ExternalProvenanceBundle, SigstoreConfig},
+    policy::{PolicyContext, PolicyEngineV2},
+    provenance_v2::{ExternalProvenanceBundle, SigstoreConfig, VerifiedProvenance},
     quote::{AttestationQuote, Challenge, PROTOCOL_VERSION},
 };
 
@@ -127,13 +128,22 @@ impl PkiVerificationResult {
 /// ```
 pub struct Verifier {
     policy: PolicyConfig,
+    engine: PolicyEngineV2,
 }
 
 impl Verifier {
     /// Creates a new [`Verifier`] with the given policy.
     #[must_use]
     pub fn new(policy: PolicyConfig) -> Self {
-        Self { policy }
+        Self { policy, engine: PolicyEngineV2::new(vec![]) }
+    }
+
+    /// Creates a [`Verifier`] with both a legacy [`PolicyConfig`] and a
+    /// [`PolicyEngineV2`]. The engine is evaluated on every verification
+    /// path with the richest context available.
+    #[must_use]
+    pub fn with_engine(policy: PolicyConfig, engine: PolicyEngineV2) -> Self {
+        Self { policy, engine }
     }
 
     /// Verifies a CBOR-encoded [`AttestationQuote`].
@@ -287,6 +297,27 @@ impl Verifier {
         Ok(result)
     }
 
+    fn verify_signature_only(
+        &self,
+        quote: &AttestationQuote,
+        verifying_key: &[u8],
+        expected_nonce: &[u8; 32],
+    ) -> Result<(), PqRascvError> {
+        if quote.body.version != PROTOCOL_VERSION {
+            return Err(PqRascvError::UnsupportedVersion);
+        }
+        if &quote.body.nonce != expected_nonce {
+            return Err(PqRascvError::VerificationFailed);
+        }
+        let expected_id = pub_key_id(verifying_key);
+        if quote.body.pub_key_id != expected_id {
+            return Err(PqRascvError::VerificationFailed);
+        }
+        let body_cbor = quote.body.to_cbor()?;
+        MlDsaBackend.verify(&body_cbor, verifying_key, &quote.signature, SIGNING_CONTEXT_QUOTE)?;
+        Ok(())
+    }
+
     /// Verifies an already-parsed [`AttestationQuote`]. Useful if you've already
     /// deserialized the CBOR yourself and don't want to do it twice.
     pub fn verify_quote(
@@ -296,32 +327,8 @@ impl Verifier {
         expected_nonce: &[u8; 32],
         now_secs: u64,
     ) -> Result<(), PqRascvError> {
-        // Reject unknown protocol versions before doing any other work.
-        if quote.body.version != PROTOCOL_VERSION {
-            return Err(PqRascvError::UnsupportedVersion);
-        }
+        self.verify_signature_only(quote, verifying_key, expected_nonce)?;
 
-        // Nonce must match what we originally sent — if it doesn't, this is a replay or mix-up.
-        if &quote.body.nonce != expected_nonce {
-            return Err(PqRascvError::VerificationFailed);
-        }
-
-        // Make sure the quote was signed with the key we actually trust.
-        let expected_id = pub_key_id(verifying_key);
-        if quote.body.pub_key_id != expected_id {
-            return Err(PqRascvError::VerificationFailed);
-        }
-
-        // Re-serialize the body and check the signature over it.
-        let body_cbor = quote.body.to_cbor()?;
-        MlDsaBackend.verify(
-            &body_cbor,
-            verifying_key,
-            &quote.signature,
-            SIGNING_CONTEXT_QUOTE,
-        )?;
-
-        // Finally, check that the quote meets our policy (SLSA level, age, firmware hash, etc.).
         self.policy.evaluate(
             quote.body.provenance.slsa_level(),
             &quote.body.measurements.firmware_hash,
@@ -329,6 +336,9 @@ impl Verifier {
             quote.body.timestamp,
             now_secs,
         )?;
+
+        let ctx = PolicyContext::from_verified_quote(quote, None, None, now_secs, None);
+        self.engine.evaluate(&ctx)?;
 
         Ok(())
     }
@@ -590,6 +600,33 @@ mod tests {
         assert_eq!(result.slsa_level(), 2);
         assert_eq!(result.firmware_hash(), &expected_firmware_hash);
         assert_eq!(result.nonce(), &[0x77u8; 32]);
+    }
+
+    #[test]
+    fn engine_rejects_software_rot_via_verify_cbor() {
+        use pqrascv_core::policy::{PolicyEngineV2, PolicyRule};
+
+        let (_, vk, quote) = setup();
+        let cbor = quote.to_cbor().unwrap();
+        let verifier = Verifier::with_engine(
+            PolicyConfig::default(),
+            PolicyEngineV2::new(vec![PolicyRule::RequireHardwareBackend]),
+        );
+        let result = verifier.verify_cbor(&cbor, &vk, &[0x77u8; 32], 1_700_000_600);
+        assert!(
+            matches!(result, Err(PqRascvError::PolicyViolation)),
+            "RequireHardwareBackend must reject SoftwareRoT, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn empty_engine_does_not_break_existing_verify_cbor() {
+        use pqrascv_core::policy::PolicyEngineV2;
+
+        let (_, vk, quote) = setup();
+        let cbor = quote.to_cbor().unwrap();
+        let verifier = Verifier::with_engine(PolicyConfig::default(), PolicyEngineV2::new(vec![]));
+        assert!(verifier.verify_cbor(&cbor, &vk, &[0x77u8; 32], 1_700_000_600).is_ok());
     }
 }
 
