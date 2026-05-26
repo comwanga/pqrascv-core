@@ -208,24 +208,29 @@ impl Verifier {
         expected_nonce: &[u8; 32],
         now_secs: u64,
     ) -> Result<PkiVerificationResult, PqRascvError> {
-        // Step 1: Validate certificate chain — sole source of the trusted signing key
         let chain = validate_chain(device_cert, intermediates, trust_anchor, now_secs)?;
 
-        // Step 2: Revocation check before any signature work
         if let Some(crl) = crl {
             if crl.is_revoked(&chain.device_cert.serial) {
                 return Err(PqRascvError::CertificateRevoked);
             }
         }
 
-        // Step 3: Verify the quote against the key from the validated certificate
-        let verifying_key = &chain.device_cert.subject_key;
-        let result = self.verify_cbor(cbor, verifying_key, expected_nonce, now_secs)?;
+        let quote = AttestationQuote::from_cbor(cbor)?;
+        self.verify_signature_only(&quote, &chain.device_cert.subject_key, expected_nonce)?;
 
-        Ok(PkiVerificationResult {
-            quote: result.quote,
-            cert_chain: chain,
-        })
+        self.policy.evaluate(
+            quote.body.provenance.slsa_level(),
+            &quote.body.measurements.firmware_hash,
+            quote.body.measurements.event_counter,
+            quote.body.timestamp,
+            now_secs,
+        )?;
+
+        let ctx = PolicyContext::from_verified_quote(&quote, Some(&chain), None, now_secs, None);
+        self.engine.evaluate(&ctx)?;
+
+        Ok(PkiVerificationResult { quote, cert_chain: chain })
     }
 
     /// Verifies a CBOR quote using any currently-valid anchor in a [`TrustStore`].
@@ -257,13 +262,21 @@ impl Verifier {
             }
         }
 
-        let verifying_key = &chain.device_cert.subject_key;
-        let result = self.verify_cbor(cbor, verifying_key, expected_nonce, now_secs)?;
+        let quote = AttestationQuote::from_cbor(cbor)?;
+        self.verify_signature_only(&quote, &chain.device_cert.subject_key, expected_nonce)?;
 
-        Ok(PkiVerificationResult {
-            quote: result.quote,
-            cert_chain: chain,
-        })
+        self.policy.evaluate(
+            quote.body.provenance.slsa_level(),
+            &quote.body.measurements.firmware_hash,
+            quote.body.measurements.event_counter,
+            quote.body.timestamp,
+            now_secs,
+        )?;
+
+        let ctx = PolicyContext::from_verified_quote(&quote, Some(&chain), None, now_secs, None);
+        self.engine.evaluate(&ctx)?;
+
+        Ok(PkiVerificationResult { quote, cert_chain: chain })
     }
 
     /// Verifies a CBOR quote and an accompanying Sigstore provenance bundle.
@@ -292,9 +305,24 @@ impl Verifier {
         bundle: &ExternalProvenanceBundle,
         sigstore_config: &SigstoreConfig,
     ) -> Result<VerificationResult, PqRascvError> {
-        let result = self.verify_cbor(cbor, verifying_key, expected_nonce, now_secs)?;
-        bundle.verify_all(sigstore_config, result.firmware_hash(), now_secs)?;
-        Ok(result)
+        let quote = AttestationQuote::from_cbor(cbor)?;
+        self.verify_signature_only(&quote, verifying_key, expected_nonce)?;
+
+        let vp: VerifiedProvenance =
+            bundle.verify_all(sigstore_config, &quote.body.measurements.firmware_hash, now_secs)?;
+
+        self.policy.evaluate(
+            quote.body.provenance.slsa_level(),
+            &quote.body.measurements.firmware_hash,
+            quote.body.measurements.event_counter,
+            quote.body.timestamp,
+            now_secs,
+        )?;
+
+        let ctx = PolicyContext::from_verified_quote(&quote, None, None, now_secs, Some(&vp));
+        self.engine.evaluate(&ctx)?;
+
+        Ok(VerificationResult { quote })
     }
 
     fn verify_signature_only(
@@ -1035,5 +1063,84 @@ mod pki_tests {
             1_700_000_100,
         );
         assert!(matches!(result, Err(PqRascvError::TrustAnchorExpired)));
+    }
+
+    #[test]
+    fn engine_require_cert_chain_passes_in_verify_cbor_with_pki() {
+        use pqrascv_core::policy::{PolicyEngineV2, PolicyRule};
+
+        let (ca_seed, ca_vk) = generate_ml_dsa_keypair().unwrap();
+        let (dev_seed, dev_vk) = generate_ml_dsa_keypair().unwrap();
+        let anchor = TrustAnchor::new(CaPublicKey {
+            key_bytes: ca_vk,
+            ca_id: "https://ca.test".to_string(),
+            not_before: 0,
+            not_after: u64::MAX,
+        });
+        let device_cert = make_device_cert(&dev_vk, "https://ca.test", "DEV-E1", ca_seed.as_bytes());
+
+        let rot = SoftwareRoT::new(b"fw", None, 1);
+        let nonce = [0xE1u8; 32];
+        let quote = generate_quote(
+            &rot,
+            &MlDsaBackend,
+            dev_seed.as_bytes(),
+            &dev_vk,
+            &nonce,
+            make_provenance(),
+            QuoteTimestamp::Rtc(1_700_000_000),
+        )
+        .unwrap();
+        let cbor = quote.to_cbor().unwrap();
+
+        let verifier = Verifier::with_engine(
+            PolicyConfig::default(),
+            PolicyEngineV2::new(vec![PolicyRule::RequireCertificateChain]),
+        );
+        let result = verifier.verify_cbor_with_pki(
+            &cbor,
+            device_cert,
+            vec![],
+            &anchor,
+            None,
+            &nonce,
+            1_700_000_100,
+        );
+        assert!(
+            result.is_ok(),
+            "RequireCertificateChain must pass when chain is provided: {result:?}"
+        );
+    }
+
+    #[test]
+    fn engine_require_cert_chain_fails_in_verify_cbor() {
+        use pqrascv_core::policy::{PolicyEngineV2, PolicyRule};
+
+        let (_, vk, quote) = {
+            let (sk, vk) = generate_ml_dsa_keypair().unwrap();
+            let rot = SoftwareRoT::new(b"fw", None, 1);
+            let nonce = [0xE2u8; 32];
+            let quote = generate_quote(
+                &rot,
+                &MlDsaBackend,
+                sk.as_bytes(),
+                &vk,
+                &nonce,
+                make_provenance(),
+                QuoteTimestamp::Rtc(1_700_000_000),
+            )
+            .unwrap();
+            (sk, vk, quote)
+        };
+        let cbor = quote.to_cbor().unwrap();
+
+        let verifier = Verifier::with_engine(
+            PolicyConfig::default(),
+            PolicyEngineV2::new(vec![PolicyRule::RequireCertificateChain]),
+        );
+        assert!(matches!(
+            verifier.verify_cbor(&cbor, &vk, &[0xE2u8; 32], 1_700_000_600),
+            Err(PqRascvError::PolicyViolation)
+        ));
     }
 }
