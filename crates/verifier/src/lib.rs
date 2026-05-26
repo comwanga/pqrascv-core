@@ -135,7 +135,10 @@ impl Verifier {
     /// Creates a new [`Verifier`] with the given policy.
     #[must_use]
     pub fn new(policy: PolicyConfig) -> Self {
-        Self { policy, engine: PolicyEngineV2::new(vec![]) }
+        Self {
+            policy,
+            engine: PolicyEngineV2::new(vec![]),
+        }
     }
 
     /// Creates a [`Verifier`] with both a legacy [`PolicyConfig`] and a
@@ -230,7 +233,10 @@ impl Verifier {
         let ctx = PolicyContext::from_verified_quote(&quote, Some(&chain), None, now_secs, None);
         self.engine.evaluate(&ctx)?;
 
-        Ok(PkiVerificationResult { quote, cert_chain: chain })
+        Ok(PkiVerificationResult {
+            quote,
+            cert_chain: chain,
+        })
     }
 
     /// Verifies a CBOR quote using any currently-valid anchor in a [`TrustStore`].
@@ -276,7 +282,10 @@ impl Verifier {
         let ctx = PolicyContext::from_verified_quote(&quote, Some(&chain), None, now_secs, None);
         self.engine.evaluate(&ctx)?;
 
-        Ok(PkiVerificationResult { quote, cert_chain: chain })
+        Ok(PkiVerificationResult {
+            quote,
+            cert_chain: chain,
+        })
     }
 
     /// Verifies a CBOR quote and an accompanying Sigstore provenance bundle.
@@ -308,8 +317,11 @@ impl Verifier {
         let quote = AttestationQuote::from_cbor(cbor)?;
         self.verify_signature_only(&quote, verifying_key, expected_nonce)?;
 
-        let vp: VerifiedProvenance =
-            bundle.verify_all(sigstore_config, &quote.body.measurements.firmware_hash, now_secs)?;
+        let vp: VerifiedProvenance = bundle.verify_all(
+            sigstore_config,
+            &quote.body.measurements.firmware_hash,
+            now_secs,
+        )?;
 
         self.policy.evaluate(
             quote.body.provenance.slsa_level(),
@@ -342,7 +354,12 @@ impl Verifier {
             return Err(PqRascvError::VerificationFailed);
         }
         let body_cbor = quote.body.to_cbor()?;
-        MlDsaBackend.verify(&body_cbor, verifying_key, &quote.signature, SIGNING_CONTEXT_QUOTE)?;
+        MlDsaBackend.verify(
+            &body_cbor,
+            verifying_key,
+            &quote.signature,
+            SIGNING_CONTEXT_QUOTE,
+        )?;
         Ok(())
     }
 
@@ -654,7 +671,9 @@ mod tests {
         let (_, vk, quote) = setup();
         let cbor = quote.to_cbor().unwrap();
         let verifier = Verifier::with_engine(PolicyConfig::default(), PolicyEngineV2::new(vec![]));
-        assert!(verifier.verify_cbor(&cbor, &vk, &[0x77u8; 32], 1_700_000_600).is_ok());
+        assert!(verifier
+            .verify_cbor(&cbor, &vk, &[0x77u8; 32], 1_700_000_600)
+            .is_ok());
     }
 }
 
@@ -1077,7 +1096,8 @@ mod pki_tests {
             not_before: 0,
             not_after: u64::MAX,
         });
-        let device_cert = make_device_cert(&dev_vk, "https://ca.test", "DEV-E1", ca_seed.as_bytes());
+        let device_cert =
+            make_device_cert(&dev_vk, "https://ca.test", "DEV-E1", ca_seed.as_bytes());
 
         let rot = SoftwareRoT::new(b"fw", None, 1);
         let nonce = [0xE1u8; 32];
