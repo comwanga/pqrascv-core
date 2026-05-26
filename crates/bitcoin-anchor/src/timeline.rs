@@ -222,3 +222,16 @@ impl TimelineSpvVerifier {
         Ok(proof.block_height)
     }
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn proof_pow_helpers_are_accessible_from_timeline() {
+        // bits_to_target: mainnet genesis bits → 256-byte target (non-None)
+        assert!(crate::proof::bits_to_target(0x1d00ffff).is_some());
+        // validate_proof_of_work: zero-length header → false
+        assert!(!crate::proof::validate_proof_of_work(&[], 0x1d00ffff));
+    }
+}

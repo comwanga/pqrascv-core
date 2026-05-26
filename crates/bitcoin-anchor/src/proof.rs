@@ -188,7 +188,7 @@ fn extract_block_merkle_root(header: &[u8]) -> Option<[u8; 32]> {
 }
 
 /// Returns `true` if the block header satisfies the given maximum target difficulty.
-fn validate_proof_of_work(header: &[u8], max_target_bits: u32) -> bool {
+pub(crate) fn validate_proof_of_work(header: &[u8], max_target_bits: u32) -> bool {
     if header.len() < 80 {
         return false;
     }
@@ -211,7 +211,7 @@ fn validate_proof_of_work(header: &[u8], max_target_bits: u32) -> bool {
 
 /// Converts Bitcoin compact `bits` to a 32-byte big-endian target value.
 /// Returns `None` for negative, zero, or out-of-range values.
-fn bits_to_target(bits: u32) -> Option<[u8; 32]> {
+pub(crate) fn bits_to_target(bits: u32) -> Option<[u8; 32]> {
     let exp = (bits >> 24) as usize;
     let mantissa = (bits & 0x007F_FFFF) as u64;
     if bits & 0x0080_0000 != 0 {
@@ -236,7 +236,7 @@ fn bits_to_target(bits: u32) -> Option<[u8; 32]> {
 }
 
 /// Returns `true` if `hash` (SHA256d output, little-endian) is below `target` (big-endian).
-fn hash_below_target(hash: &[u8; 32], target: &[u8; 32]) -> bool {
+pub(crate) fn hash_below_target(hash: &[u8; 32], target: &[u8; 32]) -> bool {
     let mut h_be = *hash;
     h_be.reverse(); // convert from little-endian to big-endian for comparison
     h_be < *target
