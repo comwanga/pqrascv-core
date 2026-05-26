@@ -12,6 +12,38 @@ fn sha256d(data: &[u8]) -> [u8; 32] {
     Sha256::digest(first).into()
 }
 
+/// RFC6962 leaf hash: `SHA256d(0x00 || data)`
+fn timeline_leaf_hash(data: &[u8]) -> [u8; 32] {
+    let mut buf = Vec::with_capacity(1 + data.len());
+    buf.push(0x00u8);
+    buf.extend_from_slice(data);
+    sha256d(&buf)
+}
+
+/// RFC6962 internal hash: `SHA256d(0x01 || left || right)`
+fn timeline_internal_hash(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
+    let mut buf = [0u8; 65];
+    buf[0] = 0x01u8;
+    buf[1..33].copy_from_slice(left);
+    buf[33..65].copy_from_slice(right);
+    sha256d(&buf)
+}
+
+/// Advances one tree level: pairs use `timeline_internal_hash`; last odd node
+/// is promoted unchanged (no duplication — prevents CVE-2012-2459).
+fn timeline_next_layer(nodes: &[[u8; 32]]) -> Vec<[u8; 32]> {
+    let mut out = Vec::with_capacity(nodes.len().div_ceil(2));
+    let mut i = 0;
+    while i + 1 < nodes.len() {
+        out.push(timeline_internal_hash(&nodes[i], &nodes[i + 1]));
+        i += 2;
+    }
+    if nodes.len() % 2 == 1 {
+        out.push(nodes[nodes.len() - 1]);
+    }
+    out
+}
+
 /// Aggregates timeline event hashes into a Merkle tree for Bitcoin anchoring.
 #[derive(Default)]
 pub struct TimelineMerkleAggregator {
@@ -43,34 +75,20 @@ impl TimelineMerkleAggregator {
         self.event_hashes.is_empty()
     }
 
-    /// Computes the double-SHA256 Merkle root of the batch.
+    /// Computes the RFC6962 Merkle root of the batch.
     #[must_use]
     pub fn root(&self) -> Option<[u8; 32]> {
         if self.event_hashes.is_empty() {
             return None;
         }
-
-        let mut nodes: Vec<[u8; 32]> = self.event_hashes.iter().map(|h| sha256d(h)).collect();
-
+        let mut nodes: Vec<[u8; 32]> = self
+            .event_hashes
+            .iter()
+            .map(|h| timeline_leaf_hash(h))
+            .collect();
         while nodes.len() > 1 {
-            let mut next_level = Vec::with_capacity(nodes.len().div_ceil(2));
-            let mut i = 0;
-            while i < nodes.len() {
-                let left = nodes[i];
-                let right = if i + 1 < nodes.len() {
-                    nodes[i + 1]
-                } else {
-                    nodes[i]
-                };
-                let mut combined = [0u8; 64];
-                combined[..32].copy_from_slice(&left);
-                combined[32..].copy_from_slice(&right);
-                next_level.push(sha256d(&combined));
-                i += 2;
-            }
-            nodes = next_level;
+            nodes = timeline_next_layer(&nodes);
         }
-
         Some(nodes[0])
     }
 
@@ -81,51 +99,35 @@ impl TimelineMerkleAggregator {
             return None;
         }
 
-        let mut nodes: Vec<[u8; 32]> = self.event_hashes.iter().map(|h| sha256d(h)).collect();
-        let leaf_hash = nodes[index];
+        let mut nodes: Vec<[u8; 32]> = self
+            .event_hashes
+            .iter()
+            .map(|h| timeline_leaf_hash(h))
+            .collect();
+        let leaf = nodes[index];
         let mut path = Vec::new();
-        let mut current_index = index;
+        let mut idx = index;
 
         while nodes.len() > 1 {
-            let is_last_odd = current_index == nodes.len() - 1 && nodes.len() % 2 == 1;
+            let is_last_odd = idx == nodes.len() - 1 && nodes.len() % 2 == 1;
             if is_last_odd {
                 path.push(ProofStep {
                     sibling_hash: None,
                     is_left: false,
                 });
             } else {
-                let sibling_index = if current_index % 2 == 0 {
-                    current_index + 1
-                } else {
-                    current_index - 1
-                };
+                let sibling = if idx % 2 == 0 { idx + 1 } else { idx - 1 };
                 path.push(ProofStep {
-                    sibling_hash: Some(nodes[sibling_index]),
-                    is_left: current_index % 2 != 0,
+                    sibling_hash: Some(nodes[sibling]),
+                    is_left: idx % 2 != 0,
                 });
             }
-
-            let mut next_level = Vec::with_capacity(nodes.len().div_ceil(2));
-            let mut i = 0;
-            while i < nodes.len() {
-                let left = nodes[i];
-                let right = if i + 1 < nodes.len() {
-                    nodes[i + 1]
-                } else {
-                    nodes[i]
-                };
-                let mut combined = [0u8; 64];
-                combined[..32].copy_from_slice(&left);
-                combined[32..].copy_from_slice(&right);
-                next_level.push(sha256d(&combined));
-                i += 2;
-            }
-            current_index /= 2;
-            nodes = next_level;
+            nodes = timeline_next_layer(&nodes);
+            idx /= 2;
         }
 
         Some(MerkleProofPath {
-            leaf_hash,
+            leaf_hash: leaf,
             path,
             root: nodes[0],
         })
@@ -150,10 +152,12 @@ pub struct TimelineInclusionProof {
 
 /// Verifies Bitcoin SPV inclusion proofs for timeline anchors.
 pub struct TimelineSpvVerifier {
-    /// Minimum number of block confirmations.
     pub min_confirmations: u32,
-    /// Current Bitcoin chain tip height.
     pub chain_tip_height: u32,
+    /// Maximum acceptable target as compact `bits`.
+    /// Set to `0` to skip PoW (unit tests with fake headers only).
+    /// Bitcoin mainnet genesis: `0x1d00ffff`.
+    pub max_target_bits: u32,
 }
 
 impl TimelineSpvVerifier {
@@ -163,7 +167,15 @@ impl TimelineSpvVerifier {
         Self {
             min_confirmations,
             chain_tip_height,
+            max_target_bits: 0x1d00_ffff,
         }
+    }
+
+    /// Override the maximum target bits (lower = more secure).
+    #[must_use]
+    pub fn with_max_target_bits(mut self, bits: u32) -> Self {
+        self.max_target_bits = bits;
+        self
     }
 
     /// Verifies that a timeline event hash is anchored in Bitcoin.
@@ -176,6 +188,13 @@ impl TimelineSpvVerifier {
         proof: &TimelineInclusionProof,
         event_hash: &[u8; 32],
     ) -> Result<u32, SpvError> {
+        // Proof-of-work validation (skip only when max_target_bits == 0, for tests)
+        if self.max_target_bits != 0
+            && !crate::proof::validate_proof_of_work(&proof.block_header, self.max_target_bits)
+        {
+            return Err(SpvError::InsufficientProofOfWork);
+        }
+
         let confirmations = self
             .chain_tip_height
             .saturating_sub(proof.block_height)
@@ -205,11 +224,7 @@ impl TimelineSpvVerifier {
             return Err(SpvError::MerkleRootMismatch);
         }
 
-        let expected_leaf = {
-            let first: [u8; 32] = Sha256::digest(event_hash).into();
-            let second: [u8; 32] = Sha256::digest(first).into();
-            second
-        };
+        let expected_leaf = timeline_leaf_hash(event_hash);
 
         if proof.event_merkle_path.leaf_hash != expected_leaf {
             return Err(SpvError::QuoteNotInAnchor); // Reused error type to preserve errors interface
@@ -220,5 +235,141 @@ impl TimelineSpvVerifier {
         }
 
         Ok(proof.block_height)
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn proof_pow_helpers_are_accessible_from_timeline() {
+        // bits_to_target: mainnet genesis bits → 256-byte target (non-None)
+        assert!(crate::proof::bits_to_target(0x1d00ffff).is_some());
+        // validate_proof_of_work: zero-length header → false
+        assert!(!crate::proof::validate_proof_of_work(&[], 0x1d00ffff));
+    }
+
+    #[test]
+    fn cve_2012_2459_duplicate_node_attack_rejected() {
+        let mut agg3 = TimelineMerkleAggregator::new();
+        agg3.add_event_hash([0x01u8; 32]);
+        agg3.add_event_hash([0x02u8; 32]);
+        agg3.add_event_hash([0x03u8; 32]);
+
+        let mut agg4 = TimelineMerkleAggregator::new();
+        agg4.add_event_hash([0x01u8; 32]);
+        agg4.add_event_hash([0x02u8; 32]);
+        agg4.add_event_hash([0x03u8; 32]);
+        agg4.add_event_hash([0x03u8; 32]);
+
+        assert_ne!(
+            agg3.root(),
+            agg4.root(),
+            "CVE-2012-2459: 3-event and [A,B,C,C] trees must not share a root"
+        );
+    }
+
+    #[test]
+    fn leaf_prefix_differs_from_internal_prefix() {
+        let data = [0x42u8; 32];
+        assert_ne!(
+            timeline_leaf_hash(&data),
+            timeline_internal_hash(&data, &data),
+            "RFC6962 prefixes must produce distinct leaf vs internal hashes"
+        );
+    }
+
+    #[test]
+    fn inclusion_proof_verifies_all_indices_after_domain_sep() {
+        let mut agg = TimelineMerkleAggregator::new();
+        for i in 0u8..8 {
+            agg.add_event_hash([i; 32]);
+        }
+        for i in 0..8 {
+            let proof = agg.inclusion_proof(i).unwrap();
+            assert!(proof.verify(), "proof for index {i} must verify");
+            assert_eq!(proof.root, agg.root().unwrap());
+        }
+    }
+
+    #[test]
+    fn inclusion_proof_odd_count_verifies() {
+        let mut agg = TimelineMerkleAggregator::new();
+        for i in 0u8..5 {
+            agg.add_event_hash([i; 32]);
+        }
+        for i in 0..5 {
+            let proof = agg.inclusion_proof(i).unwrap();
+            assert!(proof.verify(), "odd-tree proof for index {i} must verify");
+        }
+    }
+
+    #[test]
+    fn timeline_spv_verifier_rejects_zero_work_header() {
+        let event_hash = [0xA1u8; 32];
+        let mut agg = TimelineMerkleAggregator::new();
+        agg.add_event_hash(event_hash);
+        let timeline_root = agg.root().unwrap();
+        let event_proof = agg.inclusion_proof(0).unwrap();
+
+        let mut header = vec![0u8; 80];
+        header[36..68].copy_from_slice(&timeline_root);
+        // bits field at bytes 72-75 is zero — invalid PoW
+
+        let tx_path = crate::proof::TxMerklePath {
+            txid: timeline_root,
+            steps: alloc::vec![],
+            block_merkle_root: timeline_root,
+        };
+        let proof = TimelineInclusionProof {
+            block_height: 800_000,
+            block_header: header,
+            tx_merkle_path: tx_path,
+            timeline_merkle_root: timeline_root,
+            event_merkle_path: event_proof,
+        };
+
+        let verifier = TimelineSpvVerifier::new(1, 800_001);
+        assert!(
+            matches!(
+                verifier.verify(&proof, &event_hash),
+                Err(SpvError::InsufficientProofOfWork)
+            ),
+            "zero-work header must be rejected by TimelineSpvVerifier"
+        );
+    }
+
+    #[test]
+    fn timeline_spv_verifier_accepts_proof_with_pow_skipped() {
+        let event_hash = [0xB2u8; 32];
+        let mut agg = TimelineMerkleAggregator::new();
+        agg.add_event_hash(event_hash);
+        let timeline_root = agg.root().unwrap();
+        let event_proof = agg.inclusion_proof(0).unwrap();
+
+        let mut header = vec![0u8; 80];
+        header[36..68].copy_from_slice(&timeline_root);
+
+        let tx_path = crate::proof::TxMerklePath {
+            txid: timeline_root,
+            steps: alloc::vec![],
+            block_merkle_root: timeline_root,
+        };
+        let proof = TimelineInclusionProof {
+            block_height: 800_000,
+            block_header: header,
+            tx_merkle_path: tx_path,
+            timeline_merkle_root: timeline_root,
+            event_merkle_path: event_proof,
+        };
+
+        let verifier = TimelineSpvVerifier::new(1, 800_000).with_max_target_bits(0);
+        assert!(
+            verifier.verify(&proof, &event_hash).is_ok(),
+            "PoW-skipped verifier must accept a valid proof"
+        );
     }
 }

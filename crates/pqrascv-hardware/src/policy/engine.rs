@@ -1245,14 +1245,14 @@ mod tests {
         };
         ctx.transparency_proof = Some(&proof);
 
-        let verifier = TimelineSpvVerifier::new(6, 100);
+        let verifier = TimelineSpvVerifier::new(6, 100).with_max_target_bits(0);
         ctx.spv_verifier = Some(&verifier);
 
         // All present and correct -> passes
         assert!(engine.evaluate(&ctx).is_ok());
 
         // Mismatched confirmations
-        let weak_verifier = TimelineSpvVerifier::new(20, 100);
+        let weak_verifier = TimelineSpvVerifier::new(20, 100).with_max_target_bits(0);
         ctx.spv_verifier = Some(&weak_verifier);
         assert!(matches!(
             engine.evaluate(&ctx),
