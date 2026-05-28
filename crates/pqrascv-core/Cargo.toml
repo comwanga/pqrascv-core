@@ -16,7 +16,15 @@ categories.workspace   = true
 [features]
 default      = ["std"]
 std          = ["alloc", "serde/std", "ciborium/std", "sha3/std", "zeroize/std", "dep:getrandom"]
-alloc        = ["serde/alloc", "der/alloc"]
+alloc        = [
+    "serde/alloc",
+    "dep:der", "der/alloc",
+    "dep:x509-cert",
+    "dep:p256",
+    "dep:ecdsa",
+    "dep:serde_json",
+    "dep:base64",
+]
 # Enables the SoftwareRoT backend. NOT FOR PRODUCTION — see measurement::SoftwareRoT docs.
 software-rot-unsafe = []
 # Hardware backends (opt-in only)
@@ -38,12 +46,14 @@ tss-esapi             = { version = "8.0.0-alpha.2", optional = true }
 libc = { version = "0.2", optional = true }
 
 # Sigstore / Fulcio / Rekor provenance verification (conditions 2–5)
-x509-cert    = { version = "0.2", default-features = false }
-der          = { version = "0.7", default-features = false }
-p256         = { version = "0.13", default-features = false, features = ["pkcs8", "ecdsa"] }
-ecdsa        = { version = "0.16", default-features = false, features = ["der"] }
-serde_json   = { version = "1",   default-features = false, features = ["alloc"] }
-base64       = { version = "0.22", default-features = false, features = ["alloc"] }
+# All optional: only compiled when the `alloc` feature is enabled.
+# Code using these crates is gated behind #[cfg(feature = "alloc")].
+x509-cert    = { version = "0.2", default-features = false, optional = true }
+der          = { version = "0.7", default-features = false, optional = true }
+p256         = { version = "0.13", default-features = false, features = ["pkcs8", "ecdsa"], optional = true }
+ecdsa        = { version = "0.16", default-features = false, features = ["der"], optional = true }
+serde_json   = { version = "1",   default-features = false, features = ["alloc"], optional = true }
+base64       = { version = "0.22", default-features = false, features = ["alloc"], optional = true }
 
 # ── docs.rs configuration ────────────────────────────────────────────────────
 # Build docs with `std` + `dice` + `software-rot-unsafe` so all public items are visible.
