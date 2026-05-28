@@ -479,24 +479,21 @@ mod tests {
         assert!(engine.evaluate(&ctx).is_ok());
     }
 
-    fn ctx_with_pcr(slot: usize, value: [u8; 32]) -> PolicyContext<'static> {
+    fn make_pcr_bank(slot: usize, value: [u8; 32]) -> PcrBank {
         use crate::measurement::PCR_COUNT;
         let mut bank = PcrBank {
             digests: [[0u8; 32]; PCR_COUNT],
             algorithm: PcrAlgorithm::Sha3_256,
         };
         bank.digests[slot] = value;
-        let leaked: &'static PcrBank = Box::leak(Box::new(bank));
-        PolicyContext {
-            pcrs: leaked,
-            ..base_ctx()
-        }
+        bank
     }
 
     #[test]
     fn pcr_rule_exact_match_passes() {
         let expected = [0xabu8; 32];
-        let ctx = ctx_with_pcr(0, expected);
+        let bank = make_pcr_bank(0, expected);
+        let ctx = PolicyContext { pcrs: &bank, ..base_ctx() };
         let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequirePcrValues {
             pcr_slot: 0,
             expected,
@@ -506,7 +503,8 @@ mod tests {
 
     #[test]
     fn pcr_rule_mismatch_fails() {
-        let ctx = ctx_with_pcr(0, [0xabu8; 32]);
+        let bank = make_pcr_bank(0, [0xabu8; 32]);
+        let ctx = PolicyContext { pcrs: &bank, ..base_ctx() };
         let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequirePcrValues {
             pcr_slot: 0,
             expected: [0xcdu8; 32],
@@ -516,7 +514,8 @@ mod tests {
 
     #[test]
     fn pcr_rule_zero_expected_rejects_zero_pcr() {
-        let ctx = ctx_with_pcr(0, [0u8; 32]);
+        let bank = make_pcr_bank(0, [0u8; 32]);
+        let ctx = PolicyContext { pcrs: &bank, ..base_ctx() };
         let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequirePcrValues {
             pcr_slot: 0,
             expected: [0u8; 32],
@@ -526,7 +525,8 @@ mod tests {
 
     #[test]
     fn pcr_rule_zero_expected_accepts_nonzero_pcr() {
-        let ctx = ctx_with_pcr(0, [0x42u8; 32]);
+        let bank = make_pcr_bank(0, [0x42u8; 32]);
+        let ctx = PolicyContext { pcrs: &bank, ..base_ctx() };
         let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequirePcrValues {
             pcr_slot: 0,
             expected: [0u8; 32],
