@@ -10,6 +10,38 @@
 //!   (install via `apt install tpm2-tss` or `dnf install tpm2-tss-devel`).
 //! - The TPM access path is configured via the `TPM2TOOLS_TCTI` environment
 //!   variable (e.g. `device:/dev/tpm0` or `swtpm:port=2321` for simulation).
+//! - Windows is not supported. TPM on Windows requires separate integration.
+//!
+//! See `TPM_INTEGRATION.md` at the repository root for hardware setup, swtpm
+//! simulation, and PCR policy guidance.
+//!
+//! # Maturity
+//!
+//! Architecture: sound. Tested against real hardware: no evidence. Tested
+//! against swtpm: no evidence. Production-validated: no. This backend should
+//! be treated as **experimental** until integration tests against a real or
+//! simulated TPM are established.
+//!
+//! # PCR bank — PCRs 0–7 (SHA-256, normalized to SHA3-256)
+//!
+//! | PCR | Standard meaning (UEFI / TCG PC Client) |
+//! |-----|-----------------------------------------|
+//! | 0   | SRTM, BIOS, Host Platform extensions |
+//! | 1   | BIOS configuration |
+//! | 2   | Option ROM code |
+//! | 3   | Option ROM configuration |
+//! | 4   | MBR / boot manager code |
+//! | 5   | Boot manager configuration |
+//! | 6   | State transitions / wake events |
+//! | 7   | Secure Boot policy (DB / DBX / PK / KEK) |
+//!
+//! PCRs 8–15 (OS kernel, modules, IMA) are **not** read by this backend.
+//! IMA measurement integration is available via `pqrascv-hardware` with the
+//! `live-evidence` feature.
+//!
+//! **PCR 7 requires Secure Boot to be enabled** for meaningful attestation.
+//! With Secure Boot disabled, PCR 7 contains a well-known placeholder and
+//! cannot attest boot chain integrity.
 //!
 //! # PCR normalization
 //!
@@ -31,11 +63,18 @@
 //! SHA3-256 (not via the TPM hash command) to keep the hot path allocation-free
 //! and independent of TPM latency.
 //!
+//! **The firmware hash is not derived from or verified against the TPM
+//! measurement log.** A compromised OS controlling the caller could supply
+//! different firmware bytes than what actually executed. For higher-assurance
+//! deployments, validate caller-supplied bytes against a trusted reference or
+//! the IMA log before passing them to [`TpmRoT::new`].
+//!
 //! # Event counter
 //!
-//! Uses `TPM2_PT_NV_COUNTERS_AVAIL` to get a snapshot of the monotonic tick
-//! count as a best-effort event counter.  If the TPM does not support it,
-//! the counter is set to zero.
+//! Uses `TPM2_PT_AUDIT_COUNTER_0` (`AuditCounter0`) as a best-effort monotonic
+//! proxy — it increments with every audited TPM command.  This is **not** a
+//! boot counter and should not be relied on for strict monotonicity guarantees
+//! across reboots.  If the property is unavailable, the counter is set to zero.
 
 #[cfg(feature = "hardware-tpm")]
 mod inner {
@@ -164,10 +203,11 @@ mod inner {
                 None => [0u8; 32],
             };
 
-            // ── 5. Get event counter (TPM audit counter as monotonic proxy) ────
+            // ── 5. Get event counter ─────────────────────────────────────────
             //
-            // AuditCounter0 ticks up with every audited TPM command — good enough
-            // as a best-effort monotonic counter.
+            // TPM2_PT_AUDIT_COUNTER_0 (AuditCounter0) ticks with every audited
+            // TPM command. It is a best-effort monotonic proxy, not a boot
+            // counter — see module docs for the full caveat.
             let event_counter = ctx
                 .execute_without_session(|c| {
                     c.get_capability(
