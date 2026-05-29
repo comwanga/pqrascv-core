@@ -559,6 +559,56 @@ pub fn validate_chain_with_store(
     Err(PqRascvError::CertificateInvalid)
 }
 
+/// Cross-validates the hardware identity in a device certificate against
+/// the measurements produced by the hardware during attestation.
+///
+/// # TDX and SEV-SNP
+///
+/// For TDX, `hardware_identity` contains the raw 48-byte MRTD value. The
+/// TDX backend stores `SHA3-256(MRTD)` in PCR[0]. This function verifies
+/// that `SHA3-256(mrtd_bytes_from_cert) == measurements.pcrs.digests[0]`.
+///
+/// For SEV-SNP, the same approach applies with `SevSnpMeasurement` and PCR[0].
+///
+/// # TPM and DICE
+///
+/// Full TPM EK cert binding and DICE CDI binding require out-of-band enrollment
+/// data not present in the quote (the EK cert DER or the UDS itself). These are
+/// validated at CA issuance time via the enrollment ceremony. This function
+/// accepts TPM and DICE identities without a PCR cross-check.
+///
+/// # Errors
+///
+/// Returns [`PqRascvError::CertificateInvalid`] if the cert claims TDX or
+/// SEV-SNP hardware identity but the PCR[0] value does not match the hash
+/// of the raw measurement bytes in the cert.
+#[cfg(feature = "alloc")]
+pub fn validate_hardware_identity(
+    identity: &HardwareIdentity,
+    measurements: &crate::measurement::Measurements,
+) -> Result<(), PqRascvError> {
+    match identity {
+        HardwareIdentity::TdxMrtd(raw_mrtd) => {
+            let expected_pcr0: [u8; 32] = Sha3_256::digest(raw_mrtd).into();
+            if measurements.pcrs.digests[0] != expected_pcr0 {
+                return Err(PqRascvError::CertificateInvalid);
+            }
+        }
+        HardwareIdentity::SevSnpMeasurement(raw_measurement) => {
+            let expected_pcr0: [u8; 32] = Sha3_256::digest(raw_measurement).into();
+            if measurements.pcrs.digests[0] != expected_pcr0 {
+                return Err(PqRascvError::CertificateInvalid);
+            }
+        }
+        HardwareIdentity::TpmEkCertHash(_) | HardwareIdentity::DiceCdiPublicHash(_) => {
+            // TPM and DICE: validated at enrollment time by the CA.
+            // The quote does not carry EK cert DER or CDI public key material
+            // needed for an independent cross-check. Accept these identities.
+        }
+    }
+    Ok(())
+}
+
 #[cfg(all(test, feature = "alloc", feature = "std"))]
 mod chain_tests {
     use super::*;
@@ -875,6 +925,81 @@ mod chain_tests {
             validate_chain_with_store(&cert, &[], &store, 1_000),
             Err(PqRascvError::TrustAnchorExpired)
         ));
+    }
+}
+
+#[cfg(all(test, feature = "alloc"))]
+mod hardware_identity_validation_tests {
+    use super::*;
+    use crate::measurement::Measurements;
+    use sha3::{Digest, Sha3_256};
+
+    fn zeroed_measurements() -> Measurements {
+        Measurements::zeroed()
+    }
+
+    #[test]
+    fn tdx_identity_matches_pcr0_passes() {
+        // PCR[0] must equal SHA3-256(raw_mrtd) for the validation to pass.
+        let raw_mrtd = [0x42u8; 48];
+        let expected_pcr0: [u8; 32] = Sha3_256::digest(raw_mrtd).into();
+        let mut meas = zeroed_measurements();
+        meas.pcrs.digests[0] = expected_pcr0;
+
+        let identity = HardwareIdentity::TdxMrtd(raw_mrtd.to_vec());
+        assert!(validate_hardware_identity(&identity, &meas).is_ok());
+    }
+
+    #[test]
+    fn tdx_identity_mismatch_pcr0_fails() {
+        let raw_mrtd = [0x42u8; 48];
+        let mut meas = zeroed_measurements();
+        meas.pcrs.digests[0] = [0xFFu8; 32]; // wrong PCR value
+
+        let identity = HardwareIdentity::TdxMrtd(raw_mrtd.to_vec());
+        assert_eq!(
+            validate_hardware_identity(&identity, &meas),
+            Err(PqRascvError::CertificateInvalid),
+            "TDX MRTD mismatch must return CertificateInvalid"
+        );
+    }
+
+    #[test]
+    fn sevsnp_identity_matches_pcr0_passes() {
+        let raw_meas = [0x77u8; 48];
+        let expected_pcr0: [u8; 32] = Sha3_256::digest(raw_meas).into();
+        let mut meas = zeroed_measurements();
+        meas.pcrs.digests[0] = expected_pcr0;
+
+        let identity = HardwareIdentity::SevSnpMeasurement(raw_meas.to_vec());
+        assert!(validate_hardware_identity(&identity, &meas).is_ok());
+    }
+
+    #[test]
+    fn sevsnp_identity_mismatch_pcr0_fails() {
+        let raw_meas = [0x77u8; 48];
+        let mut meas = zeroed_measurements();
+        meas.pcrs.digests[0] = [0x00u8; 32]; // wrong
+
+        let identity = HardwareIdentity::SevSnpMeasurement(raw_meas.to_vec());
+        assert_eq!(
+            validate_hardware_identity(&identity, &meas),
+            Err(PqRascvError::CertificateInvalid)
+        );
+    }
+
+    #[test]
+    fn tpm_and_dice_identity_passes_without_cross_check() {
+        // TPM and DICE cross-validation requires out-of-band enrollment data.
+        // validate_hardware_identity accepts these without a PCR check.
+        let meas = zeroed_measurements();
+        assert!(
+            validate_hardware_identity(&HardwareIdentity::TpmEkCertHash([0u8; 32]), &meas).is_ok()
+        );
+        assert!(
+            validate_hardware_identity(&HardwareIdentity::DiceCdiPublicHash([0u8; 32]), &meas)
+                .is_ok()
+        );
     }
 }
 
