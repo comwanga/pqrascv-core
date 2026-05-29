@@ -87,6 +87,15 @@ pub enum PolicyRule {
     /// Reject quotes from builders not in this allowlist.
     ///
     /// Builder IDs are URIs (e.g. `"https://github.com/actions/runner"`).
+    ///
+    /// **An empty list denies all builders** — the rule always returns
+    /// `PolicyViolation` when the list is empty. This is intentionally
+    /// fail-closed: misconfiguring an empty list is never silently permissive.
+    /// Contrast with [`AllowedFirmwareHashes`] where an empty list means
+    /// "any hash is accepted" (documented there).
+    ///
+    /// To allow any builder, omit this rule entirely rather than passing an
+    /// empty list.
     AllowedBuilders(Vec<String>),
 
     /// Reject quotes whose firmware hash is not in this allowlist.
@@ -271,6 +280,17 @@ impl PolicyEngineV2 {
     /// `RequireExternalProvenance` is satisfied only by a [`VerifiedProvenance`]
     /// token produced by [`ExternalProvenanceBundle::verify_all`]. External code
     /// cannot forge this token — see [`PolicyContext::verified_provenance`].
+    ///
+    /// `RequireRtc` is intentionally absent from this preset. Not all enterprise
+    /// hardware (embedded controllers, some air-gapped servers) has a real-time
+    /// clock, and requiring one would reject valid quotes from those devices.
+    /// Freshness is still enforced via the verifier-supplied nonce (replay
+    /// protection) and `MaxQuoteAgeSecs` for RTC-equipped devices. To mandate
+    /// RTC, add `PolicyRule::RequireRtc` to a custom engine:
+    /// ```rust,ignore
+    /// let mut engine = PolicyEngineV2::production();
+    /// engine.rules.push(PolicyRule::RequireRtc);
+    /// ```
     ///
     /// [`ExternalProvenanceBundle::verify_all`]: crate::provenance_v2::ExternalProvenanceBundle::verify_all
     #[must_use]
