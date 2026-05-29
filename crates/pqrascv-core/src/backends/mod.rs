@@ -23,3 +23,5 @@ pub mod dice;
 pub mod tdx;
 
 pub mod sevsnp;
+
+pub mod optee;
