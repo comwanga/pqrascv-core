@@ -21,6 +21,23 @@
 //! An epoch that has not reached quorum MUST NOT be used as the basis for
 //! policy decisions. The [`HardwarePolicyRule::RequireFederatedPolicyApproval`]
 //! rule enforces this at evaluation time.
+//!
+//! # Known Limitation — Unauthenticated Verifier Identity
+//!
+//! `approved_by` stores verifier identities as plain `String` values.
+//! `add_approval` accepts any string — **no cryptographic proof** is required
+//! that the caller actually controls the identity they claim.
+//!
+//! This means quorum counts are based on string identity, not key ownership.
+//! A caller with write access to the epoch can inject approvals for any verifier
+//! ID without possessing the corresponding signing key.
+//!
+//! **Operational consequence:** in the current design, access control to the
+//! `FederatedPolicyEpoch` object itself is the security boundary. In a
+//! networked deployment, the transport layer must authenticate callers before
+//! they are permitted to call `add_approval`. Cryptographic approval signatures
+//! (e.g., each verifier signs the epoch ID with its ML-DSA key) are a future
+//! hardening step that would move the trust boundary into the data structure.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -334,5 +351,126 @@ mod tests {
         reg.propose(e1).unwrap();
 
         assert_eq!(reg.active_epoch().unwrap().epoch_id, 1);
+    }
+
+    // ── Adversarial tests ────────────────────────────────────────────────────
+
+    // SECURITY GAP: try_finalize only checks approved_by.len() >= quorum_required().
+    // It does NOT verify that approver IDs are actual federation members.
+    // An attacker with write access to the epoch object can inject phantom IDs
+    // (strings that are not in federation.members) and satisfy quorum without
+    // involving any real verifier. The security boundary is access control to
+    // the epoch object itself (documented in module-level Known Limitation).
+    #[test]
+    fn quorum_phantom_verifier_ids_satisfy_count_check() {
+        let fed = make_federation(3); // Majority requires 2
+        let mut epoch = FederatedPolicyEpoch::new(1, 1000, None);
+        // "attacker" and "ghost" are not members of the federation
+        epoch.add_approval("attacker".into()).unwrap();
+        epoch.add_approval("ghost".into()).unwrap();
+        // Quorum is satisfied purely by count — no membership validation
+        assert!(epoch.try_finalize(&fed).is_ok());
+        assert!(epoch.quorum_reached);
+    }
+
+    // Proposing an epoch with epoch_id equal to the last finalized epoch_id
+    // must be rejected as non-monotonic (the check is <=, not <).
+    #[test]
+    fn registry_rejects_epoch_id_equal_to_finalized() {
+        let fed = make_federation(3);
+        let mut reg = FederatedPolicyRegistry::new();
+
+        let mut e1 = FederatedPolicyEpoch::new(10, 1000, None);
+        e1.add_approval("v0".into()).unwrap();
+        e1.add_approval("v1".into()).unwrap();
+        e1.try_finalize(&fed).unwrap();
+        reg.propose(e1).unwrap();
+
+        // Same epoch_id as the finalized one — must be rejected
+        let e_same = FederatedPolicyEpoch::new(10, 2000, Some(10));
+        assert!(matches!(
+            reg.propose(e_same).unwrap_err(),
+            FederatedPolicyError::NonMonotonicEpoch {
+                previous: 10,
+                proposed: 10,
+            }
+        ));
+    }
+
+    // After a pending epoch is finalized, pending_epoch() returns None and a
+    // higher-ID epoch can be proposed without triggering split-brain.
+    #[test]
+    fn registry_pending_cleared_after_finalization_and_accepts_next() {
+        let fed = make_federation(3);
+        let mut reg = FederatedPolicyRegistry::new();
+
+        let mut e1 = FederatedPolicyEpoch::new(1, 1000, None);
+        e1.add_approval("v0".into()).unwrap();
+        e1.add_approval("v1".into()).unwrap();
+        reg.propose(e1).unwrap();
+
+        // Finalize via pending_epoch_mut
+        reg.pending_epoch_mut()
+            .unwrap()
+            .try_finalize(&fed)
+            .unwrap();
+
+        assert!(reg.pending_epoch().is_none());
+
+        // A new epoch with a higher ID must be accepted
+        let e2 = FederatedPolicyEpoch::new(2, 2000, Some(1));
+        assert!(reg.propose(e2).is_ok());
+    }
+
+    // N=1 federation with Majority requires exactly 1 approval (n/2 + 1 = 1).
+    #[test]
+    fn quorum_edge_single_member_requires_one_approval() {
+        let fed = make_federation(1);
+        assert_eq!(fed.quorum_required(), 1);
+
+        let mut epoch = FederatedPolicyEpoch::new(1, 1000, None);
+        assert!(matches!(
+            epoch.try_finalize(&fed).unwrap_err(),
+            FederatedPolicyError::QuorumNotReached {
+                approvals: 0,
+                required: 1,
+            }
+        ));
+        epoch.add_approval("v0".into()).unwrap();
+        assert!(epoch.try_finalize(&fed).is_ok());
+    }
+
+    // N=2 federation with Majority requires both members (n/2 + 1 = 2).
+    // A single approval is insufficient.
+    #[test]
+    fn quorum_edge_two_members_requires_both() {
+        let fed = make_federation(2);
+        assert_eq!(fed.quorum_required(), 2);
+
+        let mut epoch = FederatedPolicyEpoch::new(1, 1000, None);
+        epoch.add_approval("v0".into()).unwrap();
+        assert!(matches!(
+            epoch.try_finalize(&fed).unwrap_err(),
+            FederatedPolicyError::QuorumNotReached {
+                approvals: 1,
+                required: 2,
+            }
+        ));
+        epoch.add_approval("v1".into()).unwrap();
+        assert!(epoch.try_finalize(&fed).is_ok());
+    }
+
+    // Proposing two different epochs to the same registry without finalizing
+    // the first is always split-brain, regardless of epoch IDs.
+    #[test]
+    fn registry_second_pending_proposal_always_split_brain() {
+        let mut reg = FederatedPolicyRegistry::new();
+        let e1 = FederatedPolicyEpoch::new(1, 1000, None);
+        let e2 = FederatedPolicyEpoch::new(99, 9000, Some(1)); // much higher ID
+        reg.propose(e1).unwrap();
+        assert!(matches!(
+            reg.propose(e2).unwrap_err(),
+            FederatedPolicyError::SplitBrainDetected
+        ));
     }
 }

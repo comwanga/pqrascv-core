@@ -226,4 +226,109 @@ mod tests {
         assert_eq!(stalled.safety, ByzantineSafetyState::Safe);
         assert_eq!(stalled.liveness, ByzantineLivenessState::Stalled);
     }
+
+    // ── Adversarial tests ────────────────────────────────────────────────────
+
+    // SECURITY GAP: evaluate() computes votes as verifier_ids.len() with no
+    // deduplication. If the same verifier ID appears multiple times in a VoteSet
+    // the count is inflated. A caller constructing a VoteSet with repeated IDs
+    // can push max_votes above quorum_size and obtain Safe/Live from a federation
+    // that has not actually reached quorum.
+    //
+    // Fix path: deduplicate verifier_ids inside evaluate() or at VoteSet construction.
+    #[test]
+    fn vote_count_inflation_via_duplicate_ids() {
+        // N=7 → f=2, quorum_size=5, partition_size=3.
+        // Honest vote count: 2 (v1, v2). Duplicated to 5 — exactly quorum_size.
+        let result = ByzantineQuorumResult::evaluate(
+            7,
+            &[VoteSet {
+                state_hash: crate::digest::TypedDigest::new(
+                    crate::digest::DigestAlgorithm::Sha3_256,
+                    [0xAA; 32],
+                ),
+                // Only 2 distinct verifiers, but ID repeated to inflate count to 5
+                verifier_ids: vec![
+                    "v1".into(),
+                    "v1".into(),
+                    "v1".into(),
+                    "v2".into(),
+                    "v2".into(),
+                ],
+            }],
+        );
+        // Inflated count satisfies quorum_size — evaluate() returns Safe/Live
+        // even though only 2 distinct verifiers participated.
+        assert_eq!(result.safety, ByzantineSafetyState::Safe);
+        assert_eq!(result.liveness, ByzantineLivenessState::Live);
+    }
+
+    // SECURITY GAP: evaluate() does not detect equivocation — a single verifier
+    // appearing in two VoteSets for different state hashes. The verifier's vote
+    // is counted towards both hashes independently. This means an equivocating
+    // verifier contributes to both forks without triggering UnsafeEquivocation.
+    #[test]
+    fn equivocation_not_detected_across_vote_sets() {
+        // N=4 → f=1, quorum_size=3, partition_size=2.
+        // "v1" votes for both 0xAA and 0xBB — equivocation. Should be flagged
+        // as unsafe but is not. Instead we get a partition result.
+        let result = ByzantineQuorumResult::evaluate(
+            4,
+            &[
+                VoteSet {
+                    state_hash: crate::digest::TypedDigest::new(
+                        crate::digest::DigestAlgorithm::Sha3_256,
+                        [0xAA; 32],
+                    ),
+                    verifier_ids: vec!["v1".into(), "v2".into()],
+                },
+                VoteSet {
+                    state_hash: crate::digest::TypedDigest::new(
+                        crate::digest::DigestAlgorithm::Sha3_256,
+                        [0xBB; 32],
+                    ),
+                    // v1 appears here too — equivocation
+                    verifier_ids: vec!["v1".into(), "v3".into()],
+                },
+            ],
+        );
+        // The correct result would be UnsafeEquivocation. Instead, evaluate()
+        // treats both sets as independent and returns UnsafePartition because
+        // both have >= partition_size (2) votes without one reaching quorum_size.
+        assert_eq!(result.safety, ByzantineSafetyState::UnsafePartition);
+        assert_eq!(result.liveness, ByzantineLivenessState::Partitioned);
+        // If equivocation detection were implemented, we'd expect:
+        // assert_eq!(result.safety, ByzantineSafetyState::UnsafeEquivocation);
+    }
+
+    // With N < 4, f = 0, so quorum_size = 1 and partition_size = 1.
+    // Any single verifier vote satisfies quorum. This is correct for f=0
+    // federations but means small federations offer no Byzantine tolerance.
+    #[test]
+    fn small_federation_n3_has_f0_quorum_is_one() {
+        // N=3 → f=(3-1)/3=0, quorum_size=1, partition_size=1.
+        // A single vote is sufficient for Safe/Live.
+        let result = ByzantineQuorumResult::evaluate(
+            3,
+            &[VoteSet {
+                state_hash: crate::digest::TypedDigest::new(
+                    crate::digest::DigestAlgorithm::Sha3_256,
+                    [0xAA; 32],
+                ),
+                verifier_ids: vec!["v1".into()],
+            }],
+        );
+        assert_eq!(result.safety, ByzantineSafetyState::Safe);
+        assert_eq!(result.liveness, ByzantineLivenessState::Live);
+    }
+
+    // N=0 (no verifiers) is an edge case: f=0, quorum_size=1. No vote set
+    // can satisfy quorum_size of 1, and there are zero partitions, so the
+    // evaluator falls into the last branch and returns Safe/Stalled.
+    #[test]
+    fn zero_verifiers_returns_safe_stalled() {
+        let result = ByzantineQuorumResult::evaluate(0, &[]);
+        assert_eq!(result.safety, ByzantineSafetyState::Safe);
+        assert_eq!(result.liveness, ByzantineLivenessState::Stalled);
+    }
 }
