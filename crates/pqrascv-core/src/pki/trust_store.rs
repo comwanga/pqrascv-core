@@ -75,7 +75,7 @@ mod tests {
             ca_id: ca_id.to_string(),
             not_before,
             not_after,
-        })
+        }).unwrap()
     }
 
     #[test]

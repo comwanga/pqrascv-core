@@ -278,20 +278,18 @@ pub struct TrustAnchor {
 impl TrustAnchor {
     /// Creates a trust anchor from the root CA's verifying key and validity window.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `root_ca.ca_id` is empty or if `root_ca.not_before > root_ca.not_after`.
-    #[must_use]
-    pub fn new(root_ca: CaPublicKey) -> Self {
-        assert!(
-            !root_ca.ca_id.is_empty(),
-            "TrustAnchor ca_id must not be empty"
-        );
-        assert!(
-            root_ca.not_before <= root_ca.not_after,
-            "TrustAnchor not_before must not exceed not_after"
-        );
-        Self { root_ca }
+    /// Returns [`PqRascvError::CertificateInvalid`] if `root_ca.ca_id` is empty
+    /// or if `root_ca.not_before > root_ca.not_after`.
+    pub fn new(root_ca: CaPublicKey) -> Result<Self, PqRascvError> {
+        if root_ca.ca_id.is_empty() {
+            return Err(PqRascvError::CertificateInvalid);
+        }
+        if root_ca.not_before > root_ca.not_after {
+            return Err(PqRascvError::CertificateInvalid);
+        }
+        Ok(Self { root_ca })
     }
 
     /// Returns the root CA's public key fingerprint.
@@ -618,7 +616,7 @@ mod chain_tests {
             ca_id: "https://ca.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        });
+        }).unwrap();
         let device_cert = make_device_cert(
             &dev_vk,
             "https://ca.test",
@@ -638,7 +636,7 @@ mod chain_tests {
             ca_id: "https://ca.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        });
+        }).unwrap();
         // Wrong issuer_id (claims "https://evil.ca" instead of "https://ca.test")
         let device_cert = make_device_cert(
             &dev_vk,
@@ -663,7 +661,7 @@ mod chain_tests {
             ca_id: "https://root.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        });
+        }).unwrap();
 
         // Intermediate with max_path_length = Some(0) — cannot sign the device cert
         let mut intermediate = make_device_cert(
@@ -699,7 +697,7 @@ mod chain_tests {
             ca_id: "https://ca.test".to_string(),
             not_before: 0,
             not_after: 999, // expired
-        });
+        }).unwrap();
         let cert = make_device_cert(
             &dev_vk,
             "https://ca.test",
@@ -722,7 +720,7 @@ mod chain_tests {
             ca_id: "https://ca.test".to_string(),
             not_before: 5_000, // not yet valid
             not_after: u64::MAX,
-        });
+        }).unwrap();
         let cert = make_device_cert(
             &dev_vk,
             "https://ca.test",
@@ -746,7 +744,7 @@ mod chain_tests {
             ca_id: "https://root.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        });
+        }).unwrap();
 
         // Intermediate claims wrong issuer_id (should be "https://root.test" to match root CA)
         let mut intermediate = DeviceCertificate {
@@ -789,7 +787,7 @@ mod chain_tests {
             ca_id: "https://ca.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        }));
+        }).unwrap());
         let cert = make_device_cert(
             &dev_vk,
             "https://ca.test",
@@ -814,13 +812,13 @@ mod chain_tests {
             ca_id: "https://ca1.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        }))
+        }).unwrap())
         .with_rollover(TrustAnchor::new(CaPublicKey {
             key_bytes: ca2_vk,
             ca_id: "https://ca2.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        }));
+        }).unwrap());
         // Cert signed by CA2
         let cert = make_device_cert(
             &dev_vk,
@@ -847,7 +845,7 @@ mod chain_tests {
             ca_id: "https://ca.test".to_string(),
             not_before: 0,
             not_after: 999, // already expired
-        }));
+        }).unwrap());
         let cert = make_device_cert(
             &dev_vk,
             "https://ca.test",
@@ -859,5 +857,47 @@ mod chain_tests {
             validate_chain_with_store(&cert, &[], &store, 1_000),
             Err(PqRascvError::TrustAnchorExpired)
         ));
+    }
+}
+
+#[cfg(all(test, feature = "alloc"))]
+mod trust_anchor_tests {
+    use super::*;
+    use crate::crypto::ML_DSA_65_VERIFYING_KEY_SIZE;
+
+    fn dummy_key() -> CaPublicKey {
+        CaPublicKey {
+            key_bytes: [0u8; ML_DSA_65_VERIFYING_KEY_SIZE],
+            ca_id: "https://ca.test".to_string(),
+            not_before: 0,
+            not_after: u64::MAX,
+        }
+    }
+
+    #[test]
+    fn empty_ca_id_returns_err() {
+        let mut key = dummy_key();
+        key.ca_id = String::new();
+        assert!(
+            TrustAnchor::new(key).is_err(),
+            "empty ca_id must return Err, not panic"
+        );
+    }
+
+    #[test]
+    fn not_before_after_not_after_returns_err() {
+        let mut key = dummy_key();
+        key.not_before = 1_000;
+        key.not_after = 500; // before not_before
+        assert!(
+            TrustAnchor::new(key).is_err(),
+            "not_before > not_after must return Err, not panic"
+        );
+    }
+
+    #[test]
+    fn valid_input_returns_ok() {
+        let key = dummy_key();
+        assert!(TrustAnchor::new(key).is_ok());
     }
 }

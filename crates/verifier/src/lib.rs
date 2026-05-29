@@ -740,7 +740,7 @@ mod pki_tests {
             ca_id: "https://ca.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        });
+        }).unwrap();
         let device_cert =
             make_device_cert(&dev_vk, "https://ca.test", "DEV-001", ca_seed.as_bytes());
 
@@ -786,7 +786,7 @@ mod pki_tests {
             ca_id: "https://ca.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        });
+        }).unwrap();
         let device_cert = make_device_cert(
             &dev_vk,
             "https://ca.test",
@@ -851,7 +851,7 @@ mod pki_tests {
             ca_id: "https://ca.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        });
+        }).unwrap();
         let device_cert =
             make_device_cert(&dev_vk, "https://ca.test", "DEV-001", ca_seed.as_bytes());
 
@@ -895,7 +895,7 @@ mod pki_tests {
             ca_id: "https://root.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        });
+        }).unwrap();
 
         // Intermediate cert: signed by root, self_id = "https://int.test", max_path_length = None
         let int_subject_key_id = pqrascv_core::crypto::pub_key_id(&int_vk);
@@ -965,7 +965,7 @@ mod pki_tests {
             ca_id: "https://audit.ca".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        });
+        }).unwrap();
         let device_cert =
             make_device_cert(&dev_vk, "https://audit.ca", "DEV-AUDIT", ca_seed.as_bytes());
 
@@ -1011,7 +1011,7 @@ mod pki_tests {
             ca_id: "https://store.ca".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        }));
+        }).unwrap());
         let device_cert =
             make_device_cert(&dev_vk, "https://store.ca", "DEV-STORE", ca_seed.as_bytes());
 
@@ -1053,7 +1053,7 @@ mod pki_tests {
             ca_id: "https://expired.ca".to_string(),
             not_before: 0,
             not_after: 999,
-        }));
+        }).unwrap());
         let device_cert =
             make_device_cert(&dev_vk, "https://expired.ca", "DEV-EXP", ca_seed.as_bytes());
 
@@ -1095,7 +1095,7 @@ mod pki_tests {
             ca_id: "https://ca.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        });
+        }).unwrap();
         let device_cert =
             make_device_cert(&dev_vk, "https://ca.test", "DEV-E1", ca_seed.as_bytes());
 
