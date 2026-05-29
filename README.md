@@ -61,10 +61,10 @@ post-quantum signed *and* supply-chain provenance-linked.
 
 ```toml
 # std (default)
-pqrascv-core = "1.0.0-rc.3"
+pqrascv-core = "1.0.0-rc.5"
 
 # bare-metal — bring your own allocator
-pqrascv-core = { version = "1.0.0-rc.3", default-features = false, features = ["alloc"] }
+pqrascv-core = { version = "1.0.0-rc.5", default-features = false, features = ["alloc"] }
 ```
 
 ### CLI
@@ -78,17 +78,22 @@ cargo install pqrascv-cli
 pqrascv keygen --out-seed seed.bin --out-vk vk.bin
 
 # 2. Generate an attestation quote (prover side)
+#    --software-rot-acknowledged is required when using the software backend
+#    (no real TPM/DICE/TDX hardware). The nonce is generated automatically
+#    and printed — copy the hex string for use in step 3.
 pqrascv attest \
   --seed seed.bin --vk vk.bin \
   --firmware firmware.bin \
   --slsa-level 3 \
-  --out quote.cbor
+  --out quote.cbor \
+  --software-rot-acknowledged
 
 # 3. Verify the quote (verifier side)
+#    --nonce must be the 64-hex-char value printed by the attest step above.
 pqrascv verify \
   --vk vk.bin \
   --quote quote.cbor \
-  --nonce <NONCE_FROM_ATTEST_STEP> \
+  --nonce <64-HEX-CHAR-NONCE-FROM-ATTEST-OUTPUT> \
   --json
 ```
 
@@ -430,7 +435,7 @@ Reads the SHA-256 PCR bank (PCRs 0–7) from a hardware or simulated TPM via
 [`tss-esapi`](https://crates.io/crates/tss-esapi) (TCG TSS2 ESAPI). Linux only.
 
 ```toml
-pqrascv-core = { version = "1.0.0-rc.3", features = ["hardware-tpm"] }
+pqrascv-core = { version = "1.0.0-rc.5", features = ["hardware-tpm"] }
 ```
 
 ```rust
@@ -453,7 +458,7 @@ CDI_attestation = SHA3-256( CDI ‖ "DICE-attest" ‖ SHA3-256(firmware) )
 ```
 
 ```toml
-pqrascv-core = { version = "1.0.0-rc.3", features = ["dice"] }
+pqrascv-core = { version = "1.0.0-rc.5", features = ["dice"] }
 ```
 
 ```rust
@@ -554,7 +559,7 @@ of captured quotes.
 
 ## Status
 
-**v1.0.0-rc.3** — API stabilizing. 382 tests pass.
+**v1.0.0-rc.5** — API stabilizing. 382 tests pass.
 
 | Implemented ✅ | Preview / Experimental 🔬 | Planned 🗺 |
 |----------------|---------------------------|------------|

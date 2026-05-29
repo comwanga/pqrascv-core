@@ -64,4 +64,5 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dev-dependencies]
 pqrascv-core = { path = ".", features = ["std", "software-rot-unsafe"] }
+# path = local code in CI/dev; version = published rc.3 resolves during `cargo publish` packaging
 pqrascv-verifier = { path = "../verifier", version = "1.0.0-rc.3" }
