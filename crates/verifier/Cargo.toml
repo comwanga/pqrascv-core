@@ -10,7 +10,7 @@ license.workspace      = true
 repository.workspace   = true
 
 [dependencies]
-pqrascv-core = { path = "../pqrascv-core", version = "1.0.0-rc.3", features = ["std"] }
+pqrascv-core = { path = "../pqrascv-core", version = "1.0.0-rc.4", features = ["std"] }
 serde.workspace    = true
 ciborium.workspace = true
 subtle.workspace   = true
@@ -20,4 +20,4 @@ ciborium = "0.2"
 hex = "0.4"
 getrandom = { workspace = true }
 sha3.workspace = true
-pqrascv-core = { path = "../pqrascv-core", version = "1.0.0-rc.3", features = ["std", "software-rot-unsafe"] }
+pqrascv-core = { path = "../pqrascv-core", version = "1.0.0-rc.4", features = ["std", "software-rot-unsafe"] }
