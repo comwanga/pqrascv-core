@@ -159,6 +159,15 @@ impl Verifier {
     /// - `expected_nonce`: the nonce sent in the [`Challenge`]; must match `body.nonce`.
     /// - `now_secs`: current Unix time for age-check policy evaluation.
     ///
+    /// # Replay Protection — Caller Obligation
+    ///
+    /// This method does **not** consume from a [`NonceLedger`]. The caller is
+    /// responsible for calling `ledger.consume(&nonce)` or `ledger.consume_handle(handle)`
+    /// before or after this call. Omitting the consume step means the same nonce
+    /// can be presented again and will pass this check.
+    ///
+    /// [`NonceLedger`]: pqrascv_core::nonce::NonceLedger
+    ///
     /// # Errors
     ///
     /// Returns the first [`PqRascvError`] encountered.
@@ -180,6 +189,14 @@ impl Verifier {
     ///
     /// Use this when you generated the challenge with [`Challenge::new`] and want
     /// to pair it with the quote the prover returned.
+    ///
+    /// # Replay Protection — Caller Obligation
+    ///
+    /// Same as [`verify_cbor`]: this method does not consume from a [`NonceLedger`].
+    /// Call `ledger.consume_handle(handle)` separately.
+    ///
+    /// [`verify_cbor`]: Self::verify_cbor
+    /// [`NonceLedger`]: pqrascv_core::nonce::NonceLedger
     pub fn verify_with_challenge(
         &self,
         cbor: &[u8],
