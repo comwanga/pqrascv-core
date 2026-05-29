@@ -32,7 +32,7 @@ fuzz_target!(|data: &[u8]| {
         2 => HardwareBackendType::IntelTdx,
         3 => HardwareBackendType::AmdSevSnp,
         4 => HardwareBackendType::NitroEnclave,
-        _ => HardwareBackendType::TestOnly,
+        _ => HardwareBackendType::NitroEnclave,
     };
 
     let secure_boot_state = match sb_byte % 4 {
@@ -105,6 +105,29 @@ fuzz_target!(|data: &[u8]| {
         consensus_evaluation: None,
         federated_epoch: None,
         timeline_reconciliation: None,
+
+        // Phase 3.0 Sovereign Node Fields
+        bitcoin_node_identity: None,
+        bitcoin_workload_evidence: None,
+        bitcoin_runtime_state: None,
+        node_session: None,
+
+        // Phase 3.2 Streaming & PQ Federation Fields
+        runtime_stream: None,
+        delta_attestation: None,
+        checkpoint: None,
+        pq_session: None,
+        compacted_timeline: None,
+        federation_envelope: None,
+
+        // Phase 3.3 Byzantine Federation Fields
+        revocation_list: None,
+
+        // Phase 3.4 Federation Time Semantics Fields
+        logical_clock: None,
+        temporal_ambiguity: None,
+        verifier_registration_state: None,
+        epoch_key_binding: None,
     };
 
     // Build some rules using the input bytes
