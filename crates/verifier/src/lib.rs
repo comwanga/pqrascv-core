@@ -25,6 +25,7 @@ use pqrascv_core::{
     provenance_v2::{ExternalProvenanceBundle, SigstoreConfig, VerifiedProvenance},
     quote::{AttestationQuote, Challenge, PROTOCOL_VERSION},
 };
+use subtle::ConstantTimeEq;
 
 // ────────────────────────────────────────────────────────────────────────────
 // VerificationResult
@@ -356,7 +357,7 @@ impl Verifier {
         if quote.body.version != PROTOCOL_VERSION {
             return Err(PqRascvError::UnsupportedVersion);
         }
-        if &quote.body.nonce != expected_nonce {
+        if quote.body.nonce.ct_eq(expected_nonce).unwrap_u8() == 0 {
             return Err(PqRascvError::VerificationFailed);
         }
         let expected_id = pub_key_id(verifying_key);

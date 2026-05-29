@@ -13,6 +13,7 @@ repository.workspace   = true
 pqrascv-core = { path = "../pqrascv-core", version = "1.0.0-rc.3", features = ["std"] }
 serde.workspace    = true
 ciborium.workspace = true
+subtle.workspace   = true
 
 [dev-dependencies]
 ciborium = "0.2"
