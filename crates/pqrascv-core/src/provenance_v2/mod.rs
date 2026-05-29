@@ -274,9 +274,13 @@ impl ExternalProvenanceBundle {
 
     /// Condition 2 — The signing certificate chains to a trusted Fulcio root.
     ///
-    /// Verifies issuer-subject name binding between the leaf cert
-    /// (`signing_cert_der`) and the trusted root (`fulcio_root_der`).
-    /// Full `TBSCertificate` signature verification is a planned follow-on.
+    /// Performs two checks via [`fulcio::verify_chain`]:
+    /// 1. **Structural**: the leaf cert's `issuer` DN equals the root's `subject` DN.
+    /// 2. **Cryptographic**: the root CA's P-256 key produced the DER-encoded ECDSA
+    ///    signature over the leaf's `TBSCertificate` bytes.
+    ///
+    /// Both checks must pass. A cert with the right issuer DN but an invalid CA
+    /// signature is rejected.
     fn check_fulcio_chain(&self, fulcio_root_der: &[u8]) -> Result<(), PqRascvError> {
         fulcio::verify_chain(&self.sigstore_bundle.signing_cert_der, fulcio_root_der)
             .map_err(PqRascvError::from)
