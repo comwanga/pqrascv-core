@@ -180,6 +180,44 @@ jobs:
       - name: Audit dependencies
         run: cargo audit
 
+  # ── Fuzz (build + 30-second smoke runs) ──────────────────────────────────────
+  fuzz:
+    name: Fuzz (smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz -> fuzz/target
+
+      - name: Install cargo-fuzz
+        # --locked pins to cargo-fuzz's own Cargo.lock which includes rustix 0.36.x,
+        # incompatible with current nightly. Omit --locked so cargo resolves a
+        # rustix >= 0.38 that compiles cleanly on nightly.
+        run: cargo install cargo-fuzz
+
+      - name: Build fuzz targets
+        working-directory: fuzz
+        run: cargo fuzz build
+
+      - name: Smoke-run quote_roundtrip (30 s)
+        working-directory: fuzz
+        run: cargo fuzz run quote_roundtrip -- -max_total_time=30
+
+      - name: Smoke-run policy_eval (30 s)
+        working-directory: fuzz
+        run: cargo fuzz run policy_eval -- -max_total_time=30
+
+      - name: Smoke-run federation_fuzz (30 s)
+        working-directory: fuzz
+        run: cargo fuzz run federation_fuzz -- -max_total_time=30
+
+      - name: Smoke-run bitcoin_node_fuzz (30 s)
+        working-directory: fuzz
+        run: cargo fuzz run bitcoin_node_fuzz -- -max_total_time=30
+
   # ── MSRV check ────────────────────────────────────────────────────────────────
   msrv:
     name: MSRV (Rust 1.85)

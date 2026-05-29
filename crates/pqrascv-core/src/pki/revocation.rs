@@ -81,7 +81,7 @@ impl RevocationList {
         use crate::crypto::{CryptoBackend, MlDsaBackend, SIGNING_CONTEXT_CRL};
 
         if !self.is_fresh(now_secs) {
-            return Err(PqRascvError::PolicyViolation);
+            return Err(PqRascvError::PolicyViolation("CrlStale"));
         }
         let tbs = self.tbs_cbor()?;
         MlDsaBackend.verify(&tbs, ca_key, &self.issuer_signature, SIGNING_CONTEXT_CRL)?;
@@ -222,7 +222,7 @@ mod tests {
         // now_secs = 3_000 > next_update = 2_000
         assert!(matches!(
             crl.verify(&ca_vk, 3_000),
-            Err(PqRascvError::PolicyViolation)
+            Err(PqRascvError::PolicyViolation(_))
         ));
     }
 

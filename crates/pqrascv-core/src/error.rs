@@ -31,7 +31,10 @@ pub enum PqRascvError {
     /// The requested backend is not available (feature not compiled in).
     BackendUnavailable,
     /// The quote failed policy validation.
-    PolicyViolation,
+    ///
+    /// The embedded string names the rule that rejected the quote, e.g.
+    /// `"RequireHardwareBackend"` or `"MinSlsaLevel"`.
+    PolicyViolation(&'static str),
     /// The quote's protocol version is not supported by this verifier.
     UnsupportedVersion,
     /// The quote was generated without a real-time clock and the policy
@@ -63,7 +66,7 @@ impl fmt::Display for PqRascvError {
             Self::BackendUnavailable => {
                 f.write_str("backend unavailable (feature not compiled in)")
             }
-            Self::PolicyViolation => f.write_str("quote failed policy validation"),
+            Self::PolicyViolation(rule) => write!(f, "policy violation: {rule}"),
             Self::UnsupportedVersion => f.write_str("unsupported protocol version"),
             Self::RtcRequired => {
                 f.write_str("quote has no timestamp and policy requires a real-time clock")

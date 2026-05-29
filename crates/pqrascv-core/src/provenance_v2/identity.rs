@@ -26,7 +26,7 @@ pub enum IdentityError {
 
 impl From<IdentityError> for PqRascvError {
     fn from(_: IdentityError) -> Self {
-        PqRascvError::PolicyViolation
+        PqRascvError::PolicyViolation("IdentityConstraint")
     }
 }
 

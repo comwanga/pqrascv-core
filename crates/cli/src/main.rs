@@ -379,9 +379,7 @@ fn cmd_verify(
   "firmware_hash": "{}",
   "nonce": "{}",
   "slsa_level": {},
-  "slsa_level_note": "self-reported; independent CI verification NOT_IMPLEMENTED",
-  "bitcoin_anchoring": "NOT_IMPLEMENTED",
-  "external_provenance": "NOT_IMPLEMENTED"
+  "slsa_level_source": "self-reported"
 }}"#,
                     actual_hash,
                     hex::encode(result.nonce()),
@@ -394,13 +392,10 @@ fn cmd_verify(
                 println!("   Firmware Hash:     {actual_hash}");
                 println!("   Nonce:             {}", hex::encode(result.nonce()));
                 println!(
-                    "   SLSA Level:        {} (self-reported; CI verification NOT_IMPLEMENTED)",
+                    "   SLSA Level:        {} (self-reported by the prover)",
                     result.slsa_level()
                 );
                 println!("\n   Payload: {}", quote_path.display());
-                println!("\n   NOTE: Bitcoin anchoring, consensus verification, and external");
-                println!("   provenance validation are NOT YET IMPLEMENTED.");
-                println!("   The above confirms ML-DSA-65 signature validity only.");
             }
         }
         Err(e) => {

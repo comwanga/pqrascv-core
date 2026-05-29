@@ -53,7 +53,7 @@ post-quantum signed *and* supply-chain provenance-linked.
 - **Replay protection** — verifier-supplied 32-byte nonce bound inside the signature
 - **Constant-time PQ ops** — RustCrypto crates; key material is `Zeroize`-on-drop
 - **Compact wire format** — CBOR (RFC 8949), ~3.7 KB total quote including signature
-- **Bitcoin anchoring** — OP_RETURN commitments with RFC 6962 Merkle batching and SPV inclusion proofs
+- **Bitcoin anchoring SDK** — `pqrascv-bitcoin-anchor` builds OP_RETURN payloads and verifies RFC 6962 Merkle + SPV inclusion proofs; requires operator-provided Bitcoin node for broadcast and confirmation
 
 ---
 
@@ -315,6 +315,102 @@ CRLs are signed CBOR lists (`RevocationList`). `VerifiedRevocationList` wraps a 
 signature has been checked — `is_revoked()` is only accessible after signature verification,
 preventing callers from bypassing the check.
 
+### End-to-end PKI walkthrough
+
+The following example shows the complete flow from CA setup through quote verification.
+In production the CA operations would run on an air-gapped HSM and ship only the signed
+certificates; the prover and verifier sides never share private key material.
+
+```rust
+use pqrascv_core::{
+    config::PolicyConfig,
+    crypto::{generate_ml_dsa_keypair, pub_key_id, CryptoBackend, MlDsaBackend,
+             ML_DSA_65_VERIFYING_KEY_SIZE, SIGNING_CONTEXT_CERT},
+    measurement::SoftwareRoT,
+    pki::{CaPublicKey, DeviceCertificate, HardwareIdentity, TrustAnchor, CERT_VERSION},
+    provenance::SlsaPredicateBuilder,
+    quote::{generate_quote, QuoteTimestamp},
+};
+use pqrascv_verifier::Verifier;
+use sha3::{Digest, Sha3_256};
+
+// ── 1. CA setup (offline / HSM in production) ───────────────────────────────
+
+let (ca_seed, ca_vk) = generate_ml_dsa_keypair()?;
+
+let trust_anchor = TrustAnchor::new(CaPublicKey {
+    ca_id:      "https://pki.example.com/root".to_string(),
+    key_bytes:  ca_vk,
+    not_before: 0,
+    not_after:  u64::MAX,  // use a real expiry in production
+})?;
+
+// ── 2. Device provisioning (factory / secure enclave) ───────────────────────
+
+let (dev_seed, dev_vk) = generate_ml_dsa_keypair()?;
+
+let mut device_cert = DeviceCertificate {
+    version:           CERT_VERSION,
+    serial:            "DEV-2025-001".to_string(),
+    issuer_id:         "https://pki.example.com/root".to_string(),
+    self_id:           "https://pki.example.com/devices/DEV-2025-001".to_string(),
+    not_before:        0,
+    not_after:         u64::MAX,
+    subject_key:       dev_vk.to_vec(),
+    subject_key_id:    pub_key_id(&dev_vk),
+    hardware_identity: HardwareIdentity::TpmEkCertHash([0u8; 32]), // real EK hash in prod
+    fw_policy:         None,
+    issuer_signature:  vec![],
+    max_path_length:   Some(0),  // leaf certificate
+};
+
+// CA signs the device certificate (runs on HSM in production)
+let tbs = device_cert.tbs_cbor()?;
+let sig = MlDsaBackend.sign(&tbs, ca_seed.as_bytes(), SIGNING_CONTEXT_CERT)?;
+device_cert.issuer_signature = sig.as_ref().to_vec();
+
+// ── 3. Quote generation (prover / device) ───────────────────────────────────
+
+let firmware: &[u8] = b"firmware image bytes";
+let nonce = [0x42u8; 32];  // supplied by the verifier in a real flow
+
+let fw_hash: [u8; 32] = Sha3_256::digest(firmware).into();
+let rot  = SoftwareRoT::new(firmware, None, 0);  // use hardware backend in prod
+let prov = SlsaPredicateBuilder::new("https://ci.example.com")
+    .add_subject("firmware.bin", &fw_hash)
+    .with_slsa_level(1)
+    .build()?;
+
+let dev_vk_array: [u8; ML_DSA_65_VERIFYING_KEY_SIZE] = dev_vk.try_into().unwrap();
+
+let quote = generate_quote(
+    &rot, &MlDsaBackend, dev_seed.as_bytes(), &dev_vk_array,
+    &nonce, prov, QuoteTimestamp::NoRtc,
+)?;
+let cbor = quote.to_cbor()?;
+
+// ── 4. Quote verification (verifier / server) ───────────────────────────────
+
+let verifier = Verifier::new(PolicyConfig::default());
+
+let result = verifier.verify_cbor_with_pki(
+    &cbor,
+    device_cert,
+    vec![],   // no intermediate CAs in this example
+    &trust_anchor,
+    None,     // no CRL
+    &nonce,
+    0,        // now_secs — use SystemTime::now() in production
+)?;
+
+println!("Firmware hash: {}", hex::encode(result.firmware_hash()));
+println!("Verified by CA: {}", result.trust_anchor_id());
+```
+
+This example uses `SoftwareRoT` (testing only). Replace it with `TpmRoT`, `DiceRoT`, or the
+hardware TDX/SEV-SNP backends for production deployments where `PolicyEngineV2::production()`
+is active.
+
 ---
 
 ## Supported Backends
@@ -371,17 +467,22 @@ let m1   = DiceRoT::new(cdi1, APP_FW, Some(AI_MODEL), 0).measure().unwrap();
 
 ## Bitcoin Anchoring
 
-`pqrascv-bitcoin-anchor` commits batches of attestation quote hashes to the Bitcoin blockchain
-via OP_RETURN outputs, providing immutable, decentralized timestamping.
+`pqrascv-bitcoin-anchor` is a **library SDK** for building and verifying Bitcoin OP_RETURN
+anchoring payloads. It provides all the cryptographic machinery:
+
+- **OP_RETURN payload encoding/decoding** — 40-byte format: `"PQRASCV" || 0x02 || merkle_root`
+- **RFC 6962 Merkle tree** — second-preimage resistant (leaf prefix `0x00`, internal `0x01`)
+- **SPV inclusion proof verification** — offline-verifiable without a full node
 
 ```
 OP_RETURN <magic: 7 bytes "PQRASCV"> <version: 1 byte 0x02> <merkle_root: 32 bytes>
 Total payload: 40 bytes (well within the 80-byte OP_RETURN limit)
 ```
 
-The Merkle tree uses RFC 6962 with prefix separation (`0x00` for leaves, `0x01` for internal
-nodes) to prevent second-preimage attacks (CVE-2012-2459 class). SPV inclusion proofs allow
-offline verification without a full Bitcoin node.
+**Integration note:** The SDK constructs and verifies payloads, but broadcasting transactions
+and retrieving confirmation proofs requires an operator-provided Bitcoin node or Electrum server.
+The `pqrascv verify` CLI confirms ML-DSA-65 signature validity; Bitcoin anchoring verification
+is a separate step performed against your node using the SDK.
 
 ---
 
@@ -390,7 +491,7 @@ offline verification without a full Bitcoin node.
 | Role | Algorithm | Standard | Sizes |
 |------|-----------|----------|-------|
 | Signatures | ML-DSA-65 | FIPS 204 | seed 32 B · vk 1 952 B · sig 3 309 B |
-| Key encapsulation | ML-KEM-768 | FIPS 203 | (future PQ transport layer) |
+| Key encapsulation | ML-KEM-768 | FIPS 203 | Used in `pqrascv-hardware` PQ transport key type |
 | Hashing | SHA3-256 | FIPS 202 | 32 B digest |
 | Wire encoding | CBOR | RFC 8949 | ~3.7 KB total quote |
 
@@ -453,22 +554,34 @@ of captured quotes.
 
 ## Status
 
-**v1.0.0-rc.3** — API stabilized. 296 tests pass.
+**v1.0.0-rc.3** — API stabilizing. 382 tests pass.
 
-| Implemented ✅ | Planned 🗺 |
-|----------------|------------|
-| ML-DSA-65 sign / verify | Authoritative Sigstore provenance verification |
-| ML-KEM-768 encapsulation | Fulcio chain validation + Rekor inclusion proofs |
-| Software / TPM 2.0 / DICE backends | AMD SEV-SNP & Intel TDX backends |
-| SLSA v1 provenance + SBOM hash | Noise\_PQX post-quantum transport |
-| CBOR-native PKI (Root CA → Device) | CBOR COSE signatures (RFC 9052) |
-| CRL revocation (`VerifiedRevocationList`) | Python SDK (PyO3 bindings) |
-| Trust anchor lifecycle (`not_before`/`not_after`) | OP-TEE / TrustZone backend |
-| `TrustStore` CA rollover | Stable 1.0 API |
-| Bitcoin OP_RETURN anchoring (full 32-byte root) | |
-| RFC 6962 Merkle tree + SPV proofs | |
-| ML-DSA-65 domain separation contexts | |
-| CLI prover + verifier binary | |
+| Implemented ✅ | Preview / Experimental 🔬 | Planned 🗺 |
+|----------------|---------------------------|------------|
+| ML-DSA-65 sign / verify | Sigstore bundle verification (`verify_all` conditions 1–5) | Noise\_PQX post-quantum transport |
+| ML-KEM-768 encapsulation (PQ transport key type) | Fulcio chain + Rekor inclusion proof parsing | CBOR COSE signatures (RFC 9052) |
+| Software / TPM 2.0 / DICE backends | Intel TDX backend (`intel-tdx` feature) | Python SDK (PyO3 bindings) |
+| SLSA v1 provenance + SBOM hash | AMD SEV-SNP backend (`amd-sev-snp` feature) | OP-TEE / TrustZone backend |
+| CBOR-native PKI (Root CA → Device) | | Stable 1.0 API (pending `ml-dsa` crate GA) |
+| CRL revocation (`VerifiedRevocationList`) | | |
+| Trust anchor lifecycle (`not_before`/`not_after`) | | |
+| `TrustStore` CA rollover | | |
+| `PolicyEngineV2` composable rule engine | | |
+| Hardware-identity cross-validation (TDX/SEV-SNP → PCR[0]) | | |
+| Bitcoin OP_RETURN anchoring SDK (40-byte payload) | | |
+| RFC 6962 Merkle tree + SPV proofs | | |
+| ML-DSA-65 domain separation contexts | | |
+| CLI prover + verifier binary | | |
+
+### Backend Maturity
+
+| Backend | Feature flag | Maturity | Notes |
+|---------|-------------|----------|-------|
+| `SoftwareRoT` | `software-rot-unsafe` | **Test / demo only** | No hardware boundary; measurements are caller-supplied. Requires `--software-rot-acknowledged` in CLI. |
+| TPM 2.0 | `hardware-tpm` | **Production** | Requires `tpm2-tss` system library. |
+| DICE CDI | `dice` | **Production** | Pure-Rust; suitable for MCU boot chains. |
+| Intel TDX | `intel-tdx` | **Experimental** | Linux kernel ≥ 6.5 with `/dev/tdx_guest`. Community testing welcome. |
+| AMD SEV-SNP | `amd-sev-snp` | **Experimental** | Linux kernel ≥ 6.5 with `/dev/sev-guest`. Community testing welcome. |
 
 ---
 

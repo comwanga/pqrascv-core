@@ -29,6 +29,7 @@ fn make_identity(seed: u8) -> VerifierIdentity {
         verifier_id: alloc::format!("v{seed}"),
         organization: "fuzz-org".into(),
         public_key: alloc::vec![seed; 32],
+        ml_kem_public_key: None,
         capabilities: alloc::vec![VerifierCapability::HardwareVerification],
     }
 }
@@ -85,7 +86,7 @@ fuzz_target!(|data: &[u8]| {
         .map(|i| VerifierVote {
             verifier_id: alloc::format!("v{}", i % fed.member_count()),
             trusted: i < trusted_count,
-            reasons: alloc::vec![VerificationDecisionReason::Trusted],
+            reasons: alloc::vec![VerificationDecisionReason::Success],
             warnings: alloc::vec![],
         })
         .collect();
@@ -139,9 +140,9 @@ fuzz_target!(|data: &[u8]| {
         created_at: 999_999,
         previous_epoch: None,
     };
-    let _ = registry.propose(epoch_a, &fed);
-    let _ = registry.propose(epoch_b, &fed); // split-brain
-    let _ = registry.propose(epoch_c, &fed); // non-monotonic
+    let _ = registry.propose(epoch_a);
+    let _ = registry.propose(epoch_b); // split-brain
+    let _ = registry.propose(epoch_c); // non-monotonic
 
     // ── 5. GovernanceRecord validation ────────────────────────────────────
     let nonce = {
