@@ -25,3 +25,5 @@ pub mod tdx;
 pub mod sevsnp;
 
 pub mod optee;
+
+pub mod applese;
