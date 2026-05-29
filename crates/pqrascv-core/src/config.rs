@@ -84,13 +84,13 @@ impl PolicyConfig {
         use crate::error::PqRascvError;
 
         if slsa_level < self.min_slsa_level {
-            return Err(PqRascvError::PolicyViolation);
+            return Err(PqRascvError::PolicyViolation("MinSlsaLevel"));
         }
         if self.require_firmware_hash && firmware_hash == &[0u8; 32] {
-            return Err(PqRascvError::PolicyViolation);
+            return Err(PqRascvError::PolicyViolation("RequireFirmwareHash"));
         }
         if self.require_event_counter && event_counter == 0 {
-            return Err(PqRascvError::PolicyViolation);
+            return Err(PqRascvError::PolicyViolation("RequireEventCounter"));
         }
 
         match timestamp {
@@ -104,7 +104,7 @@ impl PolicyConfig {
                 if self.max_quote_age_secs > 0 {
                     let age = now_secs.saturating_sub(ts);
                     if age > self.max_quote_age_secs {
-                        return Err(PqRascvError::PolicyViolation);
+                        return Err(PqRascvError::PolicyViolation("MaxQuoteAgeSecs"));
                     }
                 }
             }

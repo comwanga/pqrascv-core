@@ -670,7 +670,7 @@ mod tests {
         );
         let result = verifier.verify_cbor(&cbor, &vk, &[0x77u8; 32], 1_700_000_600);
         assert!(
-            matches!(result, Err(PqRascvError::PolicyViolation)),
+            matches!(result, Err(PqRascvError::PolicyViolation(_))),
             "RequireHardwareBackend must reject SoftwareRoT, got {result:?}"
         );
     }
@@ -1183,7 +1183,7 @@ mod pki_tests {
         );
         assert!(matches!(
             verifier.verify_cbor(&cbor, &vk, &[0xE2u8; 32], 1_700_000_600),
-            Err(PqRascvError::PolicyViolation)
+            Err(PqRascvError::PolicyViolation(_))
         ));
     }
 

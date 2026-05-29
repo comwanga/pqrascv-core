@@ -325,45 +325,45 @@ impl PolicyEngineV2 {
             }
             PolicyRule::RequireHardwareBackend => {
                 if !ctx.hardware_backend.is_hardware_rooted() {
-                    return Err(PqRascvError::PolicyViolation);
+                    return Err(PqRascvError::PolicyViolation("RequireHardwareBackend"));
                 }
             }
             PolicyRule::RequireCertificateChain => {
                 if !ctx.has_cert_chain {
-                    return Err(PqRascvError::PolicyViolation);
+                    return Err(PqRascvError::PolicyViolation("RequireCertificateChain"));
                 }
             }
             PolicyRule::RequireExternalProvenance => {
                 if ctx.verified_provenance.is_none() {
-                    return Err(PqRascvError::PolicyViolation);
+                    return Err(PqRascvError::PolicyViolation("RequireExternalProvenance"));
                 }
             }
             PolicyRule::MinSlsaLevel(min) => {
                 if ctx.slsa_level < *min {
-                    return Err(PqRascvError::PolicyViolation);
+                    return Err(PqRascvError::PolicyViolation("MinSlsaLevel"));
                 }
             }
             PolicyRule::RequireFirmwareHash => {
                 if ctx.firmware_hash == &[0u8; 32] {
-                    return Err(PqRascvError::PolicyViolation);
+                    return Err(PqRascvError::PolicyViolation("RequireFirmwareHash"));
                 }
             }
             PolicyRule::AllowedBuilders(builders) => {
                 let builder = ctx.builder_id.unwrap_or("");
                 if !builders.iter().any(|b| b == builder) {
-                    return Err(PqRascvError::PolicyViolation);
+                    return Err(PqRascvError::PolicyViolation("AllowedBuilders"));
                 }
             }
             PolicyRule::AllowedFirmwareHashes(hashes) => {
                 if !hashes.is_empty() && !hashes.contains(ctx.firmware_hash) {
-                    return Err(PqRascvError::PolicyViolation);
+                    return Err(PqRascvError::PolicyViolation("AllowedFirmwareHashes"));
                 }
             }
             PolicyRule::MaxQuoteAgeSecs(max_age) => {
                 if let ClockEvidence::TrustedRtc(ts) = ctx.clock {
                     let age = ctx.now_secs.saturating_sub(ts);
                     if age > *max_age {
-                        return Err(PqRascvError::PolicyViolation);
+                        return Err(PqRascvError::PolicyViolation("MaxQuoteAgeSecs"));
                     }
                 }
             }
@@ -375,27 +375,27 @@ impl PolicyEngineV2 {
             PolicyRule::RequireBitcoinAnchor { min_confirmations } => {
                 match ctx.bitcoin_confirmations {
                     Some(c) if c >= *min_confirmations => {}
-                    _ => return Err(PqRascvError::PolicyViolation),
+                    _ => return Err(PqRascvError::PolicyViolation("RequireBitcoinAnchor")),
                 }
             }
             PolicyRule::RequirePcrValues { pcr_slot, expected } => {
                 let slot = *pcr_slot as usize;
                 if slot >= crate::measurement::PCR_COUNT {
-                    return Err(PqRascvError::PolicyViolation);
+                    return Err(PqRascvError::PolicyViolation("RequirePcrValues:slot"));
                 }
                 let actual = &ctx.pcrs.digests[slot];
                 if expected == &[0u8; 32] {
                     // All-zero expected means "require PCR to be non-zero".
                     if actual == &[0u8; 32] {
-                        return Err(PqRascvError::PolicyViolation);
+                        return Err(PqRascvError::PolicyViolation("RequirePcrValues:nonzero"));
                     }
                 } else if actual != expected {
-                    return Err(PqRascvError::PolicyViolation);
+                    return Err(PqRascvError::PolicyViolation("RequirePcrValues:mismatch"));
                 }
             }
             PolicyRule::RequireMinEventCounter(min) => {
                 if ctx.event_counter < *min {
-                    return Err(PqRascvError::PolicyViolation);
+                    return Err(PqRascvError::PolicyViolation("RequireMinEventCounter"));
                 }
             }
         }
@@ -439,10 +439,10 @@ mod tests {
         // it cannot be constructed outside verify_all() — so this invariant is
         // enforced for all callers.
         let engine = PolicyEngineV2::production();
-        assert_eq!(
+        assert!(matches!(
             engine.evaluate(&base_ctx()),
-            Err(PqRascvError::PolicyViolation)
-        );
+            Err(PqRascvError::PolicyViolation(_))
+        ));
     }
 
     #[test]
@@ -450,7 +450,10 @@ mod tests {
         let engine = PolicyEngineV2::production();
         let mut ctx = base_ctx();
         ctx.hardware_backend = HardwareBackendKind::SoftwareUnsafe;
-        assert_eq!(engine.evaluate(&ctx), Err(PqRascvError::PolicyViolation));
+        assert!(matches!(
+            engine.evaluate(&ctx),
+            Err(PqRascvError::PolicyViolation(_))
+        ));
     }
 
     #[test]
@@ -458,7 +461,10 @@ mod tests {
         let engine = PolicyEngineV2::production();
         let mut ctx = base_ctx();
         ctx.has_cert_chain = false;
-        assert_eq!(engine.evaluate(&ctx), Err(PqRascvError::PolicyViolation));
+        assert!(matches!(
+            engine.evaluate(&ctx),
+            Err(PqRascvError::PolicyViolation(_))
+        ));
     }
 
     #[test]
@@ -467,7 +473,10 @@ mod tests {
         // External code cannot forge a Some(VerifiedProvenance) — the type is sealed.
         let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequireExternalProvenance]);
         let ctx = base_ctx(); // verified_provenance is None
-        assert_eq!(engine.evaluate(&ctx), Err(PqRascvError::PolicyViolation));
+        assert!(matches!(
+            engine.evaluate(&ctx),
+            Err(PqRascvError::PolicyViolation(_))
+        ));
     }
 
     #[test]
@@ -484,7 +493,10 @@ mod tests {
         let mut ctx = base_ctx();
         ctx.clock = ClockEvidence::TrustedRtc(1_000);
         ctx.now_secs = 1_000 + 301;
-        assert_eq!(engine.evaluate(&ctx), Err(PqRascvError::PolicyViolation));
+        assert!(matches!(
+            engine.evaluate(&ctx),
+            Err(PqRascvError::PolicyViolation(_))
+        ));
     }
 
     #[test]
@@ -494,7 +506,10 @@ mod tests {
         }]);
         let mut ctx = base_ctx();
         ctx.bitcoin_confirmations = Some(3);
-        assert_eq!(engine.evaluate(&ctx), Err(PqRascvError::PolicyViolation));
+        assert!(matches!(
+            engine.evaluate(&ctx),
+            Err(PqRascvError::PolicyViolation(_))
+        ));
         ctx.bitcoin_confirmations = Some(6);
         assert!(engine.evaluate(&ctx).is_ok());
     }
@@ -535,7 +550,10 @@ mod tests {
             pcr_slot: 0,
             expected: [0xcdu8; 32],
         }]);
-        assert_eq!(engine.evaluate(&ctx), Err(PqRascvError::PolicyViolation));
+        assert!(matches!(
+            engine.evaluate(&ctx),
+            Err(PqRascvError::PolicyViolation(_))
+        ));
     }
 
     #[test]
@@ -549,7 +567,10 @@ mod tests {
             pcr_slot: 0,
             expected: [0u8; 32],
         }]);
-        assert_eq!(engine.evaluate(&ctx), Err(PqRascvError::PolicyViolation));
+        assert!(matches!(
+            engine.evaluate(&ctx),
+            Err(PqRascvError::PolicyViolation(_))
+        ));
     }
 
     #[test]
@@ -572,10 +593,10 @@ mod tests {
             pcr_slot: 8,
             expected: [0u8; 32],
         }]);
-        assert_eq!(
+        assert!(matches!(
             engine.evaluate(&base_ctx()),
-            Err(PqRascvError::PolicyViolation)
-        );
+            Err(PqRascvError::PolicyViolation(_))
+        ));
     }
 
     #[test]
@@ -599,7 +620,10 @@ mod tests {
         let mut ctx = base_ctx();
         ctx.event_counter = 41;
         let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequireMinEventCounter(42)]);
-        assert_eq!(engine.evaluate(&ctx), Err(PqRascvError::PolicyViolation));
+        assert!(matches!(
+            engine.evaluate(&ctx),
+            Err(PqRascvError::PolicyViolation(_))
+        ));
     }
 }
 

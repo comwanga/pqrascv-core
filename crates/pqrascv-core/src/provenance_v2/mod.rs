@@ -412,7 +412,7 @@ impl ExternalProvenanceBundle {
             .iter()
             .any(|s| &s.digest_sha3_256 == firmware_hash);
         if !found {
-            return Err(PqRascvError::PolicyViolation);
+            return Err(PqRascvError::PolicyViolation("ArtifactHash"));
         }
         Ok(())
     }
@@ -824,7 +824,7 @@ mod tests {
         let wrong_hash = [0x00u8; 32];
 
         let err = bundle.check_artifact_hash(&wrong_hash).unwrap_err();
-        assert_eq!(err, PqRascvError::PolicyViolation);
+        assert!(matches!(err, PqRascvError::PolicyViolation(_)));
     }
 
     #[test]
