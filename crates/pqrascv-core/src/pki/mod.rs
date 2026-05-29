@@ -278,20 +278,18 @@ pub struct TrustAnchor {
 impl TrustAnchor {
     /// Creates a trust anchor from the root CA's verifying key and validity window.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `root_ca.ca_id` is empty or if `root_ca.not_before > root_ca.not_after`.
-    #[must_use]
-    pub fn new(root_ca: CaPublicKey) -> Self {
-        assert!(
-            !root_ca.ca_id.is_empty(),
-            "TrustAnchor ca_id must not be empty"
-        );
-        assert!(
-            root_ca.not_before <= root_ca.not_after,
-            "TrustAnchor not_before must not exceed not_after"
-        );
-        Self { root_ca }
+    /// Returns [`PqRascvError::CertificateInvalid`] if `root_ca.ca_id` is empty
+    /// or if `root_ca.not_before > root_ca.not_after`.
+    pub fn new(root_ca: CaPublicKey) -> Result<Self, PqRascvError> {
+        if root_ca.ca_id.is_empty() {
+            return Err(PqRascvError::CertificateInvalid);
+        }
+        if root_ca.not_before > root_ca.not_after {
+            return Err(PqRascvError::CertificateInvalid);
+        }
+        Ok(Self { root_ca })
     }
 
     /// Returns the root CA's public key fingerprint.
@@ -561,6 +559,56 @@ pub fn validate_chain_with_store(
     Err(PqRascvError::CertificateInvalid)
 }
 
+/// Cross-validates the hardware identity in a device certificate against
+/// the measurements produced by the hardware during attestation.
+///
+/// # TDX and SEV-SNP
+///
+/// For TDX, `hardware_identity` contains the raw 48-byte MRTD value. The
+/// TDX backend stores `SHA3-256(MRTD)` in PCR[0]. This function verifies
+/// that `SHA3-256(mrtd_bytes_from_cert) == measurements.pcrs.digests[0]`.
+///
+/// For SEV-SNP, the same approach applies with `SevSnpMeasurement` and PCR[0].
+///
+/// # TPM and DICE
+///
+/// Full TPM EK cert binding and DICE CDI binding require out-of-band enrollment
+/// data not present in the quote (the EK cert DER or the UDS itself). These are
+/// validated at CA issuance time via the enrollment ceremony. This function
+/// accepts TPM and DICE identities without a PCR cross-check.
+///
+/// # Errors
+///
+/// Returns [`PqRascvError::CertificateInvalid`] if the cert claims TDX or
+/// SEV-SNP hardware identity but the PCR[0] value does not match the hash
+/// of the raw measurement bytes in the cert.
+#[cfg(feature = "alloc")]
+pub fn validate_hardware_identity(
+    identity: &HardwareIdentity,
+    measurements: &crate::measurement::Measurements,
+) -> Result<(), PqRascvError> {
+    match identity {
+        HardwareIdentity::TdxMrtd(raw_mrtd) => {
+            let expected_pcr0: [u8; 32] = Sha3_256::digest(raw_mrtd).into();
+            if measurements.pcrs.digests[0] != expected_pcr0 {
+                return Err(PqRascvError::CertificateInvalid);
+            }
+        }
+        HardwareIdentity::SevSnpMeasurement(raw_measurement) => {
+            let expected_pcr0: [u8; 32] = Sha3_256::digest(raw_measurement).into();
+            if measurements.pcrs.digests[0] != expected_pcr0 {
+                return Err(PqRascvError::CertificateInvalid);
+            }
+        }
+        HardwareIdentity::TpmEkCertHash(_) | HardwareIdentity::DiceCdiPublicHash(_) => {
+            // TPM and DICE: validated at enrollment time by the CA.
+            // The quote does not carry EK cert DER or CDI public key material
+            // needed for an independent cross-check. Accept these identities.
+        }
+    }
+    Ok(())
+}
+
 #[cfg(all(test, feature = "alloc", feature = "std"))]
 mod chain_tests {
     use super::*;
@@ -618,7 +666,8 @@ mod chain_tests {
             ca_id: "https://ca.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        });
+        })
+        .unwrap();
         let device_cert = make_device_cert(
             &dev_vk,
             "https://ca.test",
@@ -638,7 +687,8 @@ mod chain_tests {
             ca_id: "https://ca.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        });
+        })
+        .unwrap();
         // Wrong issuer_id (claims "https://evil.ca" instead of "https://ca.test")
         let device_cert = make_device_cert(
             &dev_vk,
@@ -663,7 +713,8 @@ mod chain_tests {
             ca_id: "https://root.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        });
+        })
+        .unwrap();
 
         // Intermediate with max_path_length = Some(0) — cannot sign the device cert
         let mut intermediate = make_device_cert(
@@ -699,7 +750,8 @@ mod chain_tests {
             ca_id: "https://ca.test".to_string(),
             not_before: 0,
             not_after: 999, // expired
-        });
+        })
+        .unwrap();
         let cert = make_device_cert(
             &dev_vk,
             "https://ca.test",
@@ -722,7 +774,8 @@ mod chain_tests {
             ca_id: "https://ca.test".to_string(),
             not_before: 5_000, // not yet valid
             not_after: u64::MAX,
-        });
+        })
+        .unwrap();
         let cert = make_device_cert(
             &dev_vk,
             "https://ca.test",
@@ -746,7 +799,8 @@ mod chain_tests {
             ca_id: "https://root.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        });
+        })
+        .unwrap();
 
         // Intermediate claims wrong issuer_id (should be "https://root.test" to match root CA)
         let mut intermediate = DeviceCertificate {
@@ -784,12 +838,15 @@ mod chain_tests {
         use super::trust_store::TrustStore;
         let (ca_seed, ca_vk) = make_ca();
         let (_, dev_vk) = make_ca();
-        let store = TrustStore::new(TrustAnchor::new(CaPublicKey {
-            key_bytes: ca_vk,
-            ca_id: "https://ca.test".to_string(),
-            not_before: 0,
-            not_after: u64::MAX,
-        }));
+        let store = TrustStore::new(
+            TrustAnchor::new(CaPublicKey {
+                key_bytes: ca_vk,
+                ca_id: "https://ca.test".to_string(),
+                not_before: 0,
+                not_after: u64::MAX,
+            })
+            .unwrap(),
+        );
         let cert = make_device_cert(
             &dev_vk,
             "https://ca.test",
@@ -809,18 +866,24 @@ mod chain_tests {
         let (_ca1_seed, ca1_vk) = make_ca();
         let (ca2_seed, ca2_vk) = make_ca();
         let (_, dev_vk) = make_ca();
-        let store = TrustStore::new(TrustAnchor::new(CaPublicKey {
-            key_bytes: ca1_vk,
-            ca_id: "https://ca1.test".to_string(),
-            not_before: 0,
-            not_after: u64::MAX,
-        }))
-        .with_rollover(TrustAnchor::new(CaPublicKey {
-            key_bytes: ca2_vk,
-            ca_id: "https://ca2.test".to_string(),
-            not_before: 0,
-            not_after: u64::MAX,
-        }));
+        let store = TrustStore::new(
+            TrustAnchor::new(CaPublicKey {
+                key_bytes: ca1_vk,
+                ca_id: "https://ca1.test".to_string(),
+                not_before: 0,
+                not_after: u64::MAX,
+            })
+            .unwrap(),
+        )
+        .with_rollover(
+            TrustAnchor::new(CaPublicKey {
+                key_bytes: ca2_vk,
+                ca_id: "https://ca2.test".to_string(),
+                not_before: 0,
+                not_after: u64::MAX,
+            })
+            .unwrap(),
+        );
         // Cert signed by CA2
         let cert = make_device_cert(
             &dev_vk,
@@ -842,12 +905,15 @@ mod chain_tests {
         use super::trust_store::TrustStore;
         let (ca_seed, ca_vk) = make_ca();
         let (_, dev_vk) = make_ca();
-        let store = TrustStore::new(TrustAnchor::new(CaPublicKey {
-            key_bytes: ca_vk,
-            ca_id: "https://ca.test".to_string(),
-            not_before: 0,
-            not_after: 999, // already expired
-        }));
+        let store = TrustStore::new(
+            TrustAnchor::new(CaPublicKey {
+                key_bytes: ca_vk,
+                ca_id: "https://ca.test".to_string(),
+                not_before: 0,
+                not_after: 999, // already expired
+            })
+            .unwrap(),
+        );
         let cert = make_device_cert(
             &dev_vk,
             "https://ca.test",
@@ -859,5 +925,122 @@ mod chain_tests {
             validate_chain_with_store(&cert, &[], &store, 1_000),
             Err(PqRascvError::TrustAnchorExpired)
         ));
+    }
+}
+
+#[cfg(all(test, feature = "alloc"))]
+mod hardware_identity_validation_tests {
+    use super::*;
+    use crate::measurement::Measurements;
+    use sha3::{Digest, Sha3_256};
+
+    fn zeroed_measurements() -> Measurements {
+        Measurements::zeroed()
+    }
+
+    #[test]
+    fn tdx_identity_matches_pcr0_passes() {
+        // PCR[0] must equal SHA3-256(raw_mrtd) for the validation to pass.
+        let raw_mrtd = [0x42u8; 48];
+        let expected_pcr0: [u8; 32] = Sha3_256::digest(raw_mrtd).into();
+        let mut meas = zeroed_measurements();
+        meas.pcrs.digests[0] = expected_pcr0;
+
+        let identity = HardwareIdentity::TdxMrtd(raw_mrtd.to_vec());
+        assert!(validate_hardware_identity(&identity, &meas).is_ok());
+    }
+
+    #[test]
+    fn tdx_identity_mismatch_pcr0_fails() {
+        let raw_mrtd = [0x42u8; 48];
+        let mut meas = zeroed_measurements();
+        meas.pcrs.digests[0] = [0xFFu8; 32]; // wrong PCR value
+
+        let identity = HardwareIdentity::TdxMrtd(raw_mrtd.to_vec());
+        assert_eq!(
+            validate_hardware_identity(&identity, &meas),
+            Err(PqRascvError::CertificateInvalid),
+            "TDX MRTD mismatch must return CertificateInvalid"
+        );
+    }
+
+    #[test]
+    fn sevsnp_identity_matches_pcr0_passes() {
+        let raw_meas = [0x77u8; 48];
+        let expected_pcr0: [u8; 32] = Sha3_256::digest(raw_meas).into();
+        let mut meas = zeroed_measurements();
+        meas.pcrs.digests[0] = expected_pcr0;
+
+        let identity = HardwareIdentity::SevSnpMeasurement(raw_meas.to_vec());
+        assert!(validate_hardware_identity(&identity, &meas).is_ok());
+    }
+
+    #[test]
+    fn sevsnp_identity_mismatch_pcr0_fails() {
+        let raw_meas = [0x77u8; 48];
+        let mut meas = zeroed_measurements();
+        meas.pcrs.digests[0] = [0x00u8; 32]; // wrong
+
+        let identity = HardwareIdentity::SevSnpMeasurement(raw_meas.to_vec());
+        assert_eq!(
+            validate_hardware_identity(&identity, &meas),
+            Err(PqRascvError::CertificateInvalid)
+        );
+    }
+
+    #[test]
+    fn tpm_and_dice_identity_passes_without_cross_check() {
+        // TPM and DICE cross-validation requires out-of-band enrollment data.
+        // validate_hardware_identity accepts these without a PCR check.
+        let meas = zeroed_measurements();
+        assert!(
+            validate_hardware_identity(&HardwareIdentity::TpmEkCertHash([0u8; 32]), &meas).is_ok()
+        );
+        assert!(
+            validate_hardware_identity(&HardwareIdentity::DiceCdiPublicHash([0u8; 32]), &meas)
+                .is_ok()
+        );
+    }
+}
+
+#[cfg(all(test, feature = "alloc"))]
+mod trust_anchor_tests {
+    use super::*;
+    use crate::crypto::ML_DSA_65_VERIFYING_KEY_SIZE;
+
+    fn dummy_key() -> CaPublicKey {
+        CaPublicKey {
+            key_bytes: [0u8; ML_DSA_65_VERIFYING_KEY_SIZE],
+            ca_id: "https://ca.test".to_string(),
+            not_before: 0,
+            not_after: u64::MAX,
+        }
+    }
+
+    #[test]
+    fn empty_ca_id_returns_err() {
+        let mut key = dummy_key();
+        key.ca_id = String::new();
+        assert!(
+            TrustAnchor::new(key).is_err(),
+            "empty ca_id must return Err, not panic"
+        );
+    }
+
+    #[test]
+    fn not_before_after_not_after_returns_err() {
+        let mut key = dummy_key();
+        key.not_before = 1_000;
+        key.not_after = 500; // before not_before
+        assert!(
+            TrustAnchor::new(key).is_err(),
+            "not_before > not_after must return Err, not panic"
+        );
+    }
+
+    #[test]
+    fn valid_input_returns_ok() {
+        let key = dummy_key();
+        assert!(TrustAnchor::new(key).is_ok());
     }
 }

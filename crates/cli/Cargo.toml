@@ -14,6 +14,10 @@ name = "pqrascv"
 path = "src/main.rs"
 
 [dependencies]
+# software-rot-unsafe is intentionally included: the CLI is a demo/reference tool
+# that generates test quotes via SoftwareRoT. The runtime --software-rot-acknowledged
+# flag ensures operators cannot use it accidentally. Remove this feature to build a
+# verifier-only binary that cannot produce quotes.
 pqrascv-core     = { path = "../pqrascv-core", version = "1.0.0-rc.3", features = ["std", "software-rot-unsafe"] }
 pqrascv-verifier = { path = "../verifier",     version = "1.0.0-rc.3" }
 clap             = { version = "4", features = ["derive"] }

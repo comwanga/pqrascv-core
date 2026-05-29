@@ -87,6 +87,15 @@ pub enum PolicyRule {
     /// Reject quotes from builders not in this allowlist.
     ///
     /// Builder IDs are URIs (e.g. `"https://github.com/actions/runner"`).
+    ///
+    /// **An empty list denies all builders** — the rule always returns
+    /// `PolicyViolation` when the list is empty. This is intentionally
+    /// fail-closed: misconfiguring an empty list is never silently permissive.
+    /// Contrast with [`AllowedFirmwareHashes`] where an empty list means
+    /// "any hash is accepted" (documented there).
+    ///
+    /// To allow any builder, omit this rule entirely rather than passing an
+    /// empty list.
     AllowedBuilders(Vec<String>),
 
     /// Reject quotes whose firmware hash is not in this allowlist.
@@ -271,6 +280,17 @@ impl PolicyEngineV2 {
     /// `RequireExternalProvenance` is satisfied only by a [`VerifiedProvenance`]
     /// token produced by [`ExternalProvenanceBundle::verify_all`]. External code
     /// cannot forge this token — see [`PolicyContext::verified_provenance`].
+    ///
+    /// `RequireRtc` is intentionally absent from this preset. Not all enterprise
+    /// hardware (embedded controllers, some air-gapped servers) has a real-time
+    /// clock, and requiring one would reject valid quotes from those devices.
+    /// Freshness is still enforced via the verifier-supplied nonce (replay
+    /// protection) and `MaxQuoteAgeSecs` for RTC-equipped devices. To mandate
+    /// RTC, add `PolicyRule::RequireRtc` to a custom engine:
+    /// ```rust,ignore
+    /// let mut engine = PolicyEngineV2::production();
+    /// engine.rules.push(PolicyRule::RequireRtc);
+    /// ```
     ///
     /// [`ExternalProvenanceBundle::verify_all`]: crate::provenance_v2::ExternalProvenanceBundle::verify_all
     #[must_use]
@@ -479,24 +499,24 @@ mod tests {
         assert!(engine.evaluate(&ctx).is_ok());
     }
 
-    fn ctx_with_pcr(slot: usize, value: [u8; 32]) -> PolicyContext<'static> {
+    fn make_pcr_bank(slot: usize, value: [u8; 32]) -> PcrBank {
         use crate::measurement::PCR_COUNT;
         let mut bank = PcrBank {
             digests: [[0u8; 32]; PCR_COUNT],
             algorithm: PcrAlgorithm::Sha3_256,
         };
         bank.digests[slot] = value;
-        let leaked: &'static PcrBank = Box::leak(Box::new(bank));
-        PolicyContext {
-            pcrs: leaked,
-            ..base_ctx()
-        }
+        bank
     }
 
     #[test]
     fn pcr_rule_exact_match_passes() {
         let expected = [0xabu8; 32];
-        let ctx = ctx_with_pcr(0, expected);
+        let bank = make_pcr_bank(0, expected);
+        let ctx = PolicyContext {
+            pcrs: &bank,
+            ..base_ctx()
+        };
         let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequirePcrValues {
             pcr_slot: 0,
             expected,
@@ -506,7 +526,11 @@ mod tests {
 
     #[test]
     fn pcr_rule_mismatch_fails() {
-        let ctx = ctx_with_pcr(0, [0xabu8; 32]);
+        let bank = make_pcr_bank(0, [0xabu8; 32]);
+        let ctx = PolicyContext {
+            pcrs: &bank,
+            ..base_ctx()
+        };
         let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequirePcrValues {
             pcr_slot: 0,
             expected: [0xcdu8; 32],
@@ -516,7 +540,11 @@ mod tests {
 
     #[test]
     fn pcr_rule_zero_expected_rejects_zero_pcr() {
-        let ctx = ctx_with_pcr(0, [0u8; 32]);
+        let bank = make_pcr_bank(0, [0u8; 32]);
+        let ctx = PolicyContext {
+            pcrs: &bank,
+            ..base_ctx()
+        };
         let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequirePcrValues {
             pcr_slot: 0,
             expected: [0u8; 32],
@@ -526,7 +554,11 @@ mod tests {
 
     #[test]
     fn pcr_rule_zero_expected_accepts_nonzero_pcr() {
-        let ctx = ctx_with_pcr(0, [0x42u8; 32]);
+        let bank = make_pcr_bank(0, [0x42u8; 32]);
+        let ctx = PolicyContext {
+            pcrs: &bank,
+            ..base_ctx()
+        };
         let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequirePcrValues {
             pcr_slot: 0,
             expected: [0u8; 32],
@@ -641,8 +673,8 @@ mod context_builder_tests {
         let quote = make_quote(QuoteTimestamp::Rtc(1_700_000_000));
         let ctx = PolicyContext::from_verified_quote(&quote, None, None, 1_700_000_100, None);
         let engine = PolicyEngineV2::production();
-        // Quote uses PROTOCOL_VERSION (1); production requires version 2 — rejected.
-        // Even if version matched, no cert chain → SoftwareUnsafe → RequireHardwareBackend fires.
+        // Quote uses PROTOCOL_VERSION (2), which matches production policy.
+        // However, no cert chain → SoftwareUnsafe backend → RequireHardwareBackend rejects.
         assert!(engine.evaluate(&ctx).is_err());
     }
 }

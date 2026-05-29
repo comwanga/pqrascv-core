@@ -76,6 +76,7 @@ mod tests {
             not_before,
             not_after,
         })
+        .unwrap()
     }
 
     #[test]

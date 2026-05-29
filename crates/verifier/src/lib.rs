@@ -18,8 +18,8 @@ use pqrascv_core::{
     error::PqRascvError,
     pki::revocation::VerifiedRevocationList,
     pki::{
-        validate_chain, validate_chain_with_store, CertChain, DeviceCertificate, TrustAnchor,
-        TrustStore,
+        validate_chain, validate_chain_with_store, validate_hardware_identity, CertChain,
+        DeviceCertificate, TrustAnchor, TrustStore,
     },
     policy::{PolicyContext, PolicyEngineV2},
     provenance_v2::{ExternalProvenanceBundle, SigstoreConfig, VerifiedProvenance},
@@ -222,6 +222,11 @@ impl Verifier {
         let quote = AttestationQuote::from_cbor(cbor)?;
         self.verify_signature_only(&quote, &chain.device_cert.subject_key, expected_nonce)?;
 
+        validate_hardware_identity(
+            &chain.device_cert.hardware_identity,
+            &quote.body.measurements,
+        )?;
+
         self.policy.evaluate(
             quote.body.provenance.slsa_level(),
             &quote.body.measurements.firmware_hash,
@@ -270,6 +275,11 @@ impl Verifier {
 
         let quote = AttestationQuote::from_cbor(cbor)?;
         self.verify_signature_only(&quote, &chain.device_cert.subject_key, expected_nonce)?;
+
+        validate_hardware_identity(
+            &chain.device_cert.hardware_identity,
+            &quote.body.measurements,
+        )?;
 
         self.policy.evaluate(
             quote.body.provenance.slsa_level(),
@@ -740,7 +750,8 @@ mod pki_tests {
             ca_id: "https://ca.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        });
+        })
+        .unwrap();
         let device_cert =
             make_device_cert(&dev_vk, "https://ca.test", "DEV-001", ca_seed.as_bytes());
 
@@ -786,7 +797,8 @@ mod pki_tests {
             ca_id: "https://ca.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        });
+        })
+        .unwrap();
         let device_cert = make_device_cert(
             &dev_vk,
             "https://ca.test",
@@ -851,7 +863,8 @@ mod pki_tests {
             ca_id: "https://ca.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        });
+        })
+        .unwrap();
         let device_cert =
             make_device_cert(&dev_vk, "https://ca.test", "DEV-001", ca_seed.as_bytes());
 
@@ -895,7 +908,8 @@ mod pki_tests {
             ca_id: "https://root.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        });
+        })
+        .unwrap();
 
         // Intermediate cert: signed by root, self_id = "https://int.test", max_path_length = None
         let int_subject_key_id = pqrascv_core::crypto::pub_key_id(&int_vk);
@@ -965,7 +979,8 @@ mod pki_tests {
             ca_id: "https://audit.ca".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        });
+        })
+        .unwrap();
         let device_cert =
             make_device_cert(&dev_vk, "https://audit.ca", "DEV-AUDIT", ca_seed.as_bytes());
 
@@ -1006,12 +1021,15 @@ mod pki_tests {
         let (ca_seed, ca_vk) = generate_ml_dsa_keypair().unwrap();
         let (dev_seed, dev_vk) = generate_ml_dsa_keypair().unwrap();
 
-        let store = TrustStore::new(TrustAnchor::new(CaPublicKey {
-            key_bytes: ca_vk,
-            ca_id: "https://store.ca".to_string(),
-            not_before: 0,
-            not_after: u64::MAX,
-        }));
+        let store = TrustStore::new(
+            TrustAnchor::new(CaPublicKey {
+                key_bytes: ca_vk,
+                ca_id: "https://store.ca".to_string(),
+                not_before: 0,
+                not_after: u64::MAX,
+            })
+            .unwrap(),
+        );
         let device_cert =
             make_device_cert(&dev_vk, "https://store.ca", "DEV-STORE", ca_seed.as_bytes());
 
@@ -1048,12 +1066,15 @@ mod pki_tests {
         let (ca_seed, ca_vk) = generate_ml_dsa_keypair().unwrap();
         let (dev_seed, dev_vk) = generate_ml_dsa_keypair().unwrap();
 
-        let store = TrustStore::new(TrustAnchor::new(CaPublicKey {
-            key_bytes: ca_vk,
-            ca_id: "https://expired.ca".to_string(),
-            not_before: 0,
-            not_after: 999,
-        }));
+        let store = TrustStore::new(
+            TrustAnchor::new(CaPublicKey {
+                key_bytes: ca_vk,
+                ca_id: "https://expired.ca".to_string(),
+                not_before: 0,
+                not_after: 999,
+            })
+            .unwrap(),
+        );
         let device_cert =
             make_device_cert(&dev_vk, "https://expired.ca", "DEV-EXP", ca_seed.as_bytes());
 
@@ -1095,7 +1116,8 @@ mod pki_tests {
             ca_id: "https://ca.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        });
+        })
+        .unwrap();
         let device_cert =
             make_device_cert(&dev_vk, "https://ca.test", "DEV-E1", ca_seed.as_bytes());
 
@@ -1162,5 +1184,50 @@ mod pki_tests {
             verifier.verify_cbor(&cbor, &vk, &[0xE2u8; 32], 1_700_000_600),
             Err(PqRascvError::PolicyViolation)
         ));
+    }
+
+    #[test]
+    fn pki_verification_cross_validates_hardware_identity() {
+        // TpmEkCertHash always passes (no PCR cross-check for TPM).
+        // Confirms validate_hardware_identity doesn't break the TPM happy path.
+        let (ca_seed, ca_vk) = generate_ml_dsa_keypair().unwrap();
+        let (dev_seed, dev_vk) = generate_ml_dsa_keypair().unwrap();
+        let anchor = TrustAnchor::new(CaPublicKey {
+            key_bytes: ca_vk,
+            ca_id: "https://ca.test".to_string(),
+            not_before: 0,
+            not_after: u64::MAX,
+        })
+        .unwrap();
+        // Re-use the make_device_cert helper already defined in pki_tests.
+        let device_cert =
+            make_device_cert(&dev_vk, "https://ca.test", "DEV-HW-001", ca_seed.as_bytes());
+
+        let rot = SoftwareRoT::new(b"fw", None, 1);
+        let nonce = [0xCCu8; 32];
+        let quote = generate_quote(
+            &rot,
+            &MlDsaBackend,
+            dev_seed.as_bytes(),
+            &dev_vk,
+            &nonce,
+            make_provenance(),
+            QuoteTimestamp::Rtc(1_700_000_000),
+        )
+        .unwrap();
+        let cbor = quote.to_cbor().unwrap();
+
+        let verifier = Verifier::new(PolicyConfig::default());
+        assert!(verifier
+            .verify_cbor_with_pki(
+                &cbor,
+                device_cert,
+                vec![],
+                &anchor,
+                None,
+                &nonce,
+                1_700_000_100
+            )
+            .is_ok());
     }
 }

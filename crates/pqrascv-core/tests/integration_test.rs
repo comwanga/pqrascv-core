@@ -9,7 +9,7 @@ use pqrascv_core::{
     },
     measurement::SoftwareRoT,
     provenance::SlsaPredicateBuilder,
-    quote::{generate_quote, AttestationQuote, QuoteTimestamp},
+    quote::{generate_quote, AttestationQuote, QuoteTimestamp, PROTOCOL_VERSION},
 };
 
 fn make_provenance() -> pqrascv_core::provenance::InTotoAttestation {
@@ -48,7 +48,7 @@ fn full_pipeline_sign_and_verify() {
         .expect("signature verification failed");
 
     assert_eq!(decoded.body.nonce, nonce);
-    assert_eq!(decoded.body.version, 1);
+    assert_eq!(decoded.body.version, PROTOCOL_VERSION);
     assert_eq!(decoded.body.timestamp, QuoteTimestamp::Rtc(1_700_000_500));
     assert_ne!(decoded.body.measurements.firmware_hash, [0u8; 32]);
     assert_ne!(decoded.body.measurements.ai_model_hash, [0u8; 32]);

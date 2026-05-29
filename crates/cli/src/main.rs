@@ -87,6 +87,12 @@ enum Command {
         /// Output path for the CBOR-encoded quote.
         #[arg(long, default_value = "quote.cbor")]
         out: PathBuf,
+
+        /// Acknowledge that SoftwareRoT provides NO real attestation security.
+        /// Required when running without real hardware (TPM, DICE, TDX, SEV-SNP).
+        /// DO NOT use in production deployments.
+        #[arg(long, default_value_t = false)]
+        software_rot_acknowledged: bool,
     },
 
     /// Verify a quote against a trusted verifying key.
@@ -149,6 +155,7 @@ fn run() -> anyhow::Result<()> {
             slsa_level,
             nonce,
             out,
+            software_rot_acknowledged,
         } => cmd_attest(
             seed,
             vk,
@@ -158,6 +165,7 @@ fn run() -> anyhow::Result<()> {
             slsa_level,
             nonce.as_deref(),
             out,
+            software_rot_acknowledged,
         ),
         Command::Verify {
             vk,
@@ -211,11 +219,22 @@ fn cmd_attest(
     slsa_level: u8,
     nonce_hex: Option<&str>,
     out: PathBuf,
+    software_rot_acknowledged: bool,
 ) -> anyhow::Result<()> {
+    if !software_rot_acknowledged {
+        eprintln!(
+            "ERROR: The `attest` command uses SoftwareRoT which provides NO real attestation \
+             security. A compromised device can trivially forge measurements.\n\
+             For production use, configure a hardware backend (TPM 2.0, DICE, Intel TDX, AMD SEV-SNP).\n\
+             To suppress this error for testing/development, add: --software-rot-acknowledged"
+        );
+        return Err(anyhow::anyhow!(
+            "SoftwareRoT not acknowledged — use --software-rot-acknowledged to proceed"
+        ));
+    }
     eprintln!(
-        "WARNING: Using SoftwareRoT — no hardware attestation boundary.\n\
-         Measurements are derived from caller-supplied bytes, not hardware.\n\
-         For production, use a build with `hardware-tpm` or `dice` feature.\n"
+        "WARNING: Using SoftwareRoT backend — this quote has NO real attestation security. \
+         For testing/development only."
     );
     let seed_bytes = fs::read(&seed_path)?;
     let vk_bytes = fs::read(&vk_path)?;
