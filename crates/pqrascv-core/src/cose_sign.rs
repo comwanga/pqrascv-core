@@ -44,7 +44,11 @@ impl CoseSign1 {
         MlDsaBackend.verify(&sig_structure, vk_bytes, &self.signature, SIGNING_CONTEXT_QUOTE)
     }
 
-    /// Encode as CBOR array [protected, {}, payload, signature].
+    /// Encode as an untagged CBOR array `[protected, {}, payload, signature]`.
+    ///
+    /// This produces a COSE_Sign1 message without the CBOR tag 18 defined in
+    /// RFC 9052 §2. External RFC-compliant tools require the tag; this format
+    /// is for internal use within the pqrascv federation protocol only.
     pub fn to_cbor(&self) -> Result<Vec<u8>, PqRascvError> {
         use ciborium::value::Value;
         let val = Value::Array(vec![
@@ -66,6 +70,11 @@ impl CoseSign1 {
             Value::Array(a) if a.len() == 4 => a,
             _ => return Err(PqRascvError::DeserializationFailed),
         };
+        // Unprotected header must be a CBOR map.
+        match &arr[1] {
+            Value::Map(_) => {},
+            _ => return Err(PqRascvError::DeserializationFailed),
+        }
         let protected = match &arr[0] { Value::Bytes(b) => b.clone(), _ => return Err(PqRascvError::DeserializationFailed) };
         let payload   = match &arr[2] { Value::Bytes(b) => b.clone(), _ => return Err(PqRascvError::DeserializationFailed) };
         let signature = match &arr[3] { Value::Bytes(b) => b.clone(), _ => return Err(PqRascvError::DeserializationFailed) };
