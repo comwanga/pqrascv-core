@@ -61,10 +61,10 @@ post-quantum signed *and* supply-chain provenance-linked.
 
 ```toml
 # std (default)
-pqrascv-core = "1.0.0-rc.4"
+pqrascv-core = "1.0.0-rc.5"
 
 # bare-metal — bring your own allocator
-pqrascv-core = { version = "1.0.0-rc.4", default-features = false, features = ["alloc"] }
+pqrascv-core = { version = "1.0.0-rc.5", default-features = false, features = ["alloc"] }
 ```
 
 ### CLI
@@ -435,7 +435,7 @@ Reads the SHA-256 PCR bank (PCRs 0–7) from a hardware or simulated TPM via
 [`tss-esapi`](https://crates.io/crates/tss-esapi) (TCG TSS2 ESAPI). Linux only.
 
 ```toml
-pqrascv-core = { version = "1.0.0-rc.4", features = ["hardware-tpm"] }
+pqrascv-core = { version = "1.0.0-rc.5", features = ["hardware-tpm"] }
 ```
 
 ```rust
@@ -458,7 +458,7 @@ CDI_attestation = SHA3-256( CDI ‖ "DICE-attest" ‖ SHA3-256(firmware) )
 ```
 
 ```toml
-pqrascv-core = { version = "1.0.0-rc.4", features = ["dice"] }
+pqrascv-core = { version = "1.0.0-rc.5", features = ["dice"] }
 ```
 
 ```rust
@@ -559,7 +559,7 @@ of captured quotes.
 
 ## Status
 
-**v1.0.0-rc.4** — API stabilizing. 382 tests pass.
+**v1.0.0-rc.5** — API stabilizing. 382 tests pass.
 
 | Implemented ✅ | Preview / Experimental 🔬 | Planned 🗺 |
 |----------------|---------------------------|------------|
