@@ -673,8 +673,8 @@ mod context_builder_tests {
         let quote = make_quote(QuoteTimestamp::Rtc(1_700_000_000));
         let ctx = PolicyContext::from_verified_quote(&quote, None, None, 1_700_000_100, None);
         let engine = PolicyEngineV2::production();
-        // Quote uses PROTOCOL_VERSION (1); production requires version 2 — rejected.
-        // Even if version matched, no cert chain → SoftwareUnsafe → RequireHardwareBackend fires.
+        // Quote uses PROTOCOL_VERSION (2), which matches production policy.
+        // However, no cert chain → SoftwareUnsafe backend → RequireHardwareBackend rejects.
         assert!(engine.evaluate(&ctx).is_err());
     }
 }
