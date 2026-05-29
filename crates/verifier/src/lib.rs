@@ -1231,4 +1231,97 @@ mod pki_tests {
             )
             .is_ok());
     }
+
+    /// End-to-end PKI integration test: Root CA → Intermediate CA → Device.
+    ///
+    /// This covers the full 3-tier certificate hierarchy described in the README.
+    /// The verifier must traverse two hops (device → intermediate → root) and
+    /// confirm both signatures before accepting the attestation quote.
+    #[test]
+    fn e2e_pki_root_intermediate_device_verification() {
+        use sha3::{Digest, Sha3_256};
+
+        // ── 1. Generate keys for all three tiers ──────────────────────────────
+        let (root_seed, root_vk) = generate_ml_dsa_keypair().unwrap();
+        let (int_seed, int_vk) = generate_ml_dsa_keypair().unwrap();
+        let (dev_seed, dev_vk) = generate_ml_dsa_keypair().unwrap();
+
+        // ── 2. Root CA trust anchor ───────────────────────────────────────────
+        let root_anchor = TrustAnchor::new(CaPublicKey {
+            ca_id: "https://root.pki.example.com".to_string(),
+            key_bytes: root_vk,
+            not_before: 0,
+            not_after: u64::MAX,
+        })
+        .unwrap();
+
+        // ── 3. Intermediate CA certificate (signed by root CA) ────────────────
+        let mut int_cert = build_device_certificate(
+            CERT_VERSION,
+            "INT-CA-001".to_string(),
+            "https://root.pki.example.com".to_string(),
+            0,
+            u64::MAX,
+            int_vk.to_vec(),
+            pqrascv_core::crypto::pub_key_id(&int_vk),
+            HardwareIdentity::TpmEkCertHash([0u8; 32]),
+            None,
+            vec![],
+            "https://int.pki.example.com".to_string(),
+            Some(1), // may sign one more level of certs
+        );
+        sign_cert(&mut int_cert, root_seed.as_bytes());
+
+        // ── 4. Device certificate (signed by intermediate CA) ─────────────────
+        let device_cert = make_device_cert(
+            &dev_vk,
+            "https://int.pki.example.com",
+            "DEV-E2E-001",
+            int_seed.as_bytes(),
+        );
+
+        // ── 5. Quote generation using the device key ──────────────────────────
+        let firmware: &[u8] = b"enterprise firmware v1.0";
+        let fw_hash: [u8; 32] = Sha3_256::digest(firmware).into();
+        let nonce = [0xF0u8; 32];
+
+        let provenance = SlsaPredicateBuilder::new("https://ci.example.com")
+            .add_subject("firmware.bin", &fw_hash)
+            .with_slsa_level(2)
+            .build()
+            .unwrap();
+
+        let rot = SoftwareRoT::new(firmware, None, 0);
+        let quote = generate_quote(
+            &rot,
+            &MlDsaBackend,
+            dev_seed.as_bytes(),
+            &dev_vk,
+            &nonce,
+            provenance,
+            QuoteTimestamp::Rtc(1_700_001_000),
+        )
+        .unwrap();
+        let cbor = quote.to_cbor().unwrap();
+
+        // ── 6. Full PKI verification ──────────────────────────────────────────
+        let verifier = Verifier::new(PolicyConfig::default());
+        let result = verifier
+            .verify_cbor_with_pki(
+                &cbor,
+                device_cert,
+                vec![int_cert], // intermediate sits between device and root
+                &root_anchor,
+                None,
+                &nonce,
+                1_700_001_100,
+            )
+            .unwrap();
+
+        // ── 7. Assertions ─────────────────────────────────────────────────────
+        assert_eq!(result.firmware_hash(), &fw_hash);
+        assert_eq!(result.device_serial(), "DEV-E2E-001");
+        assert_eq!(result.trust_anchor_id(), "https://root.pki.example.com");
+        assert_eq!(result.nonce(), &nonce);
+    }
 }

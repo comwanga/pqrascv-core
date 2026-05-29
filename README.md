@@ -315,6 +315,102 @@ CRLs are signed CBOR lists (`RevocationList`). `VerifiedRevocationList` wraps a 
 signature has been checked — `is_revoked()` is only accessible after signature verification,
 preventing callers from bypassing the check.
 
+### End-to-end PKI walkthrough
+
+The following example shows the complete flow from CA setup through quote verification.
+In production the CA operations would run on an air-gapped HSM and ship only the signed
+certificates; the prover and verifier sides never share private key material.
+
+```rust
+use pqrascv_core::{
+    config::PolicyConfig,
+    crypto::{generate_ml_dsa_keypair, pub_key_id, CryptoBackend, MlDsaBackend,
+             ML_DSA_65_VERIFYING_KEY_SIZE, SIGNING_CONTEXT_CERT},
+    measurement::SoftwareRoT,
+    pki::{CaPublicKey, DeviceCertificate, HardwareIdentity, TrustAnchor, CERT_VERSION},
+    provenance::SlsaPredicateBuilder,
+    quote::{generate_quote, QuoteTimestamp},
+};
+use pqrascv_verifier::Verifier;
+use sha3::{Digest, Sha3_256};
+
+// ── 1. CA setup (offline / HSM in production) ───────────────────────────────
+
+let (ca_seed, ca_vk) = generate_ml_dsa_keypair()?;
+
+let trust_anchor = TrustAnchor::new(CaPublicKey {
+    ca_id:      "https://pki.example.com/root".to_string(),
+    key_bytes:  ca_vk,
+    not_before: 0,
+    not_after:  u64::MAX,  // use a real expiry in production
+})?;
+
+// ── 2. Device provisioning (factory / secure enclave) ───────────────────────
+
+let (dev_seed, dev_vk) = generate_ml_dsa_keypair()?;
+
+let mut device_cert = DeviceCertificate {
+    version:           CERT_VERSION,
+    serial:            "DEV-2025-001".to_string(),
+    issuer_id:         "https://pki.example.com/root".to_string(),
+    self_id:           "https://pki.example.com/devices/DEV-2025-001".to_string(),
+    not_before:        0,
+    not_after:         u64::MAX,
+    subject_key:       dev_vk.to_vec(),
+    subject_key_id:    pub_key_id(&dev_vk),
+    hardware_identity: HardwareIdentity::TpmEkCertHash([0u8; 32]), // real EK hash in prod
+    fw_policy:         None,
+    issuer_signature:  vec![],
+    max_path_length:   Some(0),  // leaf certificate
+};
+
+// CA signs the device certificate (runs on HSM in production)
+let tbs = device_cert.tbs_cbor()?;
+let sig = MlDsaBackend.sign(&tbs, ca_seed.as_bytes(), SIGNING_CONTEXT_CERT)?;
+device_cert.issuer_signature = sig.as_ref().to_vec();
+
+// ── 3. Quote generation (prover / device) ───────────────────────────────────
+
+let firmware: &[u8] = b"firmware image bytes";
+let nonce = [0x42u8; 32];  // supplied by the verifier in a real flow
+
+let fw_hash: [u8; 32] = Sha3_256::digest(firmware).into();
+let rot  = SoftwareRoT::new(firmware, None, 0);  // use hardware backend in prod
+let prov = SlsaPredicateBuilder::new("https://ci.example.com")
+    .add_subject("firmware.bin", &fw_hash)
+    .with_slsa_level(1)
+    .build()?;
+
+let dev_vk_array: [u8; ML_DSA_65_VERIFYING_KEY_SIZE] = dev_vk.try_into().unwrap();
+
+let quote = generate_quote(
+    &rot, &MlDsaBackend, dev_seed.as_bytes(), &dev_vk_array,
+    &nonce, prov, QuoteTimestamp::NoRtc,
+)?;
+let cbor = quote.to_cbor()?;
+
+// ── 4. Quote verification (verifier / server) ───────────────────────────────
+
+let verifier = Verifier::new(PolicyConfig::default());
+
+let result = verifier.verify_cbor_with_pki(
+    &cbor,
+    device_cert,
+    vec![],   // no intermediate CAs in this example
+    &trust_anchor,
+    None,     // no CRL
+    &nonce,
+    0,        // now_secs — use SystemTime::now() in production
+)?;
+
+println!("Firmware hash: {}", hex::encode(result.firmware_hash()));
+println!("Verified by CA: {}", result.trust_anchor_id());
+```
+
+This example uses `SoftwareRoT` (testing only). Replace it with `TpmRoT`, `DiceRoT`, or the
+hardware TDX/SEV-SNP backends for production deployments where `PolicyEngineV2::production()`
+is active.
+
 ---
 
 ## Supported Backends

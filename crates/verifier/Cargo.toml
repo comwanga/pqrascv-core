@@ -19,4 +19,5 @@ subtle.workspace   = true
 ciborium = "0.2"
 hex = "0.4"
 getrandom = { workspace = true }
+sha3.workspace = true
 pqrascv-core = { path = "../pqrascv-core", version = "1.0.0-rc.3", features = ["std", "software-rot-unsafe"] }
