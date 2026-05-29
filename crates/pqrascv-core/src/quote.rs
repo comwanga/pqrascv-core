@@ -340,6 +340,9 @@ mod tests {
         // production() enforces EnforceProtocolVersion { expected: 2 }.
         // PROTOCOL_VERSION must equal 2 or all production-policy quotes will
         // be rejected with UnsupportedVersion on every verify call.
-        assert_eq!(PROTOCOL_VERSION, 2, "PROTOCOL_VERSION must be 2 to match production policy");
+        assert_eq!(
+            PROTOCOL_VERSION, 2,
+            "PROTOCOL_VERSION must be 2 to match production policy"
+        );
     }
 }

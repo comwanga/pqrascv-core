@@ -616,7 +616,8 @@ mod chain_tests {
             ca_id: "https://ca.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        }).unwrap();
+        })
+        .unwrap();
         let device_cert = make_device_cert(
             &dev_vk,
             "https://ca.test",
@@ -636,7 +637,8 @@ mod chain_tests {
             ca_id: "https://ca.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        }).unwrap();
+        })
+        .unwrap();
         // Wrong issuer_id (claims "https://evil.ca" instead of "https://ca.test")
         let device_cert = make_device_cert(
             &dev_vk,
@@ -661,7 +663,8 @@ mod chain_tests {
             ca_id: "https://root.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        }).unwrap();
+        })
+        .unwrap();
 
         // Intermediate with max_path_length = Some(0) — cannot sign the device cert
         let mut intermediate = make_device_cert(
@@ -697,7 +700,8 @@ mod chain_tests {
             ca_id: "https://ca.test".to_string(),
             not_before: 0,
             not_after: 999, // expired
-        }).unwrap();
+        })
+        .unwrap();
         let cert = make_device_cert(
             &dev_vk,
             "https://ca.test",
@@ -720,7 +724,8 @@ mod chain_tests {
             ca_id: "https://ca.test".to_string(),
             not_before: 5_000, // not yet valid
             not_after: u64::MAX,
-        }).unwrap();
+        })
+        .unwrap();
         let cert = make_device_cert(
             &dev_vk,
             "https://ca.test",
@@ -744,7 +749,8 @@ mod chain_tests {
             ca_id: "https://root.test".to_string(),
             not_before: 0,
             not_after: u64::MAX,
-        }).unwrap();
+        })
+        .unwrap();
 
         // Intermediate claims wrong issuer_id (should be "https://root.test" to match root CA)
         let mut intermediate = DeviceCertificate {
@@ -782,12 +788,15 @@ mod chain_tests {
         use super::trust_store::TrustStore;
         let (ca_seed, ca_vk) = make_ca();
         let (_, dev_vk) = make_ca();
-        let store = TrustStore::new(TrustAnchor::new(CaPublicKey {
-            key_bytes: ca_vk,
-            ca_id: "https://ca.test".to_string(),
-            not_before: 0,
-            not_after: u64::MAX,
-        }).unwrap());
+        let store = TrustStore::new(
+            TrustAnchor::new(CaPublicKey {
+                key_bytes: ca_vk,
+                ca_id: "https://ca.test".to_string(),
+                not_before: 0,
+                not_after: u64::MAX,
+            })
+            .unwrap(),
+        );
         let cert = make_device_cert(
             &dev_vk,
             "https://ca.test",
@@ -807,18 +816,24 @@ mod chain_tests {
         let (_ca1_seed, ca1_vk) = make_ca();
         let (ca2_seed, ca2_vk) = make_ca();
         let (_, dev_vk) = make_ca();
-        let store = TrustStore::new(TrustAnchor::new(CaPublicKey {
-            key_bytes: ca1_vk,
-            ca_id: "https://ca1.test".to_string(),
-            not_before: 0,
-            not_after: u64::MAX,
-        }).unwrap())
-        .with_rollover(TrustAnchor::new(CaPublicKey {
-            key_bytes: ca2_vk,
-            ca_id: "https://ca2.test".to_string(),
-            not_before: 0,
-            not_after: u64::MAX,
-        }).unwrap());
+        let store = TrustStore::new(
+            TrustAnchor::new(CaPublicKey {
+                key_bytes: ca1_vk,
+                ca_id: "https://ca1.test".to_string(),
+                not_before: 0,
+                not_after: u64::MAX,
+            })
+            .unwrap(),
+        )
+        .with_rollover(
+            TrustAnchor::new(CaPublicKey {
+                key_bytes: ca2_vk,
+                ca_id: "https://ca2.test".to_string(),
+                not_before: 0,
+                not_after: u64::MAX,
+            })
+            .unwrap(),
+        );
         // Cert signed by CA2
         let cert = make_device_cert(
             &dev_vk,
@@ -840,12 +855,15 @@ mod chain_tests {
         use super::trust_store::TrustStore;
         let (ca_seed, ca_vk) = make_ca();
         let (_, dev_vk) = make_ca();
-        let store = TrustStore::new(TrustAnchor::new(CaPublicKey {
-            key_bytes: ca_vk,
-            ca_id: "https://ca.test".to_string(),
-            not_before: 0,
-            not_after: 999, // already expired
-        }).unwrap());
+        let store = TrustStore::new(
+            TrustAnchor::new(CaPublicKey {
+                key_bytes: ca_vk,
+                ca_id: "https://ca.test".to_string(),
+                not_before: 0,
+                not_after: 999, // already expired
+            })
+            .unwrap(),
+        );
         let cert = make_device_cert(
             &dev_vk,
             "https://ca.test",

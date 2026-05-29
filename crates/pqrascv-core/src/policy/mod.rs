@@ -493,7 +493,10 @@ mod tests {
     fn pcr_rule_exact_match_passes() {
         let expected = [0xabu8; 32];
         let bank = make_pcr_bank(0, expected);
-        let ctx = PolicyContext { pcrs: &bank, ..base_ctx() };
+        let ctx = PolicyContext {
+            pcrs: &bank,
+            ..base_ctx()
+        };
         let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequirePcrValues {
             pcr_slot: 0,
             expected,
@@ -504,7 +507,10 @@ mod tests {
     #[test]
     fn pcr_rule_mismatch_fails() {
         let bank = make_pcr_bank(0, [0xabu8; 32]);
-        let ctx = PolicyContext { pcrs: &bank, ..base_ctx() };
+        let ctx = PolicyContext {
+            pcrs: &bank,
+            ..base_ctx()
+        };
         let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequirePcrValues {
             pcr_slot: 0,
             expected: [0xcdu8; 32],
@@ -515,7 +521,10 @@ mod tests {
     #[test]
     fn pcr_rule_zero_expected_rejects_zero_pcr() {
         let bank = make_pcr_bank(0, [0u8; 32]);
-        let ctx = PolicyContext { pcrs: &bank, ..base_ctx() };
+        let ctx = PolicyContext {
+            pcrs: &bank,
+            ..base_ctx()
+        };
         let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequirePcrValues {
             pcr_slot: 0,
             expected: [0u8; 32],
@@ -526,7 +535,10 @@ mod tests {
     #[test]
     fn pcr_rule_zero_expected_accepts_nonzero_pcr() {
         let bank = make_pcr_bank(0, [0x42u8; 32]);
-        let ctx = PolicyContext { pcrs: &bank, ..base_ctx() };
+        let ctx = PolicyContext {
+            pcrs: &bank,
+            ..base_ctx()
+        };
         let engine = PolicyEngineV2::new(alloc::vec![PolicyRule::RequirePcrValues {
             pcr_slot: 0,
             expected: [0u8; 32],

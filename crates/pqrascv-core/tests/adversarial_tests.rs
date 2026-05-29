@@ -191,7 +191,8 @@ fn cert_with_forged_tbs_fails_chain_validation() {
         ca_id: "https://ca.test".to_string(),
         not_before: 0,
         not_after: u64::MAX,
-    }).unwrap();
+    })
+    .unwrap();
 
     let subject_key_id = pqrascv_core::crypto::pub_key_id(&dev_vk);
     let mut cert = build_device_certificate(
@@ -228,7 +229,8 @@ fn cert_with_wrong_issuer_id_fails_chain_validation() {
         ca_id: "https://ca.test".to_string(),
         not_before: 0,
         not_after: u64::MAX,
-    }).unwrap();
+    })
+    .unwrap();
 
     let subject_key_id = pqrascv_core::crypto::pub_key_id(&dev_vk);
     let mut cert = build_device_certificate(
@@ -285,7 +287,8 @@ fn make_anchor(
         ca_id: ca_id.to_string(),
         not_before,
         not_after,
-    }).unwrap()
+    })
+    .unwrap()
 }
 
 fn make_cert_for_ca(
