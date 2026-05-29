@@ -78,17 +78,22 @@ cargo install pqrascv-cli
 pqrascv keygen --out-seed seed.bin --out-vk vk.bin
 
 # 2. Generate an attestation quote (prover side)
+#    --software-rot-acknowledged is required when using the software backend
+#    (no real TPM/DICE/TDX hardware). The nonce is generated automatically
+#    and printed — copy the hex string for use in step 3.
 pqrascv attest \
   --seed seed.bin --vk vk.bin \
   --firmware firmware.bin \
   --slsa-level 3 \
-  --out quote.cbor
+  --out quote.cbor \
+  --software-rot-acknowledged
 
 # 3. Verify the quote (verifier side)
+#    --nonce must be the 64-hex-char value printed by the attest step above.
 pqrascv verify \
   --vk vk.bin \
   --quote quote.cbor \
-  --nonce <NONCE_FROM_ATTEST_STEP> \
+  --nonce <64-HEX-CHAR-NONCE-FROM-ATTEST-OUTPUT> \
   --json
 ```
 
