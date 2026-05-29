@@ -10,7 +10,8 @@
 //! |-----|--------|---------|
 //! | 0 | `SHA3-256(measurement[0..48])` | VM launch measurement |
 //! | 1 | `SHA3-256(policy[0..8])` | SNP policy flags |
-//! | 2–7 | zero | Unused |
+//! | 2 | `SHA3-256([policy_flags, abi_major, abi_minor])` | Decoded policy summary |
+//! | 3–7 | zero | Unused |
 //!
 //! # Feature
 //!
@@ -27,6 +28,8 @@ mod inner {
     // Offsets within the raw attestation report (after MSG_HDR_LEN-byte kernel header).
     const REPORT_POLICY_OFFSET: usize = 0x008;
     const REPORT_MEASUREMENT_OFFSET: usize = 0x090;
+    const REPORT_DATA_OFFSET: usize = 0x050;
+    const REPORT_DATA_FW_HASH_LEN: usize = 32;
     const SHA384_LEN: usize = 48;
     const POLICY_LEN: usize = 8;
     pub(super) const REPORT_LEN: usize = 0x4A0;
@@ -58,6 +61,29 @@ mod inner {
         req_data: u64,
         resp_data: u64,
         exitinfo2: u64,
+    }
+
+    /// Decoded SNP policy fields from the attestation report.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct SnpPolicy {
+        pub smt_allowed: bool,
+        pub debug_allowed: bool,
+        pub migrate_ma_allowed: bool,
+        pub abi_major: u8,
+        pub abi_minor: u8,
+    }
+
+    impl SnpPolicy {
+        pub fn from_le_bytes(policy: [u8; 8]) -> Self {
+            let bits = u64::from_le_bytes(policy);
+            Self {
+                smt_allowed: (bits >> 16) & 1 == 1,
+                debug_allowed: (bits >> 19) & 1 == 1,
+                migrate_ma_allowed: (bits >> 18) & 1 == 1,
+                abi_major: ((bits >> 32) & 0xFF) as u8,
+                abi_minor: ((bits >> 40) & 0xFF) as u8,
+            }
+        }
     }
 
     /// AMD SEV-SNP Root-of-Trust.
@@ -107,26 +133,34 @@ mod inner {
                 return Err(PqRascvError::MeasurementFailed);
             }
 
-            let measurement =
-                &report[REPORT_MEASUREMENT_OFFSET..REPORT_MEASUREMENT_OFFSET + SHA384_LEN];
-            let policy = &report[REPORT_POLICY_OFFSET..REPORT_POLICY_OFFSET + POLICY_LEN];
+            // Verify REPORT_DATA binding: first 32 bytes must match SHA3-256(firmware).
+            let fw_hash: [u8; 32] = Sha3_256::digest(firmware).into();
+            let report_data_fw = &report[REPORT_DATA_OFFSET..REPORT_DATA_OFFSET + REPORT_DATA_FW_HASH_LEN];
+            if report_data_fw != fw_hash.as_ref() {
+                return Err(PqRascvError::MeasurementFailed);
+            }
+
+            let measurement = &report[REPORT_MEASUREMENT_OFFSET..REPORT_MEASUREMENT_OFFSET + SHA384_LEN];
+            let policy_bytes: [u8; 8] = report[REPORT_POLICY_OFFSET..REPORT_POLICY_OFFSET + POLICY_LEN]
+                .try_into()
+                .map_err(|_| PqRascvError::MeasurementFailed)?;
+
+            let snp_policy = SnpPolicy::from_le_bytes(policy_bytes);
+            let policy_flags: u8 = (snp_policy.smt_allowed as u8)
+                | ((snp_policy.debug_allowed as u8) << 1)
+                | ((snp_policy.migrate_ma_allowed as u8) << 2);
 
             let mut pcrs = PcrBank::default();
             pcrs.digests[0] = Sha3_256::digest(measurement).into();
-            pcrs.digests[1] = Sha3_256::digest(policy).into();
+            pcrs.digests[1] = Sha3_256::digest(&policy_bytes).into();
+            pcrs.digests[2] = Sha3_256::digest(&[policy_flags, snp_policy.abi_major, snp_policy.abi_minor]).into();
 
-            let firmware_hash: [u8; 32] = Sha3_256::digest(firmware).into();
             let ai_model_hash: [u8; 32] = match ai_model {
                 Some(m) => Sha3_256::digest(m).into(),
                 None => [0u8; 32],
             };
 
-            Ok(Measurements {
-                pcrs,
-                firmware_hash,
-                ai_model_hash,
-                event_counter,
-            })
+            Ok(Measurements { pcrs, firmware_hash: fw_hash, ai_model_hash, event_counter })
         }
     }
 
@@ -183,6 +217,9 @@ mod inner {
             if ret != 0 {
                 return Err(PqRascvError::MeasurementFailed);
             }
+            if ioctl_req.exitinfo2 != 0 {
+                return Err(PqRascvError::MeasurementFailed);
+            }
 
             Self::measurements_from_resp(
                 &resp.data,
@@ -205,12 +242,22 @@ mod inner {
         use super::*;
 
         fn fake_resp(measurement: [u8; 48], policy: [u8; 8]) -> [u8; REPORT_LEN] {
+            let fw_hash: [u8; 32] = Sha3_256::digest(b"fw").into();
+            fake_resp_with_report_data(measurement, policy, fw_hash)
+        }
+
+        fn fake_resp_with_report_data(
+            measurement: [u8; 48],
+            policy: [u8; 8],
+            report_data: [u8; 32],
+        ) -> [u8; REPORT_LEN] {
             let mut r = [0u8; REPORT_LEN];
-            r[MSG_HDR_LEN + REPORT_MEASUREMENT_OFFSET
-                ..MSG_HDR_LEN + REPORT_MEASUREMENT_OFFSET + 48]
+            r[MSG_HDR_LEN + REPORT_MEASUREMENT_OFFSET..MSG_HDR_LEN + REPORT_MEASUREMENT_OFFSET + 48]
                 .copy_from_slice(&measurement);
             r[MSG_HDR_LEN + REPORT_POLICY_OFFSET..MSG_HDR_LEN + REPORT_POLICY_OFFSET + 8]
                 .copy_from_slice(&policy);
+            r[MSG_HDR_LEN + REPORT_DATA_OFFSET..MSG_HDR_LEN + REPORT_DATA_OFFSET + 32]
+                .copy_from_slice(&report_data);
             r
         }
 
@@ -243,9 +290,11 @@ mod inner {
 
         #[test]
         fn firmware_hash_from_local_bytes() {
-            let resp = fake_resp([0u8; 48], [0u8; 8]);
-            let m = AmdSevSnpRoT::measurements_from_resp(&resp, b"my-fw", None, 0).unwrap();
-            let expected: [u8; 32] = Sha3_256::digest(b"my-fw").into();
+            let fw = b"my-fw";
+            let fw_hash: [u8; 32] = Sha3_256::digest(fw).into();
+            let resp = fake_resp_with_report_data([0u8; 48], [0u8; 8], fw_hash);
+            let m = AmdSevSnpRoT::measurements_from_resp(&resp, fw, None, 0).unwrap();
+            let expected: [u8; 32] = Sha3_256::digest(fw).into();
             assert_eq!(m.firmware_hash, expected);
         }
 
@@ -253,15 +302,45 @@ mod inner {
         fn pcrs_2_through_7_are_zero() {
             let resp = fake_resp([0x42u8; 48], [0xBBu8; 8]);
             let m = AmdSevSnpRoT::measurements_from_resp(&resp, b"fw", None, 0).unwrap();
-            for slot in 2..8 {
+            for slot in 3..8 {
                 assert_eq!(m.pcrs.digests[slot], [0u8; 32], "PCR {slot} must be zero");
             }
+        }
+
+        #[test]
+        fn report_data_binding_rejects_mismatched_fw_hash() {
+            // fake_resp pre-populates REPORT_DATA with SHA3-256(b"fw")
+            // but we pass b"wrong-firmware" → mismatch → MeasurementFailed
+            let resp = fake_resp([0x42u8; 48], [0u8; 8]);
+            let result = AmdSevSnpRoT::measurements_from_resp(&resp, b"wrong-firmware", None, 0);
+            assert!(
+                matches!(result, Err(PqRascvError::MeasurementFailed)),
+                "mismatched REPORT_DATA must fail, got {result:?}"
+            );
+        }
+
+        #[test]
+        fn report_data_binding_accepts_matching_fw_hash() {
+            let fw = b"correct-firmware";
+            let fw_hash: [u8; 32] = Sha3_256::digest(fw).into();
+            let resp = fake_resp_with_report_data([0x42u8; 48], [0u8; 8], fw_hash);
+            let result = AmdSevSnpRoT::measurements_from_resp(&resp, fw, None, 0);
+            assert!(result.is_ok(), "matching REPORT_DATA must succeed, got {result:?}");
+        }
+
+        #[test]
+        fn snp_policy_debug_not_allowed_decodes_correctly() {
+            // bits: SMT_ALLOWED=bit16=1, DEBUG_ALLOWED=bit19=0 → smt_allowed=true, debug_allowed=false
+            let policy: u64 = 1u64 << 16;
+            let decoded = SnpPolicy::from_le_bytes(policy.to_le_bytes());
+            assert!(!decoded.debug_allowed);
+            assert!(decoded.smt_allowed);
         }
     }
 }
 
 #[cfg(feature = "amd-sev-snp")]
-pub use inner::AmdSevSnpRoT;
+pub use inner::{AmdSevSnpRoT, SnpPolicy};
 
 /// Stub — `amd-sev-snp` feature not compiled in.
 #[cfg(not(feature = "amd-sev-snp"))]
