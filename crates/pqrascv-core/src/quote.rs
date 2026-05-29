@@ -33,7 +33,18 @@ use crate::{
 // ────────────────────────────────────────────────────────────────────────────
 
 /// Current PQ-RASCV wire protocol version.
-pub const PROTOCOL_VERSION: u16 = 1;
+///
+/// This constant is the source of truth for both the prover and verifier.
+/// The production policy engine enforces `EnforceProtocolVersion { expected: 2 }`.
+/// They must always match — a compile-time assertion below enforces this.
+pub const PROTOCOL_VERSION: u16 = 2;
+
+/// Compile-time guard: `production()` enforces version 2.
+/// If this assertion fails, update `PROTOCOL_VERSION` or `production()` to agree.
+const _PROTOCOL_VERSION_MATCHES_POLICY: () = assert!(
+    PROTOCOL_VERSION == 2,
+    "PROTOCOL_VERSION must equal 2 to match PolicyEngineV2::production()"
+);
 
 /// Maximum accepted CBOR size for a quote (64 KiB).
 /// Rejects oversized inputs before allocating, protecting embedded verifiers.
@@ -64,7 +75,7 @@ pub enum QuoteTimestamp {
 #[non_exhaustive]
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct QuoteBody {
-    /// Protocol version (currently `1`).
+    /// Protocol version (currently `2`, matches [`PROTOCOL_VERSION`]).
     pub version: u16,
     /// Timestamp at quote generation time.
     pub timestamp: QuoteTimestamp,
@@ -322,5 +333,13 @@ mod tests {
     fn from_cbor_rejects_oversized_input() {
         let oversized = vec![0u8; MAX_QUOTE_CBOR_SIZE + 1];
         assert!(AttestationQuote::from_cbor(&oversized).is_err());
+    }
+
+    #[test]
+    fn protocol_version_matches_production_policy() {
+        // production() enforces EnforceProtocolVersion { expected: 2 }.
+        // PROTOCOL_VERSION must equal 2 or all production-policy quotes will
+        // be rejected with UnsupportedVersion on every verify call.
+        assert_eq!(PROTOCOL_VERSION, 2, "PROTOCOL_VERSION must be 2 to match production policy");
     }
 }
