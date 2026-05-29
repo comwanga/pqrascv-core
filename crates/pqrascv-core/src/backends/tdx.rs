@@ -137,6 +137,16 @@ mod inner {
                 .open("/dev/tdx_guest")
                 .map_err(|_| PqRascvError::BackendUnavailable)?;
 
+            // SAFETY:
+            // 1. `dev` is a valid, open file descriptor for `/dev/tdx_guest`.
+            // 2. `TDX_CMD_GET_REPORT0` is the stable ioctl number from the Linux kernel
+            //    TDX uAPI (arch/x86/include/uapi/asm/tdx.h, verified against kernel 6.5).
+            //    It is a _IOWR ioctl — the kernel reads from `req.reportdata` (our nonce)
+            //    and writes the TDREPORT into `req.tdreport`. No other memory is accessed.
+            // 3. `req` is a stack-allocated `TdxReportReq` with `repr(C)` layout matching
+            //    the kernel struct definition. Its fields are fully initialized above.
+            // 4. The raw pointer `&mut req` is valid for the duration of the ioctl call.
+            // 5. This call does not create data races: `req` is exclusively owned here.
             let ret = unsafe {
                 libc::ioctl(
                     dev.as_raw_fd(),

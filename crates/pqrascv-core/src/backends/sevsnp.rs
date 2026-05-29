@@ -161,6 +161,18 @@ mod inner {
                 .open("/dev/sev-guest")
                 .map_err(|_| PqRascvError::BackendUnavailable)?;
 
+            // SAFETY:
+            // 1. `dev` is a valid, open file descriptor for `/dev/sev-guest`.
+            // 2. `SNP_GET_REPORT` is the stable ioctl number from the Linux kernel
+            //    SEV-SNP uAPI (include/uapi/linux/sev-guest.h, verified against kernel 6.5).
+            //    It is a _IOWR ioctl — the kernel reads `req_data` and writes the attestation
+            //    report into the buffer pointed to by `resp_data`. No other memory is accessed.
+            // 3. `ioctl_req` is a stack-allocated `SnpGuestRequestIoctl` with `repr(C)` layout
+            //    matching the kernel struct. `req_data` and `resp_data` are raw pointers to
+            //    `req` and `resp` which are live stack allocations at this call site.
+            // 4. All raw pointers are valid for the duration of the ioctl call and are not
+            //    aliased. `req` is read-only after initialization; `resp` is write-only.
+            // 5. This call does not create data races: all locals are exclusively owned here.
             let ret = unsafe {
                 libc::ioctl(
                     dev.as_raw_fd(),
