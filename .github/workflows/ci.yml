@@ -193,7 +193,10 @@ jobs:
           workspaces: fuzz -> fuzz/target
 
       - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
+        # --locked pins to cargo-fuzz's own Cargo.lock which includes rustix 0.36.x,
+        # incompatible with current nightly. Omit --locked so cargo resolves a
+        # rustix >= 0.38 that compiles cleanly on nightly.
+        run: cargo install cargo-fuzz
 
       - name: Build fuzz targets
         working-directory: fuzz
