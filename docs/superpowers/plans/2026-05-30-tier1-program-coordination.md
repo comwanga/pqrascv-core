@@ -135,8 +135,8 @@ Every phase has the same shape, so parallelize the read-only bookends and serial
 ## Progress tracker
 
 - [x] S0 Pre-flight map — **done 2026-05-30.** All 5 baseline assumptions confirmed. Refinements: P3 TPM already verified (SEV-SNP/TDX remain); P4 trait already exists (needs TTL + backends). New risks logged: P5 zero PKI ops tooling, P6 keyd UID-only + no audit log.
-- [ ] S1 P1 verify & commit
-- [ ] S2 P2 Federation auth ✋
+- [x] S1 P1 verify & commit — **done 2026-05-30.** 7 readiness tests pass; plan has all 5 required sections. Committed as `051a32a`.
+- [x] S2 P2 Federation auth ✋ — **done 2026-05-30.** New `federation_auth` module (ML-DSA-65 verify + domain-separated canonical payloads) threaded into all 5 modules. Additive signed path: unsigned mutations never count. Adversarial tests (forged/wrong-key/replayed/unsigned) across approvals, votes, quorum certs, observer evidence. Full hardware suite 211 pass; workspace check clean. Pre-existing clippy debt in 4 unrelated files flagged (not introduced here).
 - [ ] S3 P3 Hardware attestation ✋
 - [ ] S4 P4 Distributed replay ✋
 - [ ] S5 P5 PKI + P6 keyd ✋✋

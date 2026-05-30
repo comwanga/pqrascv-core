@@ -111,6 +111,7 @@ pub mod byzantine_quorum;
 pub mod cross_federation;
 pub mod epoch_key_binding;
 pub mod equivocation;
+pub mod federation_auth;
 pub mod federation_sync;
 pub mod federation_time;
 pub mod federation_topology;
@@ -197,7 +198,9 @@ pub use platform_profiles::{
 pub use policy::{
     HardwarePolicyContext, HardwarePolicyEngine, HardwarePolicyError, HardwarePolicyRule,
 };
-pub use policy_federation::{FederatedPolicyEpoch, FederatedPolicyError, FederatedPolicyRegistry};
+pub use policy_federation::{
+    FederatedPolicyEpoch, FederatedPolicyError, FederatedPolicyRegistry, SignedApproval,
+};
 pub use profiles::sovereign_bitcoin_node_profile;
 pub use reputation::VerifierReputation;
 pub use runtime_attestation::{
