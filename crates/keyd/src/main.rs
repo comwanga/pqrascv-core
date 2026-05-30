@@ -37,7 +37,9 @@ async fn main() -> anyhow::Result<()> {
 
     #[cfg(not(unix))]
     {
-        eprintln!("pqrascv-keyd only supports Unix platforms. socket={socket_path:?} keydir={key_dir:?}");
+        eprintln!(
+            "pqrascv-keyd only supports Unix platforms. socket={socket_path:?} keydir={key_dir:?}"
+        );
     }
 
     Ok(())

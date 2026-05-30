@@ -81,20 +81,23 @@ fn nonce_ledger_rejects_duplicate() {
 fn policy_evaluation_is_deterministic() {
     use crate::measurement::{PcrAlgorithm, PcrBank};
     use crate::nonce::ClockEvidence;
-    use crate::policy::{HardwareBackendKind, PolicyEngineV2, PolicyContext, PolicyRule};
+    use crate::policy::{HardwareBackendKind, PolicyContext, PolicyEngineV2, PolicyRule};
 
     // Build a symbolic firmware hash — all 32 bytes are unconstrained.
     let firmware_hash: [u8; 32] = kani::any();
 
     // Build a symbolic PCR bank — every digest is unconstrained.
     let digests: [[u8; 32]; 8] = kani::any();
-    let pcr_bank = PcrBank { digests, algorithm: PcrAlgorithm::Sha3_256 };
+    let pcr_bank = PcrBank {
+        digests,
+        algorithm: PcrAlgorithm::Sha3_256,
+    };
 
     // Symbolic protocol version and event counter.
     let protocol_version: u16 = kani::any();
-    let event_counter: u64    = kani::any();
-    let now_secs: u64         = kani::any();
-    let ts: u64               = kani::any();
+    let event_counter: u64 = kani::any();
+    let now_secs: u64 = kani::any();
+    let ts: u64 = kani::any();
 
     // Use TrustedRtc with a symbolic timestamp so MaxQuoteAgeSecs can be
     // exercised for any clock value.
@@ -132,7 +135,7 @@ fn policy_evaluation_is_deterministic() {
     let result1 = engine.evaluate(&ctx);
     let result2 = engine.evaluate(&ctx);
 
-    let both_ok  = result1.is_ok()  && result2.is_ok();
+    let both_ok = result1.is_ok() && result2.is_ok();
     let both_err = result1.is_err() && result2.is_err();
     kani::assert(
         both_ok || both_err,
@@ -164,11 +167,16 @@ fn cbor_serialization_is_deterministic() {
     }
 
     // If the bytes aren't a valid quote, skip this path.
-    let Ok(quote) = AttestationQuote::from_cbor(&bytes) else { return };
+    let Ok(quote) = AttestationQuote::from_cbor(&bytes) else {
+        return;
+    };
 
     // Re-serialise.  If that somehow fails, the harness fails.
     let Ok(cbor2) = quote.to_cbor() else {
-        kani::assert(false, "to_cbor must not fail on a successfully parsed quote");
+        kani::assert(
+            false,
+            "to_cbor must not fail on a successfully parsed quote",
+        );
         return;
     };
 

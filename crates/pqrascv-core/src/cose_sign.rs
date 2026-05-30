@@ -32,16 +32,25 @@ impl CoseSign1 {
         let protected = encode_protected_header(ML_DSA_65_ALG_ID)?;
         let sig_structure = encode_sig_structure(&protected, &payload)?;
 
-        let sig_bytes = MlDsaBackend
-            .sign(&sig_structure, seed.as_bytes(), SIGNING_CONTEXT_QUOTE)?;
+        let sig_bytes =
+            MlDsaBackend.sign(&sig_structure, seed.as_bytes(), SIGNING_CONTEXT_QUOTE)?;
 
-        Ok(Self { protected, payload, signature: sig_bytes.0.to_vec() })
+        Ok(Self {
+            protected,
+            payload,
+            signature: sig_bytes.0.to_vec(),
+        })
     }
 
     /// Verify the COSE_Sign1 signature with the provided ML-DSA-65 verifying key bytes.
     pub fn verify(&self, vk_bytes: &[u8]) -> Result<(), PqRascvError> {
         let sig_structure = encode_sig_structure(&self.protected, &self.payload)?;
-        MlDsaBackend.verify(&sig_structure, vk_bytes, &self.signature, SIGNING_CONTEXT_QUOTE)
+        MlDsaBackend.verify(
+            &sig_structure,
+            vk_bytes,
+            &self.signature,
+            SIGNING_CONTEXT_QUOTE,
+        )
     }
 
     /// Encode as an untagged CBOR array `[protected, {}, payload, signature]`.
@@ -65,20 +74,34 @@ impl CoseSign1 {
     /// Decode a COSE_Sign1 from CBOR bytes.
     pub fn from_cbor(bytes: &[u8]) -> Result<Self, PqRascvError> {
         use ciborium::value::Value;
-        let val: Value = ciborium::from_reader(bytes).map_err(|_| PqRascvError::DeserializationFailed)?;
+        let val: Value =
+            ciborium::from_reader(bytes).map_err(|_| PqRascvError::DeserializationFailed)?;
         let arr = match val {
             Value::Array(a) if a.len() == 4 => a,
             _ => return Err(PqRascvError::DeserializationFailed),
         };
         // Unprotected header must be a CBOR map.
         match &arr[1] {
-            Value::Map(_) => {},
+            Value::Map(_) => {}
             _ => return Err(PqRascvError::DeserializationFailed),
         }
-        let protected = match &arr[0] { Value::Bytes(b) => b.clone(), _ => return Err(PqRascvError::DeserializationFailed) };
-        let payload   = match &arr[2] { Value::Bytes(b) => b.clone(), _ => return Err(PqRascvError::DeserializationFailed) };
-        let signature = match &arr[3] { Value::Bytes(b) => b.clone(), _ => return Err(PqRascvError::DeserializationFailed) };
-        Ok(Self { protected, payload, signature })
+        let protected = match &arr[0] {
+            Value::Bytes(b) => b.clone(),
+            _ => return Err(PqRascvError::DeserializationFailed),
+        };
+        let payload = match &arr[2] {
+            Value::Bytes(b) => b.clone(),
+            _ => return Err(PqRascvError::DeserializationFailed),
+        };
+        let signature = match &arr[3] {
+            Value::Bytes(b) => b.clone(),
+            _ => return Err(PqRascvError::DeserializationFailed),
+        };
+        Ok(Self {
+            protected,
+            payload,
+            signature,
+        })
     }
 }
 
@@ -134,7 +157,9 @@ mod tests {
     fn tampered_signature_fails_verification() {
         let (seed, vk) = generate_ml_dsa_keypair().unwrap();
         let mut signed = CoseSign1::sign(b"payload".to_vec(), &seed).unwrap();
-        if let Some(b) = signed.signature.first_mut() { *b ^= 0xFF; }
+        if let Some(b) = signed.signature.first_mut() {
+            *b ^= 0xFF;
+        }
         assert!(signed.verify(&vk).is_err(), "tampered signature must fail");
     }
 
@@ -169,7 +194,10 @@ mod tests {
                 k == &ciborium::value::Value::Integer(1.into())
                     && v == &ciborium::value::Value::Integer(ML_DSA_65_ALG_ID.into())
             });
-            assert!(found, "protected header must contain alg = {ML_DSA_65_ALG_ID}");
+            assert!(
+                found,
+                "protected header must contain alg = {ML_DSA_65_ALG_ID}"
+            );
         } else {
             panic!("protected header must be a CBOR map");
         }

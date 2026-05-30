@@ -75,7 +75,10 @@ mod tests {
 
     #[test]
     fn response_ok_has_status_zero() {
-        let resp = Response { status: StatusCode::Ok as u8, payload: vec![0x42] };
+        let resp = Response {
+            status: StatusCode::Ok as u8,
+            payload: vec![0x42],
+        };
         let frame = encode_response(&resp).unwrap();
         let len = u32::from_le_bytes(frame[..4].try_into().unwrap()) as usize;
         let decoded: Response = ciborium::from_reader(&frame[4..4 + len]).unwrap();

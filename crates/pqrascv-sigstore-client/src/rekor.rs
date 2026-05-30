@@ -5,8 +5,8 @@
 //!   GET  /api/v1/log/entries?logIndex=N  — fetch by log index
 //!   POST /api/v1/log/entries             — submit a new entry
 
+use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use serde::{Deserialize, Serialize};
-use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 
 use crate::error::SigstoreClientError;
 
@@ -63,9 +63,13 @@ pub struct RekorInclusionProof {
 }
 
 /// Fetch a Rekor log entry by log index.
-pub fn get_entry_by_index(base_url: &str, log_index: i64) -> Result<RekorEntry, SigstoreClientError> {
+pub fn get_entry_by_index(
+    base_url: &str,
+    log_index: i64,
+) -> Result<RekorEntry, SigstoreClientError> {
     let url = format!("{base_url}/api/v1/log/entries?logIndex={log_index}");
-    let response: serde_json::Value = agent().get(&url)
+    let response: serde_json::Value = agent()
+        .get(&url)
         .call()
         .map_err(map_ureq_err)?
         .into_json()
@@ -79,8 +83,7 @@ pub fn get_entry_by_index(base_url: &str, log_index: i64) -> Result<RekorEntry, 
         .next()
         .ok_or_else(|| SigstoreClientError::Parse("empty response".into()))?;
 
-    serde_json::from_value(entry_val.clone())
-        .map_err(|e| SigstoreClientError::Parse(e.to_string()))
+    serde_json::from_value(entry_val.clone()).map_err(|e| SigstoreClientError::Parse(e.to_string()))
 }
 
 /// Decode and return the raw SET bytes from a `RekorEntry`.
@@ -121,7 +124,8 @@ pub fn submit_hashedrekord(
     });
 
     let url = format!("{base_url}/api/v1/log/entries");
-    let response: serde_json::Value = agent().post(&url)
+    let response: serde_json::Value = agent()
+        .post(&url)
         .set("Content-Type", "application/json")
         .send_json(body)
         .map_err(map_ureq_err)?
@@ -136,8 +140,7 @@ pub fn submit_hashedrekord(
         .next()
         .ok_or_else(|| SigstoreClientError::Parse("empty response".into()))?;
 
-    serde_json::from_value(entry_val.clone())
-        .map_err(|e| SigstoreClientError::Parse(e.to_string()))
+    serde_json::from_value(entry_val.clone()).map_err(|e| SigstoreClientError::Parse(e.to_string()))
 }
 
 #[cfg(test)]
@@ -223,7 +226,13 @@ mod tests {
             .with_body(mock_entry_json(100, 1_700_000_001))
             .create();
         let artifact_sha256 = [0x42u8; 32];
-        let entry = submit_hashedrekord(&server.url(), &artifact_sha256, "dGVzdC1zaWduYXR1cmU=", "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t").unwrap();
+        let entry = submit_hashedrekord(
+            &server.url(),
+            &artifact_sha256,
+            "dGVzdC1zaWduYXR1cmU=",
+            "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t",
+        )
+        .unwrap();
         assert_eq!(entry.log_index, 100);
         mock.assert();
     }

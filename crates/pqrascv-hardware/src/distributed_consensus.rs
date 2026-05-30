@@ -308,9 +308,9 @@ mod tests {
     fn non_member_votes_counted_identically_to_member_votes() {
         let fed = make_federation(5, QuorumPolicy::Majority); // quorum = 3
         let votes = vec![
-            trusted_vote("attacker-1"),   // not a member
-            trusted_vote("attacker-2"),   // not a member
-            trusted_vote("attacker-3"),   // not a member
+            trusted_vote("attacker-1"), // not a member
+            trusted_vote("attacker-2"), // not a member
+            trusted_vote("attacker-3"), // not a member
         ];
         let eval = ConsensusEvaluation::evaluate("fake".into(), votes, &fed);
         // No membership check — three phantom votes satisfy quorum and return Trusted

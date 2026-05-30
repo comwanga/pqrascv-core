@@ -9,9 +9,8 @@
 //! Null pointers cause immediate return of `PQRASCV_ERROR_NULL_PTR`.
 
 use pqrascv_core::crypto::{
-    generate_ml_dsa_keypair, MlDsaBackend, CryptoBackend,
-    SIGNING_CONTEXT_QUOTE, ML_DSA_65_SEED_SIZE, ML_DSA_65_VERIFYING_KEY_SIZE,
-    ML_DSA_65_SIGNATURE_SIZE,
+    generate_ml_dsa_keypair, CryptoBackend, MlDsaBackend, ML_DSA_65_SEED_SIZE,
+    ML_DSA_65_SIGNATURE_SIZE, ML_DSA_65_VERIFYING_KEY_SIZE, SIGNING_CONTEXT_QUOTE,
 };
 
 /// FFI status codes returned by all pqrascv_* functions.
@@ -45,8 +44,10 @@ pub unsafe extern "C" fn pqrascv_generate_keypair(
     verifying_key_out: *mut u8,
     vk_len_out: *mut usize,
 ) -> PqrascvStatus {
-    if signing_key_out.is_null() || sk_len_out.is_null()
-        || verifying_key_out.is_null() || vk_len_out.is_null()
+    if signing_key_out.is_null()
+        || sk_len_out.is_null()
+        || verifying_key_out.is_null()
+        || vk_len_out.is_null()
     {
         return PqrascvStatus::ErrorNullPtr;
     }
@@ -92,8 +93,10 @@ pub unsafe extern "C" fn pqrascv_sign(
     signature_out: *mut u8,
     sig_len_out: *mut usize,
 ) -> PqrascvStatus {
-    if signing_key_ptr.is_null() || message_ptr.is_null()
-        || signature_out.is_null() || sig_len_out.is_null()
+    if signing_key_ptr.is_null()
+        || message_ptr.is_null()
+        || signature_out.is_null()
+        || sig_len_out.is_null()
     {
         return PqrascvStatus::ErrorNullPtr;
     }
@@ -142,11 +145,13 @@ pub unsafe extern "C" fn pqrascv_verify(
         return PqrascvStatus::ErrorNullPtr;
     }
 
-    if verifying_key_len != ML_DSA_65_VERIFYING_KEY_SIZE || signature_len != ML_DSA_65_SIGNATURE_SIZE {
+    if verifying_key_len != ML_DSA_65_VERIFYING_KEY_SIZE
+        || signature_len != ML_DSA_65_SIGNATURE_SIZE
+    {
         return PqrascvStatus::ErrorBufferTooSmall;
     }
 
-    let vk  = std::slice::from_raw_parts(verifying_key_ptr, verifying_key_len);
+    let vk = std::slice::from_raw_parts(verifying_key_ptr, verifying_key_len);
     let msg = std::slice::from_raw_parts(message_ptr, message_len);
     let sig = std::slice::from_raw_parts(signature_ptr, signature_len);
 
@@ -168,10 +173,7 @@ mod tests {
         let mut vk_len = vk.len();
 
         let status = unsafe {
-            pqrascv_generate_keypair(
-                sk.as_mut_ptr(), &mut sk_len,
-                vk.as_mut_ptr(), &mut vk_len,
-            )
+            pqrascv_generate_keypair(sk.as_mut_ptr(), &mut sk_len, vk.as_mut_ptr(), &mut vk_len)
         };
         assert!(matches!(status, PqrascvStatus::Ok));
         assert_eq!(sk_len, ML_DSA_65_SEED_SIZE);
@@ -194,18 +196,24 @@ mod tests {
 
         let sign_status = unsafe {
             pqrascv_sign(
-                sk.as_ptr(), sk_len,
-                message.as_ptr(), message.len(),
-                sig.as_mut_ptr(), &mut sig_len,
+                sk.as_ptr(),
+                sk_len,
+                message.as_ptr(),
+                message.len(),
+                sig.as_mut_ptr(),
+                &mut sig_len,
             )
         };
         assert!(matches!(sign_status, PqrascvStatus::Ok));
 
         let verify_status = unsafe {
             pqrascv_verify(
-                vk.as_ptr(), vk_len,
-                message.as_ptr(), message.len(),
-                sig.as_ptr(), sig_len,
+                vk.as_ptr(),
+                vk_len,
+                message.as_ptr(),
+                message.len(),
+                sig.as_ptr(),
+                sig_len,
             )
         };
         assert!(matches!(verify_status, PqrascvStatus::Ok));
@@ -224,11 +232,25 @@ mod tests {
         let mut sig = vec![0u8; ML_DSA_65_SIGNATURE_SIZE + 32];
         let mut sig_len = sig.len();
         unsafe {
-            pqrascv_sign(sk.as_ptr(), sk_len, b"original".as_ptr(), 8, sig.as_mut_ptr(), &mut sig_len);
+            pqrascv_sign(
+                sk.as_ptr(),
+                sk_len,
+                b"original".as_ptr(),
+                8,
+                sig.as_mut_ptr(),
+                &mut sig_len,
+            );
         }
 
         let status = unsafe {
-            pqrascv_verify(vk.as_ptr(), vk_len, b"tampered".as_ptr(), 8, sig.as_ptr(), sig_len)
+            pqrascv_verify(
+                vk.as_ptr(),
+                vk_len,
+                b"tampered".as_ptr(),
+                8,
+                sig.as_ptr(),
+                sig_len,
+            )
         };
         assert!(matches!(status, PqrascvStatus::ErrorCrypto));
     }
@@ -239,8 +261,10 @@ mod tests {
         let mut vk_len = 2048usize;
         let status = unsafe {
             pqrascv_generate_keypair(
-                std::ptr::null_mut(), &mut sk_len,
-                std::ptr::null_mut(), &mut vk_len,
+                std::ptr::null_mut(),
+                &mut sk_len,
+                std::ptr::null_mut(),
+                &mut vk_len,
             )
         };
         assert!(matches!(status, PqrascvStatus::ErrorNullPtr));

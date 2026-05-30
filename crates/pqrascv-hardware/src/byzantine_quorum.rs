@@ -108,7 +108,12 @@ impl ByzantineQuorumResult {
 
         for set in vote_sets {
             // Deduplicate within each VoteSet to prevent vote-count inflation.
-            let votes = set.verifier_ids.iter().map(String::as_str).collect::<BTreeSet<_>>().len();
+            let votes = set
+                .verifier_ids
+                .iter()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>()
+                .len();
             if votes > max_votes {
                 max_votes = votes;
             }

@@ -30,7 +30,7 @@ mod inner {
     use sha3::{Digest as _, Sha3_256};
     use subtle::ConstantTimeEq;
 
-    const MRTD_OFFSET: usize = 0x210;     // TdInfo starts at 0x200; MRTD at TdInfo+0x010
+    const MRTD_OFFSET: usize = 0x210; // TdInfo starts at 0x200; MRTD at TdInfo+0x010
     const RTMR0_OFFSET: usize = 0x2D0;
     const RTMR1_OFFSET: usize = 0x300;
     const RTMR2_OFFSET: usize = 0x330;
@@ -105,7 +105,8 @@ mod inner {
         ) -> Result<Measurements, PqRascvError> {
             // Validate REPORTDATA binding: first 32 bytes must equal SHA3-256(firmware).
             let fw_hash: [u8; 32] = Sha3_256::digest(firmware).into();
-            let report_data_fw = &tdreport[REPORTDATA_OFFSET..REPORTDATA_OFFSET + REPORTDATA_FW_HASH_LEN];
+            let report_data_fw =
+                &tdreport[REPORTDATA_OFFSET..REPORTDATA_OFFSET + REPORTDATA_FW_HASH_LEN];
             if report_data_fw.ct_eq(fw_hash.as_ref()).unwrap_u8() == 0 {
                 return Err(PqRascvError::MeasurementFailed);
             }

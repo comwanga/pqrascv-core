@@ -28,7 +28,12 @@ pub fn sign_and_log(
     let leaf_pem_b64 = cert_chain
         .first()
         .ok_or_else(|| SigstoreClientError::Fulcio("empty cert chain".into()))?;
-    let entry = submit_hashedrekord(&config.rekor_url, artifact_sha256, signature_b64, leaf_pem_b64)?;
+    let entry = submit_hashedrekord(
+        &config.rekor_url,
+        artifact_sha256,
+        signature_b64,
+        leaf_pem_b64,
+    )?;
     Ok(SignedArtifact {
         rekor_entry: entry,
         cert_chain_pem: cert_chain,
@@ -71,39 +76,58 @@ pub fn build_bundle_json(
             "signature": signed.signature_b64
         }
     });
-    serde_json::to_string(&bundle)
-        .map_err(|e| SigstoreClientError::Parse(e.to_string()))
+    serde_json::to_string(&bundle).map_err(|e| SigstoreClientError::Parse(e.to_string()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
     use crate::rekor::{RekorEntry, RekorVerification};
+    use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 
     fn mock_fulcio_body() -> String {
         serde_json::json!({
             "signedCertificateEmbeddedSct": {
                 "chain": { "certificates": ["bW9jay1sZWFm", "bW9jay1yb290"] }
             }
-        }).to_string()
+        })
+        .to_string()
     }
 
     fn mock_rekor_body(log_index: i64) -> String {
         let set_b64 = B64.encode(b"mock-set");
         let uuid = "deadbeef";
-        format!(r#"{{"{uuid}": {{"uuid": "{uuid}", "body": "e30=", "integratedTime": 1700000000, "logIndex": {log_index}, "verification": {{"signedEntryTimestamp": "{set_b64}"}}}}}}"#)
+        format!(
+            r#"{{"{uuid}": {{"uuid": "{uuid}", "body": "e30=", "integratedTime": 1700000000, "logIndex": {log_index}, "verification": {{"signedEntryTimestamp": "{set_b64}"}}}}}}"#
+        )
     }
 
     #[test]
     fn sign_and_log_returns_signed_artifact() {
         let mut fulcio_server = mockito::Server::new();
         let mut rekor_server = mockito::Server::new();
-        let _fm = fulcio_server.mock("POST", "/api/v1/signingCert").with_status(200).with_body(mock_fulcio_body()).create();
-        let _rm = rekor_server.mock("POST", "/api/v1/log/entries").with_status(201).with_body(mock_rekor_body(200)).create();
+        let _fm = fulcio_server
+            .mock("POST", "/api/v1/signingCert")
+            .with_status(200)
+            .with_body(mock_fulcio_body())
+            .create();
+        let _rm = rekor_server
+            .mock("POST", "/api/v1/log/entries")
+            .with_status(201)
+            .with_body(mock_rekor_body(200))
+            .create();
 
-        let config = WorkflowConfig { fulcio_url: fulcio_server.url(), rekor_url: rekor_server.url() };
-        let result = sign_and_log(&config, &[0xABu8; 32], "id-token", "bW9jay1jc3I=", "bW9jay1zaWc=");
+        let config = WorkflowConfig {
+            fulcio_url: fulcio_server.url(),
+            rekor_url: rekor_server.url(),
+        };
+        let result = sign_and_log(
+            &config,
+            &[0xABu8; 32],
+            "id-token",
+            "bW9jay1jc3I=",
+            "bW9jay1zaWc=",
+        );
         assert!(result.is_ok(), "sign_and_log must succeed: {result:?}");
         let signed = result.unwrap();
         assert_eq!(signed.rekor_entry.log_index, 200);

@@ -3,9 +3,9 @@ fn main() {
     let output_dir = std::path::PathBuf::from(&crate_dir).join("../../include");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = cbindgen::Config::from_file(
-        std::path::Path::new(&crate_dir).join("cbindgen.toml"),
-    ).unwrap_or_default();
+    let config =
+        cbindgen::Config::from_file(std::path::Path::new(&crate_dir).join("cbindgen.toml"))
+            .unwrap_or_default();
 
     match cbindgen::Builder::new()
         .with_crate(&crate_dir)

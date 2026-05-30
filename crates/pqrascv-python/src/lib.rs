@@ -4,7 +4,7 @@
 //! Import: import pqrascv
 
 use pqrascv_core::crypto::{
-    generate_ml_dsa_keypair, MlDsaBackend, CryptoBackend, SIGNING_CONTEXT_QUOTE,
+    generate_ml_dsa_keypair, CryptoBackend, MlDsaBackend, SIGNING_CONTEXT_QUOTE,
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -13,8 +13,8 @@ use pqrascv_core::crypto::{
 
 /// Inner keypair, independent of the pyo3 layer so unit tests work without Python.
 pub struct MlDsaKeyInner {
-    pub(crate) seed_bytes: Vec<u8>,  // 32-byte signing seed — never exposed via Debug
-    pub vk_bytes: Vec<u8>,           // 1952-byte verifying key
+    pub(crate) seed_bytes: Vec<u8>, // 32-byte signing seed — never exposed via Debug
+    pub vk_bytes: Vec<u8>,          // 1952-byte verifying key
 }
 
 impl std::fmt::Debug for MlDsaKeyInner {
@@ -57,10 +57,10 @@ impl MlDsaKeyInner {
 #[cfg(feature = "extension-module")]
 mod python_bindings {
     use super::*;
-    use pyo3::prelude::*;
-    use pyo3::exceptions::PyValueError;
     use pqrascv_core::config::PolicyConfig;
     use pqrascv_verifier::Verifier;
+    use pyo3::exceptions::PyValueError;
+    use pyo3::prelude::*;
 
     /// ML-DSA-65 keypair. The 32-byte seed is kept in memory.
     #[pyclass]
@@ -85,14 +85,19 @@ mod python_bindings {
 
         /// Sign `message` and return the raw signature bytes.
         pub fn sign(&self, message: &[u8]) -> PyResult<Vec<u8>> {
-            self.inner.sign_msg(message)
+            self.inner
+                .sign_msg(message)
                 .map_err(|e| PyValueError::new_err(format!("signing failed: {e}")))
         }
 
         /// Verify `signature` over `message` with `verifying_key_bytes`.
         /// Returns True on success, raises ValueError on failure.
         #[staticmethod]
-        pub fn verify(verifying_key_bytes: &[u8], message: &[u8], signature: &[u8]) -> PyResult<bool> {
+        pub fn verify(
+            verifying_key_bytes: &[u8],
+            message: &[u8],
+            signature: &[u8],
+        ) -> PyResult<bool> {
             MlDsaKeyInner::verify_msg(verifying_key_bytes, message, signature)
                 .map(|_| true)
                 .map_err(|e| PyValueError::new_err(format!("verification failed: {e}")))
@@ -109,7 +114,9 @@ mod python_bindings {
     impl QuoteVerifier {
         #[new]
         pub fn new() -> Self {
-            Self { inner: Verifier::new(PolicyConfig::default()) }
+            Self {
+                inner: Verifier::new(PolicyConfig::default()),
+            }
         }
 
         /// Verify a CBOR-encoded AttestationQuote.
@@ -121,7 +128,9 @@ mod python_bindings {
             now_secs: u64,
         ) -> PyResult<bool> {
             if expected_nonce.len() != 32 {
-                return Err(PyValueError::new_err("expected_nonce must be exactly 32 bytes"));
+                return Err(PyValueError::new_err(
+                    "expected_nonce must be exactly 32 bytes",
+                ));
             }
             let nonce: [u8; 32] = expected_nonce.try_into().unwrap();
             self.inner
@@ -185,7 +194,13 @@ mod tests {
     #[test]
     fn verifying_key_bytes_length_is_correct() {
         let key = MlDsaKeyInner::generate().unwrap();
-        assert_eq!(key.vk_bytes.len(), pqrascv_core::crypto::ML_DSA_65_VERIFYING_KEY_SIZE);
-        assert_eq!(key.seed_bytes.len(), pqrascv_core::crypto::ML_DSA_65_SEED_SIZE);
+        assert_eq!(
+            key.vk_bytes.len(),
+            pqrascv_core::crypto::ML_DSA_65_VERIFYING_KEY_SIZE
+        );
+        assert_eq!(
+            key.seed_bytes.len(),
+            pqrascv_core::crypto::ML_DSA_65_SEED_SIZE
+        );
     }
 }

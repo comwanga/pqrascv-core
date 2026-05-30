@@ -116,6 +116,9 @@ mod tests {
 
         // No verification is performed; the struct is valid as-is.
         assert_eq!(fabricated.observer_signature, Vec::<u8>::new());
-        assert_eq!(fabricated.observing_verifier_id, "trusted-verifier-impersonated");
+        assert_eq!(
+            fabricated.observing_verifier_id,
+            "trusted-verifier-impersonated"
+        );
     }
 }

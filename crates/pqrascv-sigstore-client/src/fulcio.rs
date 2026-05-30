@@ -4,8 +4,8 @@
 //! Input: OIDC id_token (Authorization header) + CSR body
 //! Output: PEM certificate chain
 
-use serde::Deserialize;
 use crate::error::SigstoreClientError;
+use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct FulcioCertResponse {
@@ -50,11 +50,14 @@ pub fn request_signing_cert(
     csr_der_b64: &str,
 ) -> Result<Vec<String>, SigstoreClientError> {
     if id_token.bytes().any(|b| b == b'\r' || b == b'\n' || b == 0) {
-        return Err(SigstoreClientError::Fulcio("invalid id_token: contains CR/LF/NUL".into()));
+        return Err(SigstoreClientError::Fulcio(
+            "invalid id_token: contains CR/LF/NUL".into(),
+        ));
     }
     let body = serde_json::json!({ "certificateSigningRequest": csr_der_b64 });
     let url = format!("{base_url}/api/v1/signingCert");
-    let resp: serde_json::Value = agent().post(&url)
+    let resp: serde_json::Value = agent()
+        .post(&url)
         .set("Authorization", &format!("Bearer {id_token}"))
         .set("Content-Type", "application/json")
         .send_json(body)
@@ -62,8 +65,8 @@ pub fn request_signing_cert(
         .into_json()
         .map_err(|e| SigstoreClientError::Parse(e.to_string()))?;
 
-    let cert_resp: FulcioCertResponse = serde_json::from_value(resp)
-        .map_err(|e| SigstoreClientError::Parse(e.to_string()))?;
+    let cert_resp: FulcioCertResponse =
+        serde_json::from_value(resp).map_err(|e| SigstoreClientError::Parse(e.to_string()))?;
 
     Ok(cert_resp.cert_chain_pem.chain.certificates)
 }
@@ -73,7 +76,8 @@ pub fn request_signing_cert(
 /// Parses the first item in `cert_chain_pem` as a PEM-encoded X.509 certificate.
 /// Returns `Err` if the block is not a `CERTIFICATE` PEM type.
 pub fn leaf_cert_der(cert_chain_pem: &[String]) -> Result<Vec<u8>, SigstoreClientError> {
-    let leaf_pem = cert_chain_pem.first()
+    let leaf_pem = cert_chain_pem
+        .first()
         .ok_or_else(|| SigstoreClientError::Parse("empty cert chain".into()))?;
     let mut reader = std::io::Cursor::new(leaf_pem.as_bytes());
     let item = rustls_pemfile::read_one(&mut reader)
@@ -81,7 +85,9 @@ pub fn leaf_cert_der(cert_chain_pem: &[String]) -> Result<Vec<u8>, SigstoreClien
         .ok_or_else(|| SigstoreClientError::Parse("no PEM block found".into()))?;
     match item {
         rustls_pemfile::Item::X509Certificate(der) => Ok(der.to_vec()),
-        _ => Err(SigstoreClientError::Parse("PEM block is not a CERTIFICATE".into())),
+        _ => Err(SigstoreClientError::Parse(
+            "PEM block is not a CERTIFICATE".into(),
+        )),
     }
 }
 
@@ -130,10 +136,17 @@ mod tests {
 
     #[test]
     fn request_signing_cert_rejects_token_with_crlf() {
-        let result = request_signing_cert("http://127.0.0.1:1", "token\r\nX-Injected: evil", "bW9jay1jc3I=");
+        let result = request_signing_cert(
+            "http://127.0.0.1:1",
+            "token\r\nX-Injected: evil",
+            "bW9jay1jc3I=",
+        );
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("CR/LF/NUL") || err.contains("invalid"), "got: {err}");
+        assert!(
+            err.contains("CR/LF/NUL") || err.contains("invalid"),
+            "got: {err}"
+        );
     }
 
     #[test]

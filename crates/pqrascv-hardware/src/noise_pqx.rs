@@ -82,7 +82,10 @@ mod tests {
     fn derive_session_keys_swapped_secrets_produce_different_keys() {
         let s1 = derive_session_keys(&[0x11u8; 32], &[0x22u8; 32]);
         let s2 = derive_session_keys(&[0x22u8; 32], &[0x11u8; 32]);
-        assert_ne!(s1.send_key, s2.send_key, "key derivation must not be commutative");
+        assert_ne!(
+            s1.send_key, s2.send_key,
+            "key derivation must not be commutative"
+        );
     }
 
     #[test]

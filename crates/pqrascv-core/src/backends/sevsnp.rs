@@ -136,13 +136,16 @@ mod inner {
 
             // Verify REPORT_DATA binding: first 32 bytes must match SHA3-256(firmware).
             let fw_hash: [u8; 32] = Sha3_256::digest(firmware).into();
-            let report_data_fw = &report[REPORT_DATA_OFFSET..REPORT_DATA_OFFSET + REPORT_DATA_FW_HASH_LEN];
+            let report_data_fw =
+                &report[REPORT_DATA_OFFSET..REPORT_DATA_OFFSET + REPORT_DATA_FW_HASH_LEN];
             if report_data_fw.ct_eq(fw_hash.as_ref()).unwrap_u8() == 0 {
                 return Err(PqRascvError::MeasurementFailed);
             }
 
-            let measurement = &report[REPORT_MEASUREMENT_OFFSET..REPORT_MEASUREMENT_OFFSET + SHA384_LEN];
-            let policy_bytes: [u8; 8] = report[REPORT_POLICY_OFFSET..REPORT_POLICY_OFFSET + POLICY_LEN]
+            let measurement =
+                &report[REPORT_MEASUREMENT_OFFSET..REPORT_MEASUREMENT_OFFSET + SHA384_LEN];
+            let policy_bytes: [u8; 8] = report
+                [REPORT_POLICY_OFFSET..REPORT_POLICY_OFFSET + POLICY_LEN]
                 .try_into()
                 .map_err(|_| PqRascvError::MeasurementFailed)?;
 
@@ -154,14 +157,21 @@ mod inner {
             let mut pcrs = PcrBank::default();
             pcrs.digests[0] = Sha3_256::digest(measurement).into();
             pcrs.digests[1] = Sha3_256::digest(&policy_bytes).into();
-            pcrs.digests[2] = Sha3_256::digest(&[policy_flags, snp_policy.abi_major, snp_policy.abi_minor]).into();
+            pcrs.digests[2] =
+                Sha3_256::digest(&[policy_flags, snp_policy.abi_major, snp_policy.abi_minor])
+                    .into();
 
             let ai_model_hash: [u8; 32] = match ai_model {
                 Some(m) => Sha3_256::digest(m).into(),
                 None => [0u8; 32],
             };
 
-            Ok(Measurements { pcrs, firmware_hash: fw_hash, ai_model_hash, event_counter })
+            Ok(Measurements {
+                pcrs,
+                firmware_hash: fw_hash,
+                ai_model_hash,
+                event_counter,
+            })
         }
     }
 
@@ -253,7 +263,8 @@ mod inner {
             report_data: [u8; 32],
         ) -> [u8; REPORT_LEN] {
             let mut r = [0u8; REPORT_LEN];
-            r[MSG_HDR_LEN + REPORT_MEASUREMENT_OFFSET..MSG_HDR_LEN + REPORT_MEASUREMENT_OFFSET + 48]
+            r[MSG_HDR_LEN + REPORT_MEASUREMENT_OFFSET
+                ..MSG_HDR_LEN + REPORT_MEASUREMENT_OFFSET + 48]
                 .copy_from_slice(&measurement);
             r[MSG_HDR_LEN + REPORT_POLICY_OFFSET..MSG_HDR_LEN + REPORT_POLICY_OFFSET + 8]
                 .copy_from_slice(&policy);
@@ -326,7 +337,10 @@ mod inner {
             let fw_hash: [u8; 32] = Sha3_256::digest(fw).into();
             let resp = fake_resp_with_report_data([0x42u8; 48], [0u8; 8], fw_hash);
             let result = AmdSevSnpRoT::measurements_from_resp(&resp, fw, None, 0);
-            assert!(result.is_ok(), "matching REPORT_DATA must succeed, got {result:?}");
+            assert!(
+                result.is_ok(),
+                "matching REPORT_DATA must succeed, got {result:?}"
+            );
         }
 
         #[test]
@@ -334,7 +348,7 @@ mod inner {
             // Policy: ABI_MINOR=3, ABI_MAJOR=2, SMT_ALLOWED=bit16=1, DEBUG=bit19=0
             let policy: u64 = 3u64        // ABI_MINOR in bits 7:0
                 | (2u64 << 8)            // ABI_MAJOR in bits 15:8
-                | (1u64 << 16);          // SMT_ALLOWED in bit 16
+                | (1u64 << 16); // SMT_ALLOWED in bit 16
             let decoded = SnpPolicy::from_le_bytes(policy.to_le_bytes());
             assert_eq!(decoded.abi_minor, 3);
             assert_eq!(decoded.abi_major, 2);

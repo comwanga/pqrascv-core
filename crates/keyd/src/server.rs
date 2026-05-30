@@ -3,15 +3,17 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::Arc;
-use tokio::net::{UnixListener, UnixStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{UnixListener, UnixStream};
 
 use crate::keystore::{KeyStore, KeyStoreError};
-use crate::protocol::{Request, Response, StatusCode, encode_response};
+use crate::protocol::{encode_response, Request, Response, StatusCode};
 
 // SAFETY: getuid(2) is always safe — no invalid states, no side effects.
 fn server_uid() -> u32 {
-    extern "C" { fn getuid() -> u32; }
+    extern "C" {
+        fn getuid() -> u32;
+    }
     unsafe { getuid() }
 }
 
@@ -21,7 +23,9 @@ pub struct Server {
 
 impl Server {
     pub fn new(store: KeyStore) -> Self {
-        Self { store: Arc::new(store) }
+        Self {
+            store: Arc::new(store),
+        }
     }
 
     pub async fn run(self, socket_path: &Path) -> std::io::Result<()> {
@@ -36,11 +40,12 @@ impl Server {
         loop {
             let (stream, _) = listener.accept().await?;
             // Reject connections from any UID other than our own.
+            let own_uid = server_uid();
             match stream.peer_cred() {
-                Ok(cred) if cred.uid() != server_uid() => {
+                Ok(cred) if cred.uid() != own_uid => {
                     tracing::warn!(
                         peer_uid = cred.uid(),
-                        server_uid = server_uid(),
+                        server_uid = own_uid,
                         "rejected connection from unexpected uid"
                     );
                     continue;
@@ -61,10 +66,7 @@ impl Server {
     }
 }
 
-async fn handle_connection(
-    mut stream: UnixStream,
-    store: Arc<KeyStore>,
-) -> std::io::Result<()> {
+async fn handle_connection(mut stream: UnixStream, store: Arc<KeyStore>) -> std::io::Result<()> {
     loop {
         let mut len_buf = [0u8; 4];
         if stream.read_exact(&mut len_buf).await.is_err() {
@@ -82,7 +84,10 @@ async fn handle_connection(
         let req: Request = match ciborium::from_reader(body.as_slice()) {
             Ok(r) => r,
             Err(_) => {
-                let resp = Response { status: StatusCode::InternalError as u8, payload: vec![] };
+                let resp = Response {
+                    status: StatusCode::InternalError as u8,
+                    payload: vec![],
+                };
                 stream.write_all(&encode_response(&resp).unwrap()).await?;
                 continue;
             }
@@ -97,53 +102,90 @@ async fn handle_connection(
 fn dispatch(req: Request, store: &KeyStore) -> Response {
     match req.request_type {
         1 => match store.generate(&req.label) {
-            Ok(vk) => Response { status: StatusCode::Ok as u8, payload: vk },
-            Err(KeyStoreError::AlreadyExists(_)) => {
-                Response { status: StatusCode::AlreadyExists as u8, payload: vec![] }
-            }
+            Ok(vk) => Response {
+                status: StatusCode::Ok as u8,
+                payload: vk,
+            },
+            Err(KeyStoreError::AlreadyExists(_)) => Response {
+                status: StatusCode::AlreadyExists as u8,
+                payload: vec![],
+            },
             Err(e) => {
                 tracing::error!("generate error: {e}");
-                Response { status: StatusCode::InternalError as u8, payload: vec![] }
+                Response {
+                    status: StatusCode::InternalError as u8,
+                    payload: vec![],
+                }
             }
         },
         2 => match store.public_key(&req.label) {
-            Ok(vk) => Response { status: StatusCode::Ok as u8, payload: vk },
-            Err(KeyStoreError::NotFound(_)) => {
-                Response { status: StatusCode::NotFound as u8, payload: vec![] }
-            }
+            Ok(vk) => Response {
+                status: StatusCode::Ok as u8,
+                payload: vk,
+            },
+            Err(KeyStoreError::NotFound(_)) => Response {
+                status: StatusCode::NotFound as u8,
+                payload: vec![],
+            },
             Err(e) => {
                 tracing::error!("export error: {e}");
-                Response { status: StatusCode::InternalError as u8, payload: vec![] }
+                Response {
+                    status: StatusCode::InternalError as u8,
+                    payload: vec![],
+                }
             }
         },
         3 => match store.sign(&req.label, &req.payload) {
-            Ok(sig) => Response { status: StatusCode::Ok as u8, payload: sig },
-            Err(KeyStoreError::NotFound(_)) => {
-                Response { status: StatusCode::NotFound as u8, payload: vec![] }
-            }
+            Ok(sig) => Response {
+                status: StatusCode::Ok as u8,
+                payload: sig,
+            },
+            Err(KeyStoreError::NotFound(_)) => Response {
+                status: StatusCode::NotFound as u8,
+                payload: vec![],
+            },
             Err(e) => {
                 tracing::error!("sign error: {e}");
-                Response { status: StatusCode::SigningError as u8, payload: vec![] }
+                Response {
+                    status: StatusCode::SigningError as u8,
+                    payload: vec![],
+                }
             }
         },
         4 => match store.rotate(&req.label) {
-            Ok(vk) => Response { status: StatusCode::Ok as u8, payload: vk },
+            Ok(vk) => Response {
+                status: StatusCode::Ok as u8,
+                payload: vk,
+            },
             Err(e) => {
                 tracing::error!("rotate error: {e}");
-                Response { status: StatusCode::InternalError as u8, payload: vec![] }
+                Response {
+                    status: StatusCode::InternalError as u8,
+                    payload: vec![],
+                }
             }
         },
         5 => match store.delete(&req.label) {
-            Ok(()) => Response { status: StatusCode::Ok as u8, payload: vec![] },
-            Err(KeyStoreError::NotFound(_)) => {
-                Response { status: StatusCode::NotFound as u8, payload: vec![] }
-            }
+            Ok(()) => Response {
+                status: StatusCode::Ok as u8,
+                payload: vec![],
+            },
+            Err(KeyStoreError::NotFound(_)) => Response {
+                status: StatusCode::NotFound as u8,
+                payload: vec![],
+            },
             Err(e) => {
                 tracing::error!("delete error: {e}");
-                Response { status: StatusCode::InternalError as u8, payload: vec![] }
+                Response {
+                    status: StatusCode::InternalError as u8,
+                    payload: vec![],
+                }
             }
         },
-        _ => Response { status: StatusCode::InternalError as u8, payload: vec![] },
+        _ => Response {
+            status: StatusCode::InternalError as u8,
+            payload: vec![],
+        },
     }
 }
 

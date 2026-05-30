@@ -102,8 +102,11 @@ impl FederatedPolicyEpoch {
                 epoch_id: self.epoch_id,
             });
         }
-        let member_ids: BTreeSet<&str> =
-            federation.members.iter().map(|m| m.verifier_id.as_str()).collect();
+        let member_ids: BTreeSet<&str> = federation
+            .members
+            .iter()
+            .map(|m| m.verifier_id.as_str())
+            .collect();
         let approval_count = self
             .approved_by
             .iter()
@@ -383,8 +386,8 @@ mod tests {
         let fed = make_federation(3);
         let mut epoch = FederatedPolicyEpoch::new(1, 1000, None);
         // One real member approval + one phantom — the phantom must not count
-        epoch.add_approval("v0".into()).unwrap();     // real member
-        epoch.add_approval("ghost".into()).unwrap();  // phantom — not in federation
+        epoch.add_approval("v0".into()).unwrap(); // real member
+        epoch.add_approval("ghost".into()).unwrap(); // phantom — not in federation
         assert!(matches!(
             epoch.try_finalize(&fed).unwrap_err(),
             FederatedPolicyError::QuorumNotReached {
@@ -432,10 +435,7 @@ mod tests {
         reg.propose(e1).unwrap();
 
         // Finalize via pending_epoch_mut
-        reg.pending_epoch_mut()
-            .unwrap()
-            .try_finalize(&fed)
-            .unwrap();
+        reg.pending_epoch_mut().unwrap().try_finalize(&fed).unwrap();
 
         assert!(reg.pending_epoch().is_none());
 

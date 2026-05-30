@@ -44,7 +44,12 @@ mod inner {
             None => [0u8; 32],
         };
 
-        Ok(Measurements { pcrs, firmware_hash: fw_hash, ai_model_hash, event_counter })
+        Ok(Measurements {
+            pcrs,
+            firmware_hash: fw_hash,
+            ai_model_hash,
+            event_counter,
+        })
     }
 
     pub struct AppleSeRoT<'a> {
@@ -56,7 +61,11 @@ mod inner {
     impl<'a> AppleSeRoT<'a> {
         #[must_use]
         pub fn new(firmware: &'a [u8], ai_model: Option<&'a [u8]>, event_counter: u64) -> Self {
-            Self { firmware, ai_model, event_counter }
+            Self {
+                firmware,
+                ai_model,
+                event_counter,
+            }
         }
     }
 
@@ -76,8 +85,7 @@ mod inner {
                 .set_application_label(label.as_bytes())
                 .set_can_sign(true);
 
-            let se_key = SecKey::generate(opts)
-                .map_err(|_| PqRascvError::BackendUnavailable)?;
+            let se_key = SecKey::generate(opts).map_err(|_| PqRascvError::BackendUnavailable)?;
 
             let pub_key = se_key
                 .external_representation()

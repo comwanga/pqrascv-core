@@ -320,7 +320,9 @@ mod tests {
     fn consume_handle_on_unknown_nonce_fails() {
         let mut ledger = InMemoryNonceLedger::default();
         // Construct a handle without registering (simulates a stale handle).
-        let handle = NonceHandle { nonce: [0xBBu8; 32] };
+        let handle = NonceHandle {
+            nonce: [0xBBu8; 32],
+        };
         assert_eq!(
             ledger.consume_handle(handle),
             Err(PqRascvError::InvalidNonce)

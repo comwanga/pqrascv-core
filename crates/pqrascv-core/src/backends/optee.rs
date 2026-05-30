@@ -45,7 +45,12 @@ mod inner {
             None => [0u8; 32],
         };
 
-        Ok(Measurements { pcrs, firmware_hash: fw_hash, ai_model_hash, event_counter })
+        Ok(Measurements {
+            pcrs,
+            firmware_hash: fw_hash,
+            ai_model_hash,
+            event_counter,
+        })
     }
 
     pub struct OpTeeRoT<'a> {
@@ -63,13 +68,19 @@ mod inner {
         #[must_use]
         #[cfg(target_os = "linux")]
         pub fn new(firmware: &'a [u8], ai_model: Option<&'a [u8]>, event_counter: u64) -> Self {
-            Self { firmware, ai_model, event_counter }
+            Self {
+                firmware,
+                ai_model,
+                event_counter,
+            }
         }
 
         #[must_use]
         #[cfg(not(target_os = "linux"))]
         pub fn new(_firmware: &'a [u8], _ai_model: Option<&'a [u8]>, _event_counter: u64) -> Self {
-            Self { _phantom: core::marker::PhantomData }
+            Self {
+                _phantom: core::marker::PhantomData,
+            }
         }
     }
 
@@ -97,7 +108,11 @@ mod inner {
                 .open("/dev/tee0")
                 .map_err(|_| PqRascvError::BackendUnavailable)?;
 
-            let mut version = TeeIoVersion { impl_id: 0, impl_caps: 0, gen_caps: 0 };
+            let mut version = TeeIoVersion {
+                impl_id: 0,
+                impl_caps: 0,
+                gen_caps: 0,
+            };
 
             // SAFETY:
             // 1. `dev` is a valid, open file descriptor for `/dev/tee0`.
@@ -108,7 +123,11 @@ mod inner {
             // 3. `version` is a stack-allocated repr(C) struct matching the kernel layout.
             //    The pointer is valid and not aliased for the duration of the ioctl.
             let ret = unsafe {
-                libc::ioctl(dev.as_raw_fd(), TEE_IOC_VERSION, &mut version as *mut TeeIoVersion)
+                libc::ioctl(
+                    dev.as_raw_fd(),
+                    TEE_IOC_VERSION,
+                    &mut version as *mut TeeIoVersion,
+                )
             };
             if ret != 0 || version.impl_id != OPTEE_IMPL_ID {
                 return Err(PqRascvError::BackendUnavailable);
