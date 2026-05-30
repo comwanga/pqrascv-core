@@ -51,7 +51,7 @@ mod tests {
     #[test]
     fn invalid_dr_checkpoint_empty_id() {
         let cp = DisasterRecoveryCheckpoint {
-            checkpoint_id: "".into(),
+            checkpoint_id: String::new(),
             snapshot_hash: [1; 32],
             recovery_epoch: 42,
             federation_state_hash: [2; 32],

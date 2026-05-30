@@ -90,7 +90,7 @@ mod tests {
             verifier_set_hash: [2; 32],
             checkpoint_root: [3; 32],
             timeline_root: [4; 32],
-            recovery_timestamp: 1234567890,
+            recovery_timestamp: 1_234_567_890,
             previous_snapshot_hash: None,
             snapshot_hash: [0; 32],
         };
