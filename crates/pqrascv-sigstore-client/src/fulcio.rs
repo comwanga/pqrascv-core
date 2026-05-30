@@ -144,7 +144,7 @@ mod tests {
             "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
             B64.encode(fake_der)
         );
-        let der = leaf_cert_der(&[pem]).unwrap();
+        let der = leaf_cert_der(&[pem] as &[String]).unwrap();
         assert_eq!(der, b"fake-der-bytes");
     }
 
@@ -155,7 +155,7 @@ mod tests {
             "-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----\n",
             B64.encode(b"key-bytes")
         );
-        let result = leaf_cert_der(&[pem]);
+        let result = leaf_cert_der(&[pem] as &[String]);
         assert!(result.is_err(), "non-CERTIFICATE PEM must be rejected");
     }
 
