@@ -32,6 +32,7 @@
 //! signatures (e.g., each verifier signs the epoch ID with its ML-DSA key)
 //! remain a future hardening step.
 
+use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -101,7 +102,7 @@ impl FederatedPolicyEpoch {
                 epoch_id: self.epoch_id,
             });
         }
-        let member_ids: alloc::collections::BTreeSet<&str> =
+        let member_ids: BTreeSet<&str> =
             federation.members.iter().map(|m| m.verifier_id.as_str()).collect();
         let approval_count = self
             .approved_by
@@ -370,6 +371,24 @@ mod tests {
             epoch.try_finalize(&fed).unwrap_err(),
             FederatedPolicyError::QuorumNotReached {
                 approvals: 0,
+                required: 2,
+            }
+        ));
+        assert!(!epoch.quorum_reached);
+    }
+
+    #[test]
+    fn quorum_partial_real_plus_phantom_is_rejected() {
+        // fed has 3 members (v0, v1, v2); Majority requires 2.
+        let fed = make_federation(3);
+        let mut epoch = FederatedPolicyEpoch::new(1, 1000, None);
+        // One real member approval + one phantom — the phantom must not count
+        epoch.add_approval("v0".into()).unwrap();     // real member
+        epoch.add_approval("ghost".into()).unwrap();  // phantom — not in federation
+        assert!(matches!(
+            epoch.try_finalize(&fed).unwrap_err(),
+            FederatedPolicyError::QuorumNotReached {
+                approvals: 1,
                 required: 2,
             }
         ));
