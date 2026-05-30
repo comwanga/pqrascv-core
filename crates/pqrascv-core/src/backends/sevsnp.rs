@@ -248,6 +248,81 @@ mod inner {
         }
     }
 
+    // ── Remote attestation verification ────────────────────────────────────
+    //
+    // The collector above (`measure`) only extracts measurements; it performs no
+    // cryptographic verification. Genuine remote attestation requires verifying
+    // that the report was signed by AMD silicon: the report carries an ECDSA
+    // P-384 signature by the VCEK, whose certificate chains VCEK → ASK → ARK up
+    // to AMD's pinned root. This section adds that verification.
+
+    use p384::ecdsa::{signature::Verifier as _, Signature as P384Signature, VerifyingKey};
+
+    /// Offset of the SIGNATURE field within the SNP attestation report; also the
+    /// length of the signed region (the report is signed over bytes
+    /// `[0, REPORT_SIG_OFFSET)`).
+    ///
+    /// Source: AMD SEV-SNP ABI Specification (Rev 1.55) §7.3,
+    /// `ATTESTATION_REPORT.SIGNATURE` at byte offset 0x2A0.
+    const REPORT_SIG_OFFSET: usize = 0x2A0;
+    /// Each ECDSA component (`r`, `s`) occupies a 72-byte little-endian field in
+    /// the report SIGNATURE; for P-384 only the low 48 bytes are significant.
+    const SIG_COMPONENT_FIELD: usize = 72;
+    /// Byte length of a P-384 scalar.
+    const P384_SCALAR_LEN: usize = 48;
+
+    /// Errors from SEV-SNP attestation verification.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum SevSnpVerifyError {
+        /// The report buffer is too short to contain a signature.
+        MalformedReport,
+        /// The VCEK public key could not be decoded as an uncompressed P-384 point.
+        MalformedVcekKey,
+        /// The report signature did not verify under the VCEK public key.
+        ReportSignatureInvalid,
+    }
+
+    /// Verifies the ECDSA P-384 signature embedded in an SNP attestation
+    /// `report` against the VCEK public key (uncompressed SEC1 encoding).
+    ///
+    /// The signed region is `report[0..0x2A0]`. The signature is two 72-byte
+    /// little-endian fields (`r`, then `s`) starting at 0x2A0, of which the low
+    /// 48 bytes of each are the P-384 scalars (FIPS 186-4 ECDSA, SHA-384).
+    ///
+    /// Returns `Ok(())` only if the signature is valid. This authenticates the
+    /// *report contents* against a key; binding that key to AMD requires the
+    /// certificate-chain check (VCEK → ASK → ARK), performed separately.
+    pub fn verify_report_signature(
+        report: &[u8],
+        vcek_pubkey_sec1: &[u8],
+    ) -> Result<(), SevSnpVerifyError> {
+        if report.len() < REPORT_SIG_OFFSET + 2 * SIG_COMPONENT_FIELD {
+            return Err(SevSnpVerifyError::MalformedReport);
+        }
+        let signed = &report[..REPORT_SIG_OFFSET];
+
+        // r and s are stored little-endian; convert the low 48 bytes of each to
+        // the big-endian r‖s layout the `ecdsa` crate expects.
+        let r_le = &report[REPORT_SIG_OFFSET..REPORT_SIG_OFFSET + P384_SCALAR_LEN];
+        let s_start = REPORT_SIG_OFFSET + SIG_COMPONENT_FIELD;
+        let s_le = &report[s_start..s_start + P384_SCALAR_LEN];
+
+        let mut sig_be = [0u8; 2 * P384_SCALAR_LEN];
+        for (i, b) in r_le.iter().enumerate() {
+            sig_be[P384_SCALAR_LEN - 1 - i] = *b;
+        }
+        for (i, b) in s_le.iter().enumerate() {
+            sig_be[2 * P384_SCALAR_LEN - 1 - i] = *b;
+        }
+
+        let signature = P384Signature::from_slice(&sig_be)
+            .map_err(|_| SevSnpVerifyError::ReportSignatureInvalid)?;
+        let vk = VerifyingKey::from_sec1_bytes(vcek_pubkey_sec1)
+            .map_err(|_| SevSnpVerifyError::MalformedVcekKey)?;
+        vk.verify(signed, &signature)
+            .map_err(|_| SevSnpVerifyError::ReportSignatureInvalid)
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -355,11 +430,110 @@ mod inner {
             assert!(!decoded.debug_allowed);
             assert!(decoded.smt_allowed);
         }
+
+        // ── Report signature verification tests ──────────────────────────────
+        //
+        // These exercise the verification LOGIC (signature parsing, LE→BE scalar
+        // conversion, ECDSA-P384 verify) using a synthetic VCEK key. Byte-exact
+        // agreement with real AMD silicon additionally depends on the ABI offset
+        // constants, which are documented against the SEV-SNP spec but should be
+        // re-confirmed against a real attestation vector when one is available.
+
+        use p384::ecdsa::{signature::Signer as _, SigningKey};
+
+        /// Deterministic P-384 signer for tests (fixed scalar, no RNG needed).
+        fn test_vcek() -> (SigningKey, Vec<u8>) {
+            let sk = SigningKey::from_slice(&[0x11u8; 48]).unwrap();
+            let vk_sec1 = sk
+                .verifying_key()
+                .to_encoded_point(false)
+                .as_bytes()
+                .to_vec();
+            (sk, vk_sec1)
+        }
+
+        /// Builds a report whose `[0, 0x2A0)` region is `signed_region`, signed
+        /// by `sk` and encoded into the little-endian SIGNATURE fields exactly
+        /// as `verify_report_signature` expects to decode them.
+        fn synthetic_signed_report(
+            signed_region: &[u8; REPORT_SIG_OFFSET],
+            sk: &SigningKey,
+        ) -> Vec<u8> {
+            let sig: P384Signature = sk.sign(signed_region);
+            let be = sig.to_bytes(); // 96 bytes, r‖s big-endian
+            let mut report = vec![0u8; REPORT_SIG_OFFSET + 2 * SIG_COMPONENT_FIELD];
+            report[..REPORT_SIG_OFFSET].copy_from_slice(signed_region);
+            for (i, b) in be[..P384_SCALAR_LEN].iter().enumerate() {
+                report[REPORT_SIG_OFFSET + (P384_SCALAR_LEN - 1 - i)] = *b;
+            }
+            for (i, b) in be[P384_SCALAR_LEN..].iter().enumerate() {
+                report[REPORT_SIG_OFFSET + SIG_COMPONENT_FIELD + (P384_SCALAR_LEN - 1 - i)] = *b;
+            }
+            report
+        }
+
+        #[test]
+        fn valid_report_signature_verifies() {
+            let (sk, vk) = test_vcek();
+            let region = [0xAAu8; REPORT_SIG_OFFSET];
+            let report = synthetic_signed_report(&region, &sk);
+            assert!(verify_report_signature(&report, &vk).is_ok());
+        }
+
+        #[test]
+        fn forged_report_body_is_rejected() {
+            let (sk, vk) = test_vcek();
+            let region = [0xAAu8; REPORT_SIG_OFFSET];
+            let mut report = synthetic_signed_report(&region, &sk);
+            report[10] ^= 0xFF; // tamper the signed region after signing
+            assert_eq!(
+                verify_report_signature(&report, &vk),
+                Err(SevSnpVerifyError::ReportSignatureInvalid)
+            );
+        }
+
+        #[test]
+        fn report_signed_by_wrong_key_is_rejected() {
+            let (sk, _vk) = test_vcek();
+            let other = SigningKey::from_slice(&[0x22u8; 48]).unwrap();
+            let other_vk = other
+                .verifying_key()
+                .to_encoded_point(false)
+                .as_bytes()
+                .to_vec();
+            let region = [0xAAu8; REPORT_SIG_OFFSET];
+            let report = synthetic_signed_report(&region, &sk);
+            assert_eq!(
+                verify_report_signature(&report, &other_vk),
+                Err(SevSnpVerifyError::ReportSignatureInvalid)
+            );
+        }
+
+        #[test]
+        fn truncated_report_is_malformed() {
+            let (_sk, vk) = test_vcek();
+            let short = [0u8; REPORT_SIG_OFFSET]; // no signature field present
+            assert_eq!(
+                verify_report_signature(&short, &vk),
+                Err(SevSnpVerifyError::MalformedReport)
+            );
+        }
+
+        #[test]
+        fn malformed_vcek_key_is_rejected() {
+            let (sk, _vk) = test_vcek();
+            let region = [0xAAu8; REPORT_SIG_OFFSET];
+            let report = synthetic_signed_report(&region, &sk);
+            assert_eq!(
+                verify_report_signature(&report, &[0u8; 10]),
+                Err(SevSnpVerifyError::MalformedVcekKey)
+            );
+        }
     }
 }
 
 #[cfg(feature = "amd-sev-snp")]
-pub use inner::{AmdSevSnpRoT, SnpPolicy};
+pub use inner::{verify_report_signature, AmdSevSnpRoT, SevSnpVerifyError, SnpPolicy};
 
 /// Stub — `amd-sev-snp` feature not compiled in.
 #[cfg(not(feature = "amd-sev-snp"))]

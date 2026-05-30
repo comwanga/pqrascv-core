@@ -31,7 +31,7 @@ software-rot-unsafe = []
 hardware-tpm = ["dep:tss-esapi"]
 dice         = []
 intel-tdx  = ["dep:libc"]
-amd-sev-snp = ["dep:libc"]
+amd-sev-snp = ["dep:libc", "alloc", "dep:p384", "dep:rsa"]
 op-tee = ["dep:libc"]
 apple-se = ["dep:security-framework"]
 
@@ -56,6 +56,9 @@ x509-cert    = { version = "0.2", default-features = false, optional = true }
 der          = { version = "0.7", default-features = false, optional = true }
 p256         = { version = "0.13", default-features = false, features = ["pkcs8", "ecdsa"], optional = true }
 ecdsa        = { version = "0.16", default-features = false, features = ["der"], optional = true }
+# AMD SEV-SNP attestation: VCEK is ECDSA P-384; ARK/ASK are RSA-4096 (RSASSA-PSS).
+p384         = { version = "0.13", default-features = false, features = ["ecdsa"], optional = true }
+rsa          = { version = "0.9",  default-features = false, features = ["sha2"], optional = true }
 serde_json   = { version = "1",   default-features = false, features = ["alloc"], optional = true }
 base64       = { version = "0.22", default-features = false, features = ["alloc"], optional = true }
 
