@@ -112,7 +112,7 @@ mod tests {
 
     #[test]
     fn leaf_cert_der_errors_on_empty_chain() {
-        let result = leaf_cert_der(&[]);
+        let result = leaf_cert_der(&[] as &[String]);
         assert!(result.is_err(), "empty chain must fail");
     }
 }
