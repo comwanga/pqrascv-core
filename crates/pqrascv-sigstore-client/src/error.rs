@@ -1,13 +1,13 @@
 #[derive(Debug, thiserror::Error)]
 pub enum SigstoreClientError {
-    #[error("HTTP error: {0}")]
-    Http(String),
+    #[error("HTTP transport error: {0}")]
+    Transport(String),
+    #[error("HTTP {status} error: {body}")]
+    HttpStatus { status: u16, body: String },
     #[error("Parse error: {0}")]
     Parse(String),
     #[error("Fulcio error: {0}")]
     Fulcio(String),
     #[error("Rekor error: {0}")]
     Rekor(String),
-    #[error("Signing error: {0}")]
-    Signing(String),
 }

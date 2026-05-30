@@ -8,13 +8,13 @@ license.workspace      = true
 description   = "HTTP client for Sigstore (Rekor, Fulcio) — end-to-end signing workflow for pqrascv"
 
 [dependencies]
-pqrascv-core  = { path = "../pqrascv-core", features = ["std", "alloc"] }
 serde.workspace = true
 ureq          = { version = "2", features = ["tls", "json"] }
 serde_json    = "1"
 base64        = { version = "0.22", features = ["std"] }
 thiserror     = "1"
 hex           = "0.4"
+rustls-pemfile = "2"
 
 [dev-dependencies]
 mockito = "1"

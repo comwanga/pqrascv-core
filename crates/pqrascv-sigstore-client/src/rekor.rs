@@ -10,6 +10,24 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 
 use crate::error::SigstoreClientError;
 
+fn agent() -> ureq::Agent {
+    use std::time::Duration;
+    ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(10))
+        .timeout_read(Duration::from_secs(30))
+        .build()
+}
+
+fn map_ureq_err(e: ureq::Error) -> SigstoreClientError {
+    match e {
+        ureq::Error::Status(status, response) => {
+            let body = response.into_string().unwrap_or_default();
+            SigstoreClientError::HttpStatus { status, body }
+        }
+        ureq::Error::Transport(t) => SigstoreClientError::Transport(t.to_string()),
+    }
+}
+
 /// A single Rekor log entry as returned by the API.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RekorEntry {
@@ -47,9 +65,9 @@ pub struct RekorInclusionProof {
 /// Fetch a Rekor log entry by log index.
 pub fn get_entry_by_index(base_url: &str, log_index: i64) -> Result<RekorEntry, SigstoreClientError> {
     let url = format!("{base_url}/api/v1/log/entries?logIndex={log_index}");
-    let response: serde_json::Value = ureq::get(&url)
+    let response: serde_json::Value = agent().get(&url)
         .call()
-        .map_err(|e| SigstoreClientError::Http(e.to_string()))?
+        .map_err(map_ureq_err)?
         .into_json()
         .map_err(|e| SigstoreClientError::Parse(e.to_string()))?;
 
@@ -103,10 +121,10 @@ pub fn submit_hashedrekord(
     });
 
     let url = format!("{base_url}/api/v1/log/entries");
-    let response: serde_json::Value = ureq::post(&url)
+    let response: serde_json::Value = agent().post(&url)
         .set("Content-Type", "application/json")
         .send_json(body)
-        .map_err(|e| SigstoreClientError::Http(e.to_string()))?
+        .map_err(map_ureq_err)?
         .into_json()
         .map_err(|e| SigstoreClientError::Parse(e.to_string()))?;
 
