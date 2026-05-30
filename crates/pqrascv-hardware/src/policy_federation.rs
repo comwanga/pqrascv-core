@@ -22,22 +22,15 @@
 //! policy decisions. The [`HardwarePolicyRule::RequireFederatedPolicyApproval`]
 //! rule enforces this at evaluation time.
 //!
-//! # Known Limitation — Unauthenticated Verifier Identity
+//! # Approval Identity and Membership Validation
 //!
-//! `approved_by` stores verifier identities as plain `String` values.
 //! `add_approval` accepts any string — **no cryptographic proof** is required
-//! that the caller actually controls the identity they claim.
-//!
-//! This means quorum counts are based on string identity, not key ownership.
-//! A caller with write access to the epoch can inject approvals for any verifier
-//! ID without possessing the corresponding signing key.
-//!
-//! **Operational consequence:** in the current design, access control to the
-//! `FederatedPolicyEpoch` object itself is the security boundary. In a
-//! networked deployment, the transport layer must authenticate callers before
-//! they are permitted to call `add_approval`. Cryptographic approval signatures
-//! (e.g., each verifier signs the epoch ID with its ML-DSA key) are a future
-//! hardening step that would move the trust boundary into the data structure.
+//! that the caller actually controls the identity they claim. However,
+//! `try_finalize` validates that all counted approvals belong to registered
+//! federation members; approvals from IDs not present in `federation.members`
+//! are ignored when computing the approval count. Cryptographic approval
+//! signatures (e.g., each verifier signs the epoch ID with its ML-DSA key)
+//! remain a future hardening step.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -108,7 +101,13 @@ impl FederatedPolicyEpoch {
                 epoch_id: self.epoch_id,
             });
         }
-        let approval_count = self.approved_by.len();
+        let member_ids: alloc::collections::BTreeSet<&str> =
+            federation.members.iter().map(|m| m.verifier_id.as_str()).collect();
+        let approval_count = self
+            .approved_by
+            .iter()
+            .filter(|id| member_ids.contains(id.as_str()))
+            .count();
         let required = federation.quorum_required();
         if approval_count < required {
             return Err(FederatedPolicyError::QuorumNotReached {
@@ -355,12 +354,10 @@ mod tests {
 
     // ── Adversarial tests ────────────────────────────────────────────────────
 
-    // SECURITY GAP: try_finalize only checks approved_by.len() >= quorum_required().
-    // It does NOT verify that approver IDs are actual federation members.
-    // An attacker with write access to the epoch object can inject phantom IDs
-    // (strings that are not in federation.members) and satisfy quorum without
-    // involving any real verifier. The security boundary is access control to
-    // the epoch object itself (documented in module-level Known Limitation).
+    // FIXED: try_finalize now validates that approver IDs are actual federation
+    // members before counting them toward quorum. Phantom IDs (strings that are
+    // not in federation.members) are excluded from the approval count, so an
+    // attacker cannot satisfy quorum by injecting arbitrary strings.
     #[test]
     fn quorum_phantom_verifier_ids_satisfy_count_check() {
         let fed = make_federation(3); // Majority requires 2
@@ -368,9 +365,15 @@ mod tests {
         // "attacker" and "ghost" are not members of the federation
         epoch.add_approval("attacker".into()).unwrap();
         epoch.add_approval("ghost".into()).unwrap();
-        // Quorum is satisfied purely by count — no membership validation
-        assert!(epoch.try_finalize(&fed).is_ok());
-        assert!(epoch.quorum_reached);
+        // Phantom IDs are not in federation.members — no valid approvals count
+        assert!(matches!(
+            epoch.try_finalize(&fed).unwrap_err(),
+            FederatedPolicyError::QuorumNotReached {
+                approvals: 0,
+                required: 2,
+            }
+        ));
+        assert!(!epoch.quorum_reached);
     }
 
     // Proposing an epoch with epoch_id equal to the last finalized epoch_id
