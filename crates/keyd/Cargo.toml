@@ -1,0 +1,26 @@
+[package]
+name     = "pqrascv-keyd"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "ML-DSA key management daemon for pqrascv — stores keypairs, serves signing requests over Unix socket"
+
+[[bin]]
+name = "pqrascv-keyd"
+path = "src/main.rs"
+
+[dependencies]
+pqrascv-core  = { path = "../pqrascv-core", features = ["std", "alloc"] }
+tokio         = { version = "1", features = ["rt-multi-thread", "net", "io-util", "macros", "fs", "signal"] }
+ciborium      = { workspace = true, features = ["std"] }
+serde         = { workspace = true, features = ["derive"] }
+zeroize       = { workspace = true, features = ["derive"] }
+thiserror     = "1"
+tracing       = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow        = "1"
+
+[dev-dependencies]
+tempfile = "3"
