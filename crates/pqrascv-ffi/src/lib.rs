@@ -78,7 +78,7 @@ pub unsafe extern "C" fn pqrascv_generate_keypair(
 
 /// Sign `message_ptr[0..message_len]` with the ML-DSA-65 signing seed.
 ///
-/// `signing_key_ptr` must be 32 bytes (the seed).
+/// `signing_key_ptr` must point to at least `ML_DSA_65_SEED_SIZE` (32) bytes.
 /// `signature_out` must be at least 3309 bytes (ML_DSA_65_SIGNATURE_SIZE).
 ///
 /// # Safety
@@ -108,7 +108,7 @@ pub unsafe extern "C" fn pqrascv_sign(
         return PqrascvStatus::ErrorBufferTooSmall;
     }
 
-    let sk = std::slice::from_raw_parts(signing_key_ptr, signing_key_len);
+    let sk = std::slice::from_raw_parts(signing_key_ptr, ML_DSA_65_SEED_SIZE);
     let msg = std::slice::from_raw_parts(message_ptr, message_len);
 
     let sig = match MlDsaBackend.sign(msg, sk, SIGNING_CONTEXT_QUOTE) {
@@ -140,6 +140,10 @@ pub unsafe extern "C" fn pqrascv_verify(
 ) -> PqrascvStatus {
     if verifying_key_ptr.is_null() || message_ptr.is_null() || signature_ptr.is_null() {
         return PqrascvStatus::ErrorNullPtr;
+    }
+
+    if verifying_key_len != ML_DSA_65_VERIFYING_KEY_SIZE || signature_len != ML_DSA_65_SIGNATURE_SIZE {
+        return PqrascvStatus::ErrorBufferTooSmall;
     }
 
     let vk  = std::slice::from_raw_parts(verifying_key_ptr, verifying_key_len);

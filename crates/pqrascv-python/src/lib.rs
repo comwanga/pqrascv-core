@@ -13,8 +13,17 @@ use pqrascv_core::crypto::{
 
 /// Inner keypair, independent of the pyo3 layer so unit tests work without Python.
 pub struct MlDsaKeyInner {
-    pub seed_bytes: Vec<u8>,   // 32 bytes — the signing seed
-    pub vk_bytes: Vec<u8>,     // 1952 bytes — the verifying key
+    pub(crate) seed_bytes: Vec<u8>,  // 32-byte signing seed — never exposed via Debug
+    pub vk_bytes: Vec<u8>,           // 1952-byte verifying key
+}
+
+impl std::fmt::Debug for MlDsaKeyInner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MlDsaKeyInner")
+            .field("seed_bytes", &"[REDACTED]")
+            .field("vk_bytes", &format!("[{} bytes]", self.vk_bytes.len()))
+            .finish()
+    }
 }
 
 impl MlDsaKeyInner {
