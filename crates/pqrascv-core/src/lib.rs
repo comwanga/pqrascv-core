@@ -144,6 +144,10 @@ pub mod policy;
 /// Fixes audit finding #2 (self-asserted SLSA provenance).
 pub mod provenance_v2;
 
+/// COSE Sign1 wrapping for attestation payloads (RFC 9052, ML-DSA-65).
+#[cfg(feature = "alloc")]
+pub mod cose_sign;
+
 // ── Convenience re-exports ───────────────────────────────────────────────────
 
 pub use config::PolicyConfig;
@@ -162,3 +166,8 @@ pub use policy::{HardwareBackendKind, PolicyEngineV2, PolicyRule};
 
 #[cfg(feature = "alloc")]
 pub use pki::{validate_chain, CertChain, DeviceCertificate, TrustAnchor};
+
+// ── Formal verification ───────────────────────────────────────────────────
+
+#[cfg(kani)]
+mod kani_proofs;

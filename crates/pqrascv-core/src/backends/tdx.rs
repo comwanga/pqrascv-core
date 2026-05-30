@@ -28,14 +28,25 @@ mod inner {
         measurement::{Measurements, PcrBank, RoT},
     };
     use sha3::{Digest as _, Sha3_256};
+    use subtle::ConstantTimeEq;
 
-    const MRTD_OFFSET: usize = 0x090;
-    const RTMR0_OFFSET: usize = 0x150;
-    const RTMR1_OFFSET: usize = 0x180;
-    const RTMR2_OFFSET: usize = 0x1B0;
-    const RTMR3_OFFSET: usize = 0x1E0;
+    const MRTD_OFFSET: usize = 0x210; // TdInfo starts at 0x200; MRTD at TdInfo+0x010
+    const RTMR0_OFFSET: usize = 0x2D0;
+    const RTMR1_OFFSET: usize = 0x300;
+    const RTMR2_OFFSET: usize = 0x330;
+    const RTMR3_OFFSET: usize = 0x360;
     const SHA384_LEN: usize = 48;
     pub(super) const TDREPORT_LEN: usize = 1024;
+
+    // REPORTDATA: guest-supplied 64-byte nonce at REPORTMACSTRUCT+0x090.
+    // Source: Intel TDX Module ABI Spec §22.3, REPORTMACSTRUCT.REPORTDATA.
+    const REPORTDATA_OFFSET: usize = 0x090;
+    const REPORTDATA_FW_HASH_LEN: usize = 32;
+
+    // Attributes field at start of TDINFO (TdInfo starts at offset 0x200).
+    // Bit 0 = DEBUG: if set, TD is running in debug mode.
+    // Source: Intel TDX Module ABI Spec §22.3, TD_ATTRIBUTES.DEBUG.
+    const ATTRIBUTES_OFFSET: usize = 0x200;
 
     #[cfg(target_os = "linux")]
     const REPORTDATA_LEN: usize = 64;
@@ -92,6 +103,19 @@ mod inner {
             ai_model: Option<&[u8]>,
             event_counter: u64,
         ) -> Result<Measurements, PqRascvError> {
+            // Validate REPORTDATA binding: first 32 bytes must equal SHA3-256(firmware).
+            let fw_hash: [u8; 32] = Sha3_256::digest(firmware).into();
+            let report_data_fw =
+                &tdreport[REPORTDATA_OFFSET..REPORTDATA_OFFSET + REPORTDATA_FW_HASH_LEN];
+            if report_data_fw.ct_eq(fw_hash.as_ref()).unwrap_u8() == 0 {
+                return Err(PqRascvError::MeasurementFailed);
+            }
+
+            // Reject debug-mode TDs (ATTRIBUTES bit 0 set).
+            if tdreport[ATTRIBUTES_OFFSET] & 0x01 != 0 {
+                return Err(PqRascvError::MeasurementFailed);
+            }
+
             let normalize = |offset: usize| -> [u8; 32] {
                 Sha3_256::digest(&tdreport[offset..offset + SHA384_LEN]).into()
             };
@@ -103,7 +127,6 @@ mod inner {
             pcrs.digests[3] = normalize(RTMR2_OFFSET);
             pcrs.digests[4] = normalize(RTMR3_OFFSET);
 
-            let firmware_hash: [u8; 32] = Sha3_256::digest(firmware).into();
             let ai_model_hash: [u8; 32] = match ai_model {
                 Some(m) => Sha3_256::digest(m).into(),
                 None => [0u8; 32],
@@ -111,7 +134,7 @@ mod inner {
 
             Ok(Measurements {
                 pcrs,
-                firmware_hash,
+                firmware_hash: fw_hash,
                 ai_model_hash,
                 event_counter,
             })
@@ -178,11 +201,21 @@ mod inner {
     mod tests {
         use super::*;
 
-        fn fake_tdreport(mrtd: [u8; 48], rtmr0: [u8; 48]) -> [u8; TDREPORT_LEN] {
+        fn fake_tdreport_with_reportdata(
+            mrtd: [u8; 48],
+            rtmr0: [u8; 48],
+            report_data: [u8; 32],
+        ) -> [u8; TDREPORT_LEN] {
             let mut r = [0u8; TDREPORT_LEN];
             r[MRTD_OFFSET..MRTD_OFFSET + 48].copy_from_slice(&mrtd);
             r[RTMR0_OFFSET..RTMR0_OFFSET + 48].copy_from_slice(&rtmr0);
+            r[REPORTDATA_OFFSET..REPORTDATA_OFFSET + 32].copy_from_slice(&report_data);
             r
+        }
+
+        fn fake_tdreport(mrtd: [u8; 48], rtmr0: [u8; 48]) -> [u8; TDREPORT_LEN] {
+            let fw_hash: [u8; 32] = Sha3_256::digest(b"fw").into();
+            fake_tdreport_with_reportdata(mrtd, rtmr0, fw_hash)
         }
 
         #[test]
@@ -205,16 +238,19 @@ mod inner {
 
         #[test]
         fn zero_mrtd_maps_to_nonzero_pcr0() {
-            let report = [0u8; TDREPORT_LEN];
+            let report = fake_tdreport([0u8; 48], [0u8; 48]);
             let m = IntelTdxRoT::measurements_from_report(&report, b"fw", None, 0).unwrap();
             assert_ne!(m.pcrs.digests[0], [0u8; 32]);
         }
 
         #[test]
         fn firmware_hash_from_local_bytes() {
-            let report = [0u8; TDREPORT_LEN];
-            let m = IntelTdxRoT::measurements_from_report(&report, b"my-fw", None, 0).unwrap();
-            let expected: [u8; 32] = Sha3_256::digest(b"my-fw").into();
+            use sha3::{Digest as _, Sha3_256};
+            let fw = b"my-fw";
+            let fw_hash: [u8; 32] = Sha3_256::digest(fw).into();
+            let report = fake_tdreport_with_reportdata([0u8; 48], [0u8; 48], fw_hash);
+            let m = IntelTdxRoT::measurements_from_report(&report, fw, None, 0).unwrap();
+            let expected: [u8; 32] = Sha3_256::digest(fw).into();
             assert_eq!(m.firmware_hash, expected);
         }
 
@@ -225,6 +261,35 @@ mod inner {
             let m1 = IntelTdxRoT::measurements_from_report(&r1, b"fw", None, 0).unwrap();
             let m2 = IntelTdxRoT::measurements_from_report(&r2, b"fw", None, 0).unwrap();
             assert_ne!(m1.pcrs.digests[0], m2.pcrs.digests[0]);
+        }
+
+        #[test]
+        fn reportdata_binding_rejects_mismatched_fw_hash() {
+            // fake_tdreport embeds SHA3-256(b"fw") in REPORTDATA,
+            // but we pass b"real-firmware" as firmware — hash mismatch → error.
+            let report = fake_tdreport([0x42u8; 48], [0u8; 48]);
+            let err = IntelTdxRoT::measurements_from_report(&report, b"real-firmware", None, 0);
+            assert!(matches!(err, Err(PqRascvError::MeasurementFailed)));
+        }
+
+        #[test]
+        fn reportdata_binding_accepts_matching_fw_hash() {
+            let fw = b"real-firmware";
+            let fw_hash: [u8; 32] = Sha3_256::digest(fw).into();
+            let report = fake_tdreport_with_reportdata([0x42u8; 48], [0u8; 48], fw_hash);
+            let m = IntelTdxRoT::measurements_from_report(&report, fw, None, 0).unwrap();
+            assert_eq!(m.firmware_hash, fw_hash);
+        }
+
+        #[test]
+        fn debug_mode_td_is_rejected() {
+            let fw = b"fw";
+            let fw_hash: [u8; 32] = Sha3_256::digest(fw).into();
+            let mut report = fake_tdreport_with_reportdata([0u8; 48], [0u8; 48], fw_hash);
+            // Set debug bit (bit 0) in ATTRIBUTES
+            report[ATTRIBUTES_OFFSET] |= 0x01;
+            let err = IntelTdxRoT::measurements_from_report(&report, fw, None, 0);
+            assert!(matches!(err, Err(PqRascvError::MeasurementFailed)));
         }
     }
 }

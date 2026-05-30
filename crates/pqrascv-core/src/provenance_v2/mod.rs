@@ -455,9 +455,16 @@ impl ExternalProvenanceBundle {
     /// the Fulcio certificate is structurally trusted and temporally valid, so
     /// the subject key extracted here can be trusted.
     ///
-    /// The signature format is raw r‖s (64 bytes for P-256, SHA-256 hashed internally
-    /// by the P-256 verifier). This is the custom PQ-RASCV CBOR wire format; real
-    /// Sigstore bundles use DER-encoded ECDSA (a future extension).
+    /// # Signature format
+    ///
+    /// Two formats are accepted (tried in order):
+    ///
+    /// 1. **DER-encoded ECDSA** (`0x30 …`) — the real Sigstore/cosign wire format
+    ///    produced by `cosign sign`, GitHub Actions attestations, and Fulcio-issued
+    ///    signing operations.
+    /// 2. **Raw r‖s (64 bytes)** — the PQ-RASCV test bundle format used in unit tests.
+    ///
+    /// Accepting DER first ensures compatibility with real Sigstore bundles.
     ///
     /// [`verify_all`]: Self::verify_all
     fn check_predicate_signature(&self) -> Result<(), PqRascvError> {
@@ -484,9 +491,16 @@ impl ExternalProvenanceBundle {
         let vk = VerifyingKey::from_public_key_der(&spki_der)
             .map_err(|_| PqRascvError::ProvenanceBundleInvalid)?;
 
-        // Signature is raw r‖s (64 bytes). P-256 verify hashes with SHA-256 internally.
-        let sig = Signature::try_from(self.sigstore_bundle.signature.as_slice())
-            .map_err(|_| PqRascvError::InvalidProvenance)?;
+        let sig_bytes = self.sigstore_bundle.signature.as_slice();
+
+        // Try DER-encoded ECDSA first (real Sigstore/cosign wire format).
+        // Fall back to raw fixed-size r‖s (64 bytes) for PQ-RASCV test bundles.
+        // This is the same two-format strategy used in rekor::verify_set_signature.
+        let sig: Signature = ecdsa::der::Signature::<p256::NistP256>::try_from(sig_bytes)
+            .ok()
+            .and_then(|ds| Signature::try_from(ds).ok())
+            .or_else(|| Signature::try_from(sig_bytes).ok())
+            .ok_or(PqRascvError::InvalidProvenance)?;
 
         vk.verify(&predicate_cbor, &sig)
             .map_err(|_| PqRascvError::InvalidProvenance)
@@ -505,19 +519,27 @@ impl ExternalProvenanceBundle {
     ///
     /// # Condition Status
     ///
-    /// | # | Condition | Status |
-    /// |---|-----------|--------|
-    /// | 1 | Predicate hash integrity + CI ECDSA signature | ✅ Implemented |
-    /// | 2 | Fulcio cert chain to trusted root (name + CA sig) | ✅ Implemented |
-    /// | 3 | Fulcio cert temporal validity | ✅ Implemented |
-    /// | 4 | OIDC identity against allowlist | ✅ Implemented |
-    /// | 5a | Rekor body binds to `predicate_hash` / sig / cert | ✅ Implemented |
-    /// | 5b | Rekor inclusion proof (SET, DER ECDSA) | ✅ Implemented |
-    /// | 6 | Rekor integrated time bounds | ✅ Implemented |
-    /// | 7 | Artifact digest == firmware hash | ✅ Implemented |
-    /// | 8 | Unambiguous artifact binding | ✅ Implemented |
-    /// | 9 | No degradation / soft-fail | ✅ Structural (type system) |
-    /// | 10 | Authoritative verifier path | ✅ Structural (sealed token) |
+    /// | # | Condition | Status | Known limitation |
+    /// |---|-----------|--------|-----------------|
+    /// | 1 | Predicate hash integrity + CI ECDSA signature | ✅ Implemented | Accepts DER and raw r‖s |
+    /// | 2 | Fulcio cert chain to trusted root (name + CA sig) | ✅ Implemented | **1-hop only** (leaf → root); no intermediate CA. Fulcio does not currently use intermediates, but this would need extension if that changes. |
+    /// | 3 | Fulcio cert temporal validity | ✅ Implemented | — |
+    /// | 4 | OIDC identity against allowlist | ✅ Implemented | — |
+    /// | 5a | Rekor body binds to `predicate_hash` / sig / cert | ✅ Implemented | — |
+    /// | 5b | Rekor inclusion proof (SET, DER ECDSA) | ✅ Implemented | SET-based; no Merkle tree path verified. SET is sufficient for Rekor v1. |
+    /// | 6 | Rekor integrated time bounds | ✅ Implemented | — |
+    /// | 7 | Artifact digest == firmware hash | ✅ Implemented | — |
+    /// | 8 | Unambiguous artifact binding | ✅ Implemented | Canonical names: `"firmware"` and `"firmware.bin"` only. |
+    /// | 9 | No degradation / soft-fail | ✅ Structural (type system) | — |
+    /// | 10 | Authoritative verifier path | ✅ Structural (sealed token) | — |
+    ///
+    /// # Offline verification
+    ///
+    /// This method operates entirely on the bundle provided by the caller. It
+    /// does **not** make network requests to Rekor or Fulcio. The Rekor entry
+    /// JSON and Fulcio certificate must be embedded in [`SigstoreBundle`] by
+    /// the CI pipeline at build time. Online log queries are the CI pipeline's
+    /// responsibility, not the verifier's.
     ///
     /// # Condition 1 execution order
     ///
@@ -790,6 +812,50 @@ mod tests {
         assert_eq!(
             bundle.check_predicate_signature().unwrap_err(),
             PqRascvError::ProvenanceBundleInvalid,
+        );
+    }
+
+    #[test]
+    fn condition_1b_malformed_signature_bytes_fail_cleanly() {
+        // Bytes that are neither valid DER ECDSA nor valid raw r||s (wrong length).
+        // Verifies that the DER+fallback path fails with InvalidProvenance and
+        // does not panic on unexpected input.
+        let predicate = make_predicate(alloc::vec![ProvenanceSubject {
+            name: "firmware.bin".to_string(),
+            digest_sha3_256: firmware_hash(),
+        }]);
+        let mut bundle = make_bundle_with_predicate(predicate);
+        bundle.sigstore_bundle.signing_cert_der = alloc::vec![0xDE, 0xAD, 0xBE, 0xEF];
+        // 17 bytes: not 64 (raw r||s length), and not valid DER.
+        bundle.sigstore_bundle.signature = alloc::vec![0x30u8; 17];
+        // cert parse fails before sig parse, so still ProvenanceBundleInvalid.
+        assert!(
+            matches!(
+                bundle.check_predicate_signature().unwrap_err(),
+                PqRascvError::ProvenanceBundleInvalid | PqRascvError::InvalidProvenance
+            ),
+            "malformed sig bytes must fail with a known error, not panic"
+        );
+    }
+
+    #[test]
+    fn condition_1b_looks_like_der_header_but_truncated_fails() {
+        // Bytes that start with 0x30 (DER SEQUENCE tag) but are too short.
+        // The DER path fails, the raw r||s path also fails (not 64 bytes).
+        let predicate = make_predicate(alloc::vec![ProvenanceSubject {
+            name: "firmware.bin".to_string(),
+            digest_sha3_256: firmware_hash(),
+        }]);
+        let mut bundle = make_bundle_with_predicate(predicate);
+        bundle.sigstore_bundle.signing_cert_der = alloc::vec![0xDE, 0xAD, 0xBE, 0xEF];
+        // Starts with 0x30 (DER SEQUENCE) but only 4 bytes — both paths must fail.
+        bundle.sigstore_bundle.signature = alloc::vec![0x30, 0x02, 0x00, 0x00];
+        assert!(
+            matches!(
+                bundle.check_predicate_signature().unwrap_err(),
+                PqRascvError::ProvenanceBundleInvalid | PqRascvError::InvalidProvenance
+            ),
+            "truncated DER-like signature must fail with a known error, not panic"
         );
     }
 

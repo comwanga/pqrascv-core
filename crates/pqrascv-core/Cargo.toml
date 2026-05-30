@@ -32,6 +32,8 @@ hardware-tpm = ["dep:tss-esapi"]
 dice         = []
 intel-tdx  = ["dep:libc"]
 amd-sev-snp = ["dep:libc"]
+op-tee = ["dep:libc"]
+apple-se = ["dep:security-framework"]
 
 [dependencies]
 serde.workspace       = true
@@ -44,6 +46,8 @@ zeroize.workspace     = true
 getrandom             = { workspace = true, optional = true }
 tss-esapi             = { version = "8.0.0-alpha.2", optional = true }
 libc = { version = "0.2", optional = true }
+security-framework = { version = "2", optional = true }
+subtle.workspace = true
 
 # Sigstore / Fulcio / Rekor provenance verification (conditions 2–5)
 # All optional: only compiled when the `alloc` feature is enabled.
@@ -61,6 +65,9 @@ base64       = { version = "0.22", default-features = false, features = ["alloc"
 [package.metadata.docs.rs]
 features = ["std", "dice", "software-rot-unsafe"]
 rustdoc-args = ["--cfg", "docsrs"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
 
 [dev-dependencies]
 pqrascv-core = { path = ".", features = ["std", "software-rot-unsafe"] }

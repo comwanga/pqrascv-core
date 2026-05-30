@@ -10,6 +10,8 @@
 //! | [`dice`] | `dice` | DICE RoT backend |
 //! | [`tdx`] | `intel-tdx` | Intel TDX backend |
 //! | [`sevsnp`] | `amd-sev-snp` | AMD SEV-SNP backend |
+//! | [`optee`] | `op-tee` | OP-TEE TEE backend |
+//! | [`applese`] | `apple-se` | Apple Secure Enclave backend |
 
 #[cfg(feature = "software-rot-unsafe")]
 pub mod software;
@@ -23,3 +25,7 @@ pub mod dice;
 pub mod tdx;
 
 pub mod sevsnp;
+
+pub mod optee;
+
+pub mod applese;

@@ -153,6 +153,7 @@ pub mod policy_federation;
 
 pub mod ek_framework;
 pub mod governance;
+pub mod noise_pqx;
 pub mod profiles;
 pub mod reputation;
 pub mod runtime_attestation;

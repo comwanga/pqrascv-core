@@ -1,0 +1,22 @@
+[package]
+name     = "pqrascv-python"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Python bindings for pqrascv-core (PyO3)"
+publish = false
+
+[lib]
+name       = "pqrascv"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pqrascv-core     = { path = "../pqrascv-core", features = ["std", "alloc", "software-rot-unsafe"] }
+pqrascv-verifier = { path = "../verifier", optional = true }
+pyo3             = { version = "0.24", optional = true }
+
+[features]
+extension-module = ["dep:pyo3", "pyo3/extension-module", "dep:pqrascv-verifier"]
+default = []

@@ -4,6 +4,7 @@
 //! Unlike simple thresholds, this formally separates Safety and Liveness, enabling
 //! explicit detection of partitions and equivocation thresholds.
 
+use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
@@ -87,17 +88,39 @@ impl ByzantineQuorumResult {
         let quorum_size = 2 * f + 1;
         let partition_size = f + 1;
 
+        // Detect equivocation: any verifier ID appearing in 2+ VoteSets.
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        for set in vote_sets {
+            let deduped: BTreeSet<&str> = set.verifier_ids.iter().map(String::as_str).collect();
+            for id in &deduped {
+                if !seen.insert(id) {
+                    return Self {
+                        safety: ByzantineSafetyState::UnsafeEquivocation,
+                        liveness: ByzantineLivenessState::Stalled,
+                    };
+                }
+            }
+        }
+
         let mut max_votes = 0;
         let mut partitions = 0;
+        let mut total_votes = 0;
 
         for set in vote_sets {
-            let votes = set.verifier_ids.len();
+            // Deduplicate within each VoteSet to prevent vote-count inflation.
+            let votes = set
+                .verifier_ids
+                .iter()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>()
+                .len();
             if votes > max_votes {
                 max_votes = votes;
             }
             if votes >= partition_size {
                 partitions += 1;
             }
+            total_votes += votes;
         }
 
         if max_votes >= quorum_size {
@@ -111,12 +134,7 @@ impl ByzantineQuorumResult {
                 safety: ByzantineSafetyState::UnsafePartition,
                 liveness: ByzantineLivenessState::Partitioned,
             }
-        } else if vote_sets
-            .iter()
-            .map(|s| s.verifier_ids.len())
-            .sum::<usize>()
-            >= quorum_size
-        {
+        } else if total_votes >= quorum_size {
             // Total votes are enough, but spread out below partition threshold
             Self {
                 safety: ByzantineSafetyState::UnsafeIntersectionFailure,
@@ -225,5 +243,91 @@ mod tests {
         // it falls into Safe/Stalled in my logic above. Let's check:
         assert_eq!(stalled.safety, ByzantineSafetyState::Safe);
         assert_eq!(stalled.liveness, ByzantineLivenessState::Stalled);
+    }
+
+    // ── Adversarial tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn vote_count_inflation_via_duplicate_ids_is_rejected() {
+        // N=7 → f=2, quorum_size=5, partition_size=3.
+        // Only 2 distinct verifiers (v1, v2) — below quorum and partition threshold.
+        // Duplicating IDs must NOT inflate the count above quorum_size.
+        let result = ByzantineQuorumResult::evaluate(
+            7,
+            &[VoteSet {
+                state_hash: crate::digest::TypedDigest::new(
+                    crate::digest::DigestAlgorithm::Sha3_256,
+                    [0xAA; 32],
+                ),
+                verifier_ids: vec![
+                    "v1".into(),
+                    "v1".into(),
+                    "v1".into(),
+                    "v2".into(),
+                    "v2".into(),
+                ],
+            }],
+        );
+        // After deduplication: 2 distinct verifiers < quorum_size(5) and < partition_size(3)
+        assert_eq!(result.safety, ByzantineSafetyState::Safe);
+        assert_eq!(result.liveness, ByzantineLivenessState::Stalled);
+    }
+
+    #[test]
+    fn equivocation_detected_across_vote_sets() {
+        // N=4 → f=1, quorum_size=3, partition_size=2.
+        // "v1" signs both 0xAA and 0xBB — equivocation must be flagged.
+        let result = ByzantineQuorumResult::evaluate(
+            4,
+            &[
+                VoteSet {
+                    state_hash: crate::digest::TypedDigest::new(
+                        crate::digest::DigestAlgorithm::Sha3_256,
+                        [0xAA; 32],
+                    ),
+                    verifier_ids: vec!["v1".into(), "v2".into()],
+                },
+                VoteSet {
+                    state_hash: crate::digest::TypedDigest::new(
+                        crate::digest::DigestAlgorithm::Sha3_256,
+                        [0xBB; 32],
+                    ),
+                    verifier_ids: vec!["v1".into(), "v3".into()],
+                },
+            ],
+        );
+        assert_eq!(result.safety, ByzantineSafetyState::UnsafeEquivocation);
+        assert_eq!(result.liveness, ByzantineLivenessState::Stalled);
+    }
+
+    // With N < 4, f = 0, so quorum_size = 1 and partition_size = 1.
+    // Any single verifier vote satisfies quorum. This is correct for f=0
+    // federations but means small federations offer no Byzantine tolerance.
+    #[test]
+    fn small_federation_n3_has_f0_quorum_is_one() {
+        // N=3 → f=(3-1)/3=0, quorum_size=1, partition_size=1.
+        // A single vote is sufficient for Safe/Live.
+        let result = ByzantineQuorumResult::evaluate(
+            3,
+            &[VoteSet {
+                state_hash: crate::digest::TypedDigest::new(
+                    crate::digest::DigestAlgorithm::Sha3_256,
+                    [0xAA; 32],
+                ),
+                verifier_ids: vec!["v1".into()],
+            }],
+        );
+        assert_eq!(result.safety, ByzantineSafetyState::Safe);
+        assert_eq!(result.liveness, ByzantineLivenessState::Live);
+    }
+
+    // N=0 (no verifiers) is an edge case: f=0, quorum_size=1. No vote set
+    // can satisfy quorum_size of 1, and there are zero partitions, so the
+    // evaluator falls into the last branch and returns Safe/Stalled.
+    #[test]
+    fn zero_verifiers_returns_safe_stalled() {
+        let result = ByzantineQuorumResult::evaluate(0, &[]);
+        assert_eq!(result.safety, ByzantineSafetyState::Safe);
+        assert_eq!(result.liveness, ByzantineLivenessState::Stalled);
     }
 }

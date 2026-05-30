@@ -6,6 +6,10 @@ members = [
     "crates/cli",
     "crates/bitcoin-anchor",
     "crates/pqrascv-hardware",
+    "crates/pqrascv-sigstore-client",
+    "crates/keyd",
+    "crates/pqrascv-python",
+    "crates/pqrascv-ffi",
 ]
 
 [workspace.package]

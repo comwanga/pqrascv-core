@@ -43,3 +43,4 @@ tss-esapi   = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = "1.11.0"
+getrandom = { workspace = true }

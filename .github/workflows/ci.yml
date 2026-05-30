@@ -218,6 +218,18 @@ jobs:
         working-directory: fuzz
         run: cargo fuzz run bitcoin_node_fuzz -- -max_total_time=30
 
+      - name: Smoke-run cbor_parser_fuzz (30 s)
+        working-directory: fuzz
+        run: cargo fuzz run cbor_parser_fuzz -- -max_total_time=30
+
+      - name: Smoke-run pki_chain_fuzz (30 s)
+        working-directory: fuzz
+        run: cargo fuzz run pki_chain_fuzz -- -max_total_time=30
+
+      - name: Smoke-run provenance_bundle_fuzz (30 s)
+        working-directory: fuzz
+        run: cargo fuzz run provenance_bundle_fuzz -- -max_total_time=30
+
   # ── MSRV check ────────────────────────────────────────────────────────────────
   msrv:
     name: MSRV (Rust 1.85)

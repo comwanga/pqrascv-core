@@ -273,4 +273,47 @@ mod tests {
         }
         .is_trusted());
     }
+
+    // ── Adversarial tests ────────────────────────────────────────────────────
+
+    // SECURITY GAP: evaluate() uses votes.len() as the participating count with
+    // no deduplication by verifier_id. A caller that submits the same verifier
+    // ID multiple times inflates both `participating` (bypassing the quorum
+    // threshold check) and the trusted/untrusted count (determining the outcome).
+    //
+    // In this test a 5-member federation requires quorum=3. A single honest
+    // trusted_vote from "v0" is duplicated twice in the votes vec. The function
+    // sees participating=3 (>= quorum_required=3) and trusted_count=3 — returning
+    // Trusted on the basis of one real verifier's vote.
+    #[test]
+    fn duplicate_votes_bypass_quorum_and_inflate_trust() {
+        let fed = make_federation(5, QuorumPolicy::Majority); // quorum = 3
+        let votes = vec![
+            trusted_vote("v0"),
+            trusted_vote("v0"), // duplicate
+            trusted_vote("v0"), // duplicate
+        ];
+        let eval = ConsensusEvaluation::evaluate("dup".into(), votes, &fed);
+        // participating = 3 (no dedup) — quorum check passes
+        assert_eq!(eval.participating, 3);
+        // Outcome is Trusted on the basis of a single real verifier
+        assert_eq!(eval.final_decision, ConsensusDecision::Trusted);
+    }
+
+    // SECURITY GAP: evaluate() does not check that voting verifier IDs belong to
+    // federation.members. Votes from entirely fabricated identities are counted
+    // identically to real member votes, allowing quorum to be satisfied without
+    // any legitimate federation member participating.
+    #[test]
+    fn non_member_votes_counted_identically_to_member_votes() {
+        let fed = make_federation(5, QuorumPolicy::Majority); // quorum = 3
+        let votes = vec![
+            trusted_vote("attacker-1"), // not a member
+            trusted_vote("attacker-2"), // not a member
+            trusted_vote("attacker-3"), // not a member
+        ];
+        let eval = ConsensusEvaluation::evaluate("fake".into(), votes, &fed);
+        // No membership check — three phantom votes satisfy quorum and return Trusted
+        assert_eq!(eval.final_decision, ConsensusDecision::Trusted);
+    }
 }

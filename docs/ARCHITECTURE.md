@@ -132,33 +132,64 @@ pqrascv-core/
 │   ├── pqrascv-core/          # Core prover library (no_std + alloc)
 │   │   └── src/
 │   │       ├── measurement.rs      # RoT trait + PCR bank
-│   │       ├── crypto.rs           # ML-DSA-65 backend
+│   │       ├── crypto.rs           # ML-DSA-65 backend (generate, sign, verify)
 │   │       ├── quote.rs            # AttestationQuote assembly
+│   │       ├── cose_sign.rs        # COSE Sign1 wrapping (RFC 9052) + Noise_PQX KDF
 │   │       ├── error.rs            # PqRascvError
-│   │       ├── config.rs           # PolicyConfig (legacy, kept for compat)
+│   │       ├── config.rs           # PolicyConfig
 │   │       ├── provenance.rs       # InTotoAttestation (self-asserted, test only)
 │   │       ├── pki/
-│   │       │   ├── mod.rs          # DeviceCertificate, CertChain
-│   │       │   └── revocation.rs   # CRL types
+│   │       │   ├── mod.rs          # DeviceCertificate, CertChain, TrustStore
+│   │       │   └── revocation.rs   # VerifiedRevocationList
 │   │       ├── nonce/
-│   │       │   └── mod.rs          # NonceHandle, ClockEvidence
+│   │       │   └── mod.rs          # NonceHandle, ClockEvidence, InMemoryNonceLedger
 │   │       ├── policy/
-│   │       │   └── mod.rs          # PolicyEngineV2, typed rules
+│   │       │   └── mod.rs          # PolicyEngineV2, typed PolicyRule enum
 │   │       ├── provenance_v2/
-│   │       │   └── mod.rs          # ExternalProvenanceBundle (Sigstore)
+│   │       │   └── mod.rs          # ExternalProvenanceBundle (Sigstore bundle)
+│   │       ├── kani_proofs.rs      # Kani formal verification harnesses (#[cfg(kani)])
 │   │       └── backends/
 │   │           ├── mod.rs
 │   │           ├── dice.rs         # DICE CDI derivation
-│   │           ├── tpm.rs          # TPM 2.0 (hardware-tpm feature)
+│   │           ├── tpm.rs          # TPM 2.0 (hardware-tpm feature, live-evidence)
+│   │           ├── sevsnp.rs       # AMD SEV-SNP (amd-sev-snp feature)
+│   │           ├── tdx.rs          # Intel TDX (intel-tdx feature)
+│   │           ├── optee.rs        # OP-TEE (op-tee feature, Linux)
+│   │           ├── applese.rs      # Apple Secure Enclave (apple-se feature)
 │   │           └── software.rs     # TEST ONLY (software-rot-unsafe feature)
 │   ├── verifier/              # Reference verifier (std only)
+│   ├── pqrascv-sigstore-client/   # Sigstore HTTP client (Rekor + Fulcio)
+│   │   └── src/
+│   │       ├── error.rs            # SigstoreClientError
+│   │       ├── rekor.rs            # GET/POST Rekor transparency log
+│   │       ├── fulcio.rs           # POST Fulcio certificate issuance
+│   │       └── workflow.rs         # sign_and_log end-to-end workflow
+│   ├── keyd/                  # ML-DSA key management daemon
+│   │   └── src/
+│   │       ├── main.rs             # tokio entry point; KEYD_SOCKET / KEYD_KEYDIR
+│   │       ├── protocol.rs         # Length-prefixed CBOR frames (Request/Response)
+│   │       ├── keystore.rs         # Filesystem keypair store (0o600, seed+vk blob)
+│   │       └── server.rs           # UnixListener dispatch (unix only)
+│   ├── pqrascv-python/        # PyO3 bindings (MlDsaKey, QuoteVerifier)
+│   ├── pqrascv-ffi/           # C FFI (pqrascv_generate_keypair/sign/verify)
+│   │   └── include/pqrascv.h  # cbindgen-generated C header
+│   ├── pqrascv-hardware/      # Hardware trust and distributed verifier consensus
 │   ├── bitcoin-anchor/        # Bitcoin anchoring layer
 │   │   └── src/
-│   │       ├── lib.rs
-│   │       ├── merkle.rs      # Merkle tree batching
+│   │       ├── merkle.rs      # RFC 6962 Merkle tree
 │   │       ├── anchor.rs      # OP_RETURN transaction builder
 │   │       └── proof.rs       # SPV inclusion proof verification
 │   └── cli/                   # CLI tooling
+├── fuzz/
+│   └── fuzz_targets/
+│       ├── cbor_parser_fuzz.rs     # AttestationQuote CBOR roundtrip
+│       ├── pki_chain_fuzz.rs       # validate_chain with arbitrary DER
+│       └── provenance_bundle_fuzz.rs  # ExternalProvenanceBundle::verify_all
+└── tools/
+    ├── provision-sevsnp.sh     # AMD SEV-SNP readiness check
+    ├── provision-tdx.sh        # Intel TDX readiness check
+    ├── provision-tpm.sh        # TPM2 AK provisioning
+    └── pqrascv-keyd.service    # systemd unit (hardened: NoNewPrivileges, etc.)
 ```
 
 ---
@@ -464,12 +495,51 @@ in a local SQLite database. The store is append-only; records are never deleted.
 
 Primary interface. All other SDKs are thin wrappers.
 
-### Python SDK (planned)
+### Python SDK (`crates/pqrascv-python`)
 
-PyO3 bindings exposing:
-- `generate_quote()` (prover)
-- `verify_quote()` (verifier)
-- `anchor_quotes()` (Bitcoin anchoring)
+PyO3 0.22 bindings. Build with `maturin develop --features extension-module`.
+
+```python
+import pqrascv
+
+key = pqrascv.MlDsaKey.generate()
+sig = key.sign(b"message")
+ok  = pqrascv.MlDsaKey.verify(key.verifying_key_bytes(), b"message", sig)
+
+verifier = pqrascv.QuoteVerifier()
+verifier.verify_cbor(quote_cbor, vk_bytes, nonce_32_bytes, now_unix_secs)
+```
+
+The crate compiles to both `cdylib` (Python wheel) and `rlib` (pure-Rust tests).
+`default = []` features so `cargo test` works without a Python runtime.
+
+### C FFI (`crates/pqrascv-ffi`)
+
+cbindgen-generated header at `include/pqrascv.h`. Builds a `cdylib` and `staticlib`.
+
+```c
+#include "pqrascv.h"
+
+/* generate a keypair; sk=32 bytes seed, vk=1952 bytes */
+PqrascvStatus pqrascv_generate_keypair(
+    uint8_t *sk_out, size_t *sk_len,
+    uint8_t *vk_out, size_t *vk_len);
+
+/* sign message; sig_out must be >= 3309 bytes */
+PqrascvStatus pqrascv_sign(
+    const uint8_t *sk, size_t sk_len,
+    const uint8_t *msg, size_t msg_len,
+    uint8_t *sig_out, size_t *sig_len);
+
+/* verify; returns PQRASCV_OK or PQRASCV_ERROR_CRYPTO */
+PqrascvStatus pqrascv_verify(
+    const uint8_t *vk, size_t vk_len,
+    const uint8_t *msg, size_t msg_len,
+    const uint8_t *sig, size_t sig_len);
+```
+
+All functions null-check every pointer and validate exact buffer sizes before
+any unsafe slice construction.
 
 ### CLI (crates/cli)
 
@@ -535,7 +605,7 @@ pqrascv-cli
 - `cargo audit` in CI (deny.toml)
 - `cargo deny` for license and advisory checks
 - Fuzz targets for CBOR deserialization paths
-- Kani harnesses for crypto paths (planned)
+- Kani formal verification harnesses for ML-DSA-65 and nonce uniqueness (`kani_proofs.rs`)
 - Memory-safe Rust throughout; no `unsafe` in security-critical paths
 
 ---
@@ -575,14 +645,14 @@ pqrascv-cli
 - [ ] HSM integration for manufacturer CA
 
 ### Phase 3 — Supply Chain Security
-- [ ] Sigstore/Rekor client integration
+- [x] Sigstore/Rekor client integration (`crates/pqrascv-sigstore-client`)
 - [ ] GitHub Actions provenance generation workflow
 - [ ] Builder identity allowlist management
 
 ### Phase 4 — Hardware Attestation
-- [ ] TPM 2.0 backend (stable tss-esapi)
-- [ ] Intel TDX backend
-- [ ] AMD SEV-SNP backend
+- [x] TPM 2.0 backend (`backends/tpm.rs`, `tools/provision-tpm.sh`)
+- [x] Intel TDX backend (`backends/tdx.rs`, `tools/provision-tdx.sh`)
+- [x] AMD SEV-SNP backend (`backends/sevsnp.rs`, `tools/provision-sevsnp.sh`)
 
 ### Phase 5 — Bitcoin Integration
 - [ ] Bitcoin node RPC client
@@ -590,6 +660,12 @@ pqrascv-cli
 - [ ] Anchor batching service
 
 ### Phase 6 — Ecosystem
-- [ ] Python SDK (PyO3)
+- [x] Python SDK (PyO3 0.22, `crates/pqrascv-python`)
+- [x] C FFI (cbindgen, `crates/pqrascv-ffi`, `include/pqrascv.h`)
+- [x] keyd ML-DSA key management daemon (`crates/keyd`)
+- [x] Kani formal verification harnesses (`kani_proofs.rs`)
+- [x] Fuzz targets (`cbor_parser_fuzz`, `pki_chain_fuzz`, `provenance_bundle_fuzz`)
+- [x] Hardware provisioning scripts (`tools/`)
+- [x] systemd unit with security hardening (`pqrascv-keyd.service`)
 - [ ] Kubernetes admission webhook
 - [ ] Prometheus metrics
