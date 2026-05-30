@@ -1,0 +1,13 @@
+[build-system]
+requires      = ["maturin>=1.5,<2"]
+build-backend = "maturin"
+
+[project]
+name            = "pqrascv"
+version         = "1.0.0rc5"
+description     = "Post-Quantum Remote Attestation & Supply-Chain Verification"
+requires-python = ">=3.9"
+
+[tool.maturin]
+module-name = "pqrascv"
+features    = ["pyo3/extension-module"]
