@@ -1,0 +1,17 @@
+[package]
+name     = "pqrascv-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "C FFI layer for pqrascv-core (for embedded integration)"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+pqrascv-core = { path = "../pqrascv-core", features = ["std", "alloc", "software-rot-unsafe"] }
+
+[build-dependencies]
+cbindgen = "0.26"
