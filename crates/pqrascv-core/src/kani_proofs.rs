@@ -10,6 +10,9 @@
 //! All harnesses are gated behind `#[cfg(kani)]` so they have zero effect on
 //! normal `cargo build` / `cargo test` / `cargo check` builds.
 
+#[cfg(kani)]
+extern crate alloc;
+
 // ── Harness 1: PcrBank::default() has all-zero digests ───────────────────
 
 /// Proof: `PcrBank::default()` initialises every PCR slot to the all-zeros
@@ -49,7 +52,7 @@ fn pcr_bank_default_is_all_zeros() {
 fn nonce_ledger_rejects_duplicate() {
     use crate::nonce::{InMemoryNonceLedger, NonceLedger};
 
-    let mut ledger = InMemoryNonceLedger::new(64);
+    let mut ledger = InMemoryNonceLedger::default();
     let nonce: [u8; 32] = kani::any();
 
     // First: register the nonce — must succeed.
