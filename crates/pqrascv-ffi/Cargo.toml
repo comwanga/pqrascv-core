@@ -6,6 +6,7 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 description = "C FFI layer for pqrascv-core (for embedded integration)"
+publish = false
 
 [lib]
 crate-type = ["cdylib", "staticlib"]

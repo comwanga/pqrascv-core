@@ -6,6 +6,7 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 description = "ML-DSA key management daemon for pqrascv — stores keypairs, serves signing requests over Unix socket"
+publish = false
 
 [[bin]]
 name = "pqrascv-keyd"

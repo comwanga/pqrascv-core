@@ -6,6 +6,7 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 description = "Python bindings for pqrascv-core (PyO3)"
+publish = false
 
 [lib]
 name       = "pqrascv"
