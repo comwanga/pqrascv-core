@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
 #[repr(u8)]
 pub enum RequestType {
     GenerateKeypair = 1,
@@ -37,6 +38,7 @@ pub struct Response {
     pub payload: Vec<u8>,
 }
 
+#[cfg(test)]
 pub fn encode_request(req: &Request) -> Result<Vec<u8>, ciborium::ser::Error<std::io::Error>> {
     let mut body = Vec::new();
     ciborium::into_writer(req, &mut body)?;
