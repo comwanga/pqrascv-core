@@ -14,7 +14,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 pqrascv-core     = { path = "../pqrascv-core", features = ["std", "alloc", "software-rot-unsafe"] }
 pqrascv-verifier = { path = "../verifier", optional = true }
-pyo3             = { version = "0.22", optional = true }
+pyo3             = { version = "0.24", optional = true }
 
 [features]
 extension-module = ["dep:pyo3", "pyo3/extension-module", "dep:pqrascv-verifier"]
