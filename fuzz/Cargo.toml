@@ -12,8 +12,9 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-pqrascv-core  = { path = "../crates/pqrascv-core", features = ["std"] }
+pqrascv-core  = { path = "../crates/pqrascv-core", features = ["std", "software-rot-unsafe"] }
 pqrascv-hardware = { path = "../crates/pqrascv-hardware" }
+ciborium = "0.2"
 
 [[bin]]
 name = "quote_roundtrip"
@@ -36,5 +37,23 @@ doc  = false
 [[bin]]
 name = "bitcoin_node_fuzz"
 path = "fuzz_targets/bitcoin_node_fuzz.rs"
+test = false
+doc  = false
+
+[[bin]]
+name = "cbor_parser_fuzz"
+path = "fuzz_targets/cbor_parser_fuzz.rs"
+test = false
+doc  = false
+
+[[bin]]
+name = "pki_chain_fuzz"
+path = "fuzz_targets/pki_chain_fuzz.rs"
+test = false
+doc  = false
+
+[[bin]]
+name = "provenance_bundle_fuzz"
+path = "fuzz_targets/provenance_bundle_fuzz.rs"
 test = false
 doc  = false
