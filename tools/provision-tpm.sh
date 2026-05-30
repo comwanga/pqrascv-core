@@ -35,7 +35,8 @@ tpm2_getekcertificate -o "${EK_CERT}" 2>/dev/null \
     || warn "EK certificate not available (some virtual TPMs omit this)."
 
 info "Creating Endorsement Key handle..."
-tpm2_createek --ek-context /tmp/ek.ctx --key-algorithm rsa 2>/dev/null || true
+tpm2_createek --ek-context /tmp/ek.ctx --key-algorithm rsa \
+    || warn "EK creation failed (some TPMs pre-create the EK — proceeding anyway)."
 
 if [[ -f "${AK_CONTEXT}" ]]; then
     info "AK context already exists at ${AK_CONTEXT}. Skipping creation."

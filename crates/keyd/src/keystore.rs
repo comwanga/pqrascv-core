@@ -22,12 +22,15 @@ impl KeyStore {
         Ok(Self { base_dir: base_dir.as_ref().to_path_buf() })
     }
 
-    fn key_path(&self, label: &str) -> PathBuf {
-        self.base_dir.join(format!("{}.keypair", label.replace('/', "_")))
+    fn key_path(&self, label: &str) -> Result<PathBuf, KeyStoreError> {
+        if label.contains("..") || label.starts_with('/') || label.is_empty() {
+            return Err(KeyStoreError::Internal("invalid label".into()));
+        }
+        Ok(self.base_dir.join(format!("{}.keypair", label.replace('/', "_"))))
     }
 
     pub fn generate(&self, label: &str) -> Result<Vec<u8>, KeyStoreError> {
-        let path = self.key_path(label);
+        let path = self.key_path(label)?;
         if path.exists() {
             return Err(KeyStoreError::AlreadyExists(label.to_string()));
         }
@@ -43,12 +46,18 @@ impl KeyStore {
     }
 
     pub fn public_key(&self, label: &str) -> Result<Vec<u8>, KeyStoreError> {
-        let blob = read_secret_file(&self.key_path(label))?;
+        let blob = read_secret_file(&self.key_path(label)?)?;
+        if blob.len() != BLOB_LEN {
+            return Err(KeyStoreError::Internal("corrupt keypair blob".into()));
+        }
         Ok(blob[ML_DSA_65_SEED_SIZE..].to_vec())
     }
 
     pub fn sign(&self, label: &str, data: &[u8]) -> Result<Vec<u8>, KeyStoreError> {
-        let blob = Zeroizing::new(read_secret_file(&self.key_path(label))?);
+        let blob = Zeroizing::new(read_secret_file(&self.key_path(label)?)?);
+        if blob.len() != BLOB_LEN {
+            return Err(KeyStoreError::Internal("corrupt keypair blob".into()));
+        }
         let seed_bytes = &blob[..ML_DSA_65_SEED_SIZE];
         let backend = MlDsaBackend;
         let sig = backend.sign(data, seed_bytes, SIGNING_CONTEXT_QUOTE)
@@ -57,7 +66,7 @@ impl KeyStore {
     }
 
     pub fn delete(&self, label: &str) -> Result<(), KeyStoreError> {
-        let path = self.key_path(label);
+        let path = self.key_path(label)?;
         if !path.exists() {
             return Err(KeyStoreError::NotFound(label.to_string()));
         }
@@ -65,7 +74,7 @@ impl KeyStore {
     }
 
     pub fn rotate(&self, label: &str) -> Result<Vec<u8>, KeyStoreError> {
-        let path = self.key_path(label);
+        let path = self.key_path(label)?;
         let tmp_path = self.base_dir.join(format!("{}.keypair.new", label.replace('/', "_")));
 
         let (seed, vk_bytes) = generate_ml_dsa_keypair()

@@ -46,8 +46,8 @@ async fn handle_connection(
             break;
         }
         let len = u32::from_le_bytes(len_buf) as usize;
-        if len > 1_048_576 {
-            tracing::warn!("oversized request ({len} bytes), dropping connection");
+        if len == 0 || len > 65_536 {
+            tracing::warn!("invalid frame length ({len} bytes), dropping connection");
             break;
         }
 
