@@ -4,6 +4,7 @@
 //! Unlike simple thresholds, this formally separates Safety and Liveness, enabling
 //! explicit detection of partitions and equivocation thresholds.
 
+use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
@@ -87,17 +88,34 @@ impl ByzantineQuorumResult {
         let quorum_size = 2 * f + 1;
         let partition_size = f + 1;
 
+        // Detect equivocation: any verifier ID appearing in 2+ VoteSets.
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        for set in vote_sets {
+            let deduped: BTreeSet<&str> = set.verifier_ids.iter().map(String::as_str).collect();
+            for id in &deduped {
+                if !seen.insert(id) {
+                    return Self {
+                        safety: ByzantineSafetyState::UnsafeEquivocation,
+                        liveness: ByzantineLivenessState::Stalled,
+                    };
+                }
+            }
+        }
+
         let mut max_votes = 0;
         let mut partitions = 0;
+        let mut total_votes = 0;
 
         for set in vote_sets {
-            let votes = set.verifier_ids.len();
+            // Deduplicate within each VoteSet to prevent vote-count inflation.
+            let votes = set.verifier_ids.iter().map(String::as_str).collect::<BTreeSet<_>>().len();
             if votes > max_votes {
                 max_votes = votes;
             }
             if votes >= partition_size {
                 partitions += 1;
             }
+            total_votes += votes;
         }
 
         if max_votes >= quorum_size {
@@ -111,12 +129,7 @@ impl ByzantineQuorumResult {
                 safety: ByzantineSafetyState::UnsafePartition,
                 liveness: ByzantineLivenessState::Partitioned,
             }
-        } else if vote_sets
-            .iter()
-            .map(|s| s.verifier_ids.len())
-            .sum::<usize>()
-            >= quorum_size
-        {
+        } else if total_votes >= quorum_size {
             // Total votes are enough, but spread out below partition threshold
             Self {
                 safety: ByzantineSafetyState::UnsafeIntersectionFailure,
@@ -229,17 +242,11 @@ mod tests {
 
     // ── Adversarial tests ────────────────────────────────────────────────────
 
-    // SECURITY GAP: evaluate() computes votes as verifier_ids.len() with no
-    // deduplication. If the same verifier ID appears multiple times in a VoteSet
-    // the count is inflated. A caller constructing a VoteSet with repeated IDs
-    // can push max_votes above quorum_size and obtain Safe/Live from a federation
-    // that has not actually reached quorum.
-    //
-    // Fix path: deduplicate verifier_ids inside evaluate() or at VoteSet construction.
     #[test]
-    fn vote_count_inflation_via_duplicate_ids() {
+    fn vote_count_inflation_via_duplicate_ids_is_rejected() {
         // N=7 → f=2, quorum_size=5, partition_size=3.
-        // Honest vote count: 2 (v1, v2). Duplicated to 5 — exactly quorum_size.
+        // Only 2 distinct verifiers (v1, v2) — below quorum and partition threshold.
+        // Duplicating IDs must NOT inflate the count above quorum_size.
         let result = ByzantineQuorumResult::evaluate(
             7,
             &[VoteSet {
@@ -247,7 +254,6 @@ mod tests {
                     crate::digest::DigestAlgorithm::Sha3_256,
                     [0xAA; 32],
                 ),
-                // Only 2 distinct verifiers, but ID repeated to inflate count to 5
                 verifier_ids: vec![
                     "v1".into(),
                     "v1".into(),
@@ -257,21 +263,15 @@ mod tests {
                 ],
             }],
         );
-        // Inflated count satisfies quorum_size — evaluate() returns Safe/Live
-        // even though only 2 distinct verifiers participated.
+        // After deduplication: 2 distinct verifiers < quorum_size(5) and < partition_size(3)
         assert_eq!(result.safety, ByzantineSafetyState::Safe);
-        assert_eq!(result.liveness, ByzantineLivenessState::Live);
+        assert_eq!(result.liveness, ByzantineLivenessState::Stalled);
     }
 
-    // SECURITY GAP: evaluate() does not detect equivocation — a single verifier
-    // appearing in two VoteSets for different state hashes. The verifier's vote
-    // is counted towards both hashes independently. This means an equivocating
-    // verifier contributes to both forks without triggering UnsafeEquivocation.
     #[test]
-    fn equivocation_not_detected_across_vote_sets() {
+    fn equivocation_detected_across_vote_sets() {
         // N=4 → f=1, quorum_size=3, partition_size=2.
-        // "v1" votes for both 0xAA and 0xBB — equivocation. Should be flagged
-        // as unsafe but is not. Instead we get a partition result.
+        // "v1" signs both 0xAA and 0xBB — equivocation must be flagged.
         let result = ByzantineQuorumResult::evaluate(
             4,
             &[
@@ -287,18 +287,12 @@ mod tests {
                         crate::digest::DigestAlgorithm::Sha3_256,
                         [0xBB; 32],
                     ),
-                    // v1 appears here too — equivocation
                     verifier_ids: vec!["v1".into(), "v3".into()],
                 },
             ],
         );
-        // The correct result would be UnsafeEquivocation. Instead, evaluate()
-        // treats both sets as independent and returns UnsafePartition because
-        // both have >= partition_size (2) votes without one reaching quorum_size.
-        assert_eq!(result.safety, ByzantineSafetyState::UnsafePartition);
-        assert_eq!(result.liveness, ByzantineLivenessState::Partitioned);
-        // If equivocation detection were implemented, we'd expect:
-        // assert_eq!(result.safety, ByzantineSafetyState::UnsafeEquivocation);
+        assert_eq!(result.safety, ByzantineSafetyState::UnsafeEquivocation);
+        assert_eq!(result.liveness, ByzantineLivenessState::Stalled);
     }
 
     // With N < 4, f = 0, so quorum_size = 1 and partition_size = 1.
