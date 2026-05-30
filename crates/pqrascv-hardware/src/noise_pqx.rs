@@ -1,4 +1,4 @@
-//! Noise_PQX: post-quantum key derivation using ML-KEM-1024 + SHA3-256.
+//! `Noise_PQX`: post-quantum key derivation using ML-KEM-1024 + SHA3-256.
 //!
 //! Implements the session key derivation step of a Noise_PQX-inspired handshake
 //! where ephemeral DH is replaced by ML-KEM-1024 key encapsulation.
@@ -11,9 +11,9 @@ use alloc::vec::Vec;
 
 /// Established session keys for both directions.
 pub struct NoisePqxSession {
-    /// ChaCha20Poly1305 key for initiator → responder direction.
+    /// `ChaCha20Poly1305` key for initiator → responder direction.
     pub send_key: [u8; 32],
-    /// ChaCha20Poly1305 key for responder → initiator direction.
+    /// `ChaCha20Poly1305` key for responder → initiator direction.
     pub recv_key: [u8; 32],
 }
 
@@ -21,6 +21,7 @@ pub struct NoisePqxSession {
 ///
 /// Inputs are the two 32-byte shared secrets from the two ML-KEM encapsulations
 /// in the XX pattern (initiator-ephemeral and responder-ephemeral).
+#[must_use]
 pub fn derive_session_keys(ss1: &[u8; 32], ss2: &[u8; 32]) -> NoisePqxSession {
     let mut combined = [0u8; 64];
     combined[..32].copy_from_slice(ss1);
@@ -36,12 +37,12 @@ pub fn derive_session_keys(ss1: &[u8; 32], ss2: &[u8; 32]) -> NoisePqxSession {
     let mut send_input = [0u8; 33];
     send_input[..32].copy_from_slice(&prk);
     send_input[32] = 0x01;
-    let send_key: [u8; 32] = Sha3_256::digest(&send_input).into();
+    let send_key: [u8; 32] = Sha3_256::digest(send_input).into();
 
     let mut recv_input = [0u8; 33];
     recv_input[..32].copy_from_slice(&prk);
     recv_input[32] = 0x02;
-    let recv_key: [u8; 32] = Sha3_256::digest(&recv_input).into();
+    let recv_key: [u8; 32] = Sha3_256::digest(recv_input).into();
 
     combined.zeroize();
     prk.zeroize();

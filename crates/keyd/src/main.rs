@@ -2,7 +2,9 @@
 //!
 //! Usage: set KEYD_SOCKET and KEYD_KEYDIR environment variables.
 
+#[cfg(unix)]
 mod keystore;
+#[cfg(unix)]
 mod protocol;
 #[cfg(unix)]
 mod server;
