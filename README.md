@@ -47,12 +47,18 @@ post-quantum signed *and* supply-chain provenance-linked.
 - **Post-quantum by default** — ML-DSA-65 signatures; no RSA or ECDSA anywhere
 - **Supply-chain provenance** — SLSA v1 predicates + SBOM hash inside every signed quote
 - **Device PKI** — CBOR-native certificate chains (Root CA → Intermediate → Device), CRL revocation, and trust anchor lifecycle management
-- **Three measurement backends** — Software SHA3-256, hardware TPM 2.0, DICE CDI derivation
+- **Six measurement backends** — Software SHA3-256, hardware TPM 2.0, DICE CDI, Intel TDX, AMD SEV-SNP, OP-TEE, Apple Secure Enclave
 - **`no_std + alloc`** — one API across Cortex-M4, RISC-V, WASM, and Linux
 - **Allocation-free measurement path** — `RoT::measure()` never touches the heap
 - **Replay protection** — verifier-supplied 32-byte nonce bound inside the signature
 - **Constant-time PQ ops** — RustCrypto crates; key material is `Zeroize`-on-drop
 - **Compact wire format** — CBOR (RFC 8949), ~3.7 KB total quote including signature
+- **PQ transport layer** — Noise\_PQX key derivation + COSE Sign1 (RFC 9052) wrapping for ML-DSA-65 signed attestation frames
+- **Sigstore HTTP client** — `pqrascv-sigstore-client` provides Rekor log submission and Fulcio certificate issuance via `ureq`; powers the end-to-end `sign_and_log` workflow
+- **Key management daemon** — `pqrascv-keyd` stores ML-DSA-65 keypairs on disk (0o600, seed-only), rotates on demand, and serves signing requests over a Unix domain socket
+- **Python bindings** — `pqrascv-python` (PyO3 0.22) exposes `MlDsaKey` and `QuoteVerifier`; build with `maturin develop`
+- **C FFI** — `pqrascv-ffi` exports `pqrascv_generate_keypair`, `pqrascv_sign`, `pqrascv_verify`; `cbindgen` generates `include/pqrascv.h`
+- **Formal verification** — four Kani model-checking harnesses cover PCR initialisation, nonce replay prevention, policy determinism, and CBOR roundtrip
 - **Bitcoin anchoring SDK** — `pqrascv-bitcoin-anchor` builds OP_RETURN payloads and verifies RFC 6962 Merkle + SPV inclusion proofs; requires operator-provided Bitcoin node for broadcast and confirmation
 
 ---
@@ -184,6 +190,36 @@ let result = verifier.verify_cbor_with_trust_store(
     &cbor_bytes, &device_cert, &intermediates, &store, &nonce, now_secs,
 )?;
 ```
+
+### Python
+
+```python
+# pip install maturin
+# cd crates/pqrascv-python && maturin develop --features extension-module
+
+import pqrascv
+
+key = pqrascv.MlDsaKey.generate()
+vk  = key.verifying_key_bytes()          # 1952 bytes
+sig = key.sign(b"hello attestation")     # 3309 bytes
+assert pqrascv.MlDsaKey.verify(vk, b"hello attestation", sig)
+```
+
+### C / Embedded
+
+```c
+#include "include/pqrascv.h"
+
+unsigned char sk[32], vk[1952], sig[3309];
+size_t sk_len = sizeof(sk), vk_len = sizeof(vk), sig_len = sizeof(sig);
+
+pqrascv_generate_keypair(sk, &sk_len, vk, &vk_len);
+pqrascv_sign(sk, sk_len, (uint8_t*)"msg", 3, sig, &sig_len);
+assert(pqrascv_verify(vk, vk_len, (uint8_t*)"msg", 3, sig, sig_len) == PQRASCV_OK);
+```
+
+Build: `cargo build -p pqrascv-ffi` — generates `include/pqrascv.h` and
+`target/debug/libpqrascv_ffi.{so,a}`.
 
 ---
 
@@ -547,7 +583,8 @@ must never leave the device. Only the one-way `cdi_attestation` appears in quote
 
 **Transport layer** — ML-DSA-65 protects the signature. If your transport (TLS 1.2, classical
 ECDH) is not post-quantum, a "harvest now, decrypt later" attacker can record and later decrypt
-the channel. Pair with a PQ transport (Noise\_PQX, planned).
+the channel. Pair with a PQ transport — Noise\_PQX key derivation and COSE Sign1 wrapping are
+available in `crates/pqrascv-core/src/cose_sign.rs`.
 
 **SoftwareRoT** — the `software-rot-unsafe` feature must never be compiled into production
 firmware. The `PolicyEngineV2` rejects `SoftwareRoT` by default.
@@ -559,15 +596,17 @@ of captured quotes.
 
 ## Status
 
-**v1.0.0-rc.5** — API stabilizing. 382 tests pass.
+**v1.0.0-rc.5** — API stabilizing.
 
 | Implemented ✅ | Preview / Experimental 🔬 | Planned 🗺 |
 |----------------|---------------------------|------------|
-| ML-DSA-65 sign / verify | Sigstore bundle verification (`verify_all` conditions 1–5) | Noise\_PQX post-quantum transport |
-| ML-KEM-768 encapsulation (PQ transport key type) | Fulcio chain + Rekor inclusion proof parsing | CBOR COSE signatures (RFC 9052) |
-| Software / TPM 2.0 / DICE backends | Intel TDX backend (`intel-tdx` feature) | Python SDK (PyO3 bindings) |
-| SLSA v1 provenance + SBOM hash | AMD SEV-SNP backend (`amd-sev-snp` feature) | OP-TEE / TrustZone backend |
-| CBOR-native PKI (Root CA → Device) | | Stable 1.0 API (pending `ml-dsa` crate GA) |
+| ML-DSA-65 sign / verify | Sigstore `verify_all` (conditions 1–5, partial) | Stable 1.0 API (pending `ml-dsa` crate GA) |
+| ML-KEM-768 encapsulation (PQ transport key type) | Intel TDX backend (`intel-tdx` feature) | Kubernetes admission webhook |
+| Noise\_PQX key derivation + COSE Sign1 (RFC 9052) | AMD SEV-SNP backend (`amd-sev-snp` feature) | Prometheus metrics |
+| Sigstore HTTP client (Rekor + Fulcio) | OP-TEE backend (`op-tee` feature) | |
+| Software / TPM 2.0 / DICE backends | Apple Secure Enclave backend (`apple-se` feature) | |
+| SLSA v1 provenance + SBOM hash | | |
+| CBOR-native PKI (Root CA → Device) | | |
 | CRL revocation (`VerifiedRevocationList`) | | |
 | Trust anchor lifecycle (`not_before`/`not_after`) | | |
 | `TrustStore` CA rollover | | |
@@ -577,16 +616,24 @@ of captured quotes.
 | RFC 6962 Merkle tree + SPV proofs | | |
 | ML-DSA-65 domain separation contexts | | |
 | CLI prover + verifier binary | | |
+| `pqrascv-keyd` key management daemon | | |
+| Python bindings (PyO3 0.22) | | |
+| C FFI + `include/pqrascv.h` (cbindgen) | | |
+| Kani formal verification harnesses (4 proofs) | | |
+| Fuzz targets: CBOR, PKI chain, provenance bundle | | |
+| Hardware provisioning scripts (SEV-SNP, TDX, TPM2) | | |
 
 ### Backend Maturity
 
 | Backend | Feature flag | Maturity | Notes |
 |---------|-------------|----------|-------|
 | `SoftwareRoT` | `software-rot-unsafe` | **Test / demo only** | No hardware boundary; measurements are caller-supplied. Requires `--software-rot-acknowledged` in CLI. |
-| TPM 2.0 | `hardware-tpm` | **Production** | Requires `tpm2-tss` system library. |
+| TPM 2.0 | `hardware-tpm` | **Production** | Requires `tpm2-tss` system library. Use `tools/provision-tpm.sh` for initial AK setup. |
 | DICE CDI | `dice` | **Production** | Pure-Rust; suitable for MCU boot chains. |
-| Intel TDX | `intel-tdx` | **Experimental** | Linux kernel ≥ 6.5 with `/dev/tdx_guest`. Community testing welcome. |
-| AMD SEV-SNP | `amd-sev-snp` | **Experimental** | Linux kernel ≥ 6.5 with `/dev/sev-guest`. Community testing welcome. |
+| Intel TDX | `intel-tdx` | **Experimental** | Linux kernel ≥ 5.19 with `/dev/tdx_guest`. Hardened per TDX 1.5 spec (REPORTDATA binding, debug-mode rejection, constant-time checks). Use `tools/provision-tdx.sh` to verify host. |
+| AMD SEV-SNP | `amd-sev-snp` | **Experimental** | Linux kernel ≥ 5.19 with `/dev/sev-guest`. Hardened: SnpPolicy bit positions, exitinfo2 check, constant-time REPORT_DATA binding. Use `tools/provision-sevsnp.sh`. |
+| OP-TEE | `op-tee` | **Experimental** | Linux only; `/dev/tee0` + `TEE_IOC_VERSION` ioctl. Requires OP-TEE OS on secure world. |
+| Apple Secure Enclave | `apple-se` | **Experimental** | macOS/iOS; `Security.framework`. PCR 0 reflects a per-session SE key — not stable across reboots. |
 
 ---
 
@@ -605,11 +652,11 @@ cargo audit
 
 Areas where contributions are especially valuable:
 
-- **Platform backends** — SEV-SNP, TDX, OP-TEE, Apple Secure Enclave
-- **Transport** — Noise\_PQX integration, COSE/CBOR signing
-- **Provenance** — Sigstore / Rekor / Fulcio client integration
-- **Tooling** — Hardware provisioning scripts, key management daemons
-- **Verification** — `kani` harnesses for the crypto paths, fuzzing
+- **Platform backends** — Live evidence acquisition on TDX/SEV-SNP (kernel ioctl paths), OP-TEE TA development, Apple SE production testing
+- **Sigstore full verification** — completing `verify_all` conditions 4–5 (Rekor entry content binding, certificate chain policy)
+- **Ecosystem integrations** — Kubernetes admission webhook, Prometheus metrics exporter
+- **Python/C bindings** — maturin wheel publishing pipeline, `pqrascv-keyd` client library for Python/C
+- **Stable 1.0** — tracking `ml-dsa` crate GA and removing the RC pin
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full system design.
 
