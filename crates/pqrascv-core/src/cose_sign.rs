@@ -1,6 +1,6 @@
 //! COSE Sign1 wrapping for attestation payloads (RFC 9052).
 //!
-//! Produces a COSE_Sign1 envelope with ML-DSA-65 signature.
+//! Produces a `COSE_Sign1` envelope with ML-DSA-65 signature.
 //! Algorithm ID -48 (private-use range, draft-ietf-cose-dilithium).
 
 #[cfg(feature = "alloc")]
@@ -16,7 +16,7 @@ pub const ML_DSA_65_ALG_ID: i64 = -48;
 
 const HEADER_ALG: i64 = 1;
 
-/// COSE_Sign1 envelope: protected header, payload, ML-DSA-65 signature.
+/// `COSE_Sign1` envelope: protected header, payload, ML-DSA-65 signature.
 #[cfg(feature = "alloc")]
 #[derive(Debug, Clone)]
 pub struct CoseSign1 {
@@ -27,7 +27,7 @@ pub struct CoseSign1 {
 
 #[cfg(feature = "alloc")]
 impl CoseSign1 {
-    /// Sign `payload` with ML-DSA-65 using `seed` and return a COSE_Sign1.
+    /// Sign `payload` with ML-DSA-65 using `seed` and return a `COSE_Sign1`.
     pub fn sign(payload: Vec<u8>, seed: &SigningKeySeed) -> Result<Self, PqRascvError> {
         let protected = encode_protected_header(ML_DSA_65_ALG_ID)?;
         let sig_structure = encode_sig_structure(&protected, &payload)?;
@@ -42,7 +42,7 @@ impl CoseSign1 {
         })
     }
 
-    /// Verify the COSE_Sign1 signature with the provided ML-DSA-65 verifying key bytes.
+    /// Verify the `COSE_Sign1` signature with the provided ML-DSA-65 verifying key bytes.
     pub fn verify(&self, vk_bytes: &[u8]) -> Result<(), PqRascvError> {
         let sig_structure = encode_sig_structure(&self.protected, &self.payload)?;
         MlDsaBackend.verify(
@@ -55,7 +55,7 @@ impl CoseSign1 {
 
     /// Encode as an untagged CBOR array `[protected, {}, payload, signature]`.
     ///
-    /// This produces a COSE_Sign1 message without the CBOR tag 18 defined in
+    /// This produces a `COSE_Sign1` message without the CBOR tag 18 defined in
     /// RFC 9052 §2. External RFC-compliant tools require the tag; this format
     /// is for internal use within the pqrascv federation protocol only.
     pub fn to_cbor(&self) -> Result<Vec<u8>, PqRascvError> {
@@ -71,7 +71,7 @@ impl CoseSign1 {
         Ok(buf)
     }
 
-    /// Decode a COSE_Sign1 from CBOR bytes.
+    /// Decode a `COSE_Sign1` from CBOR bytes.
     pub fn from_cbor(bytes: &[u8]) -> Result<Self, PqRascvError> {
         use ciborium::value::Value;
         let val: Value =
