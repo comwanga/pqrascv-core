@@ -28,25 +28,24 @@ mod inner {
         measurement::{Measurements, PcrBank, RoT},
     };
     use sha3::{Digest as _, Sha3_256};
+    use subtle::ConstantTimeEq;
 
-    const MRTD_OFFSET: usize = 0x090;
-    const RTMR0_OFFSET: usize = 0x150;
-    const RTMR1_OFFSET: usize = 0x180;
-    const RTMR2_OFFSET: usize = 0x1B0;
-    const RTMR3_OFFSET: usize = 0x1E0;
+    const MRTD_OFFSET: usize = 0x210;     // TdInfo starts at 0x200; MRTD at TdInfo+0x010
+    const RTMR0_OFFSET: usize = 0x2D0;
+    const RTMR1_OFFSET: usize = 0x300;
+    const RTMR2_OFFSET: usize = 0x330;
+    const RTMR3_OFFSET: usize = 0x360;
     const SHA384_LEN: usize = 48;
     pub(super) const TDREPORT_LEN: usize = 1024;
-    // REPORTDATA: guest-supplied 64-byte nonce field within the TDREPORT.
-    // The TDX Module places the caller's reportdata at offset 0x050 in the
-    // outermost REPORTMACSTRUCT's user-data region (before tee_info_hash).
-    // This keeps REPORTDATA[0..32] (our fw_hash slot) entirely below MRTD_OFFSET
-    // (0x090), avoiding overlap in test helpers.
-    // NOTE: Intel TDX GHCI spec §4.2 lists alternative layouts depending on
-    // module version; verify against arch/x86/include/uapi/asm/tdx.h on target.
-    const REPORTDATA_OFFSET: usize = 0x050;
+
+    // REPORTDATA: guest-supplied 64-byte nonce at REPORTMACSTRUCT+0x090.
+    // Source: Intel TDX Module ABI Spec §22.3, REPORTMACSTRUCT.REPORTDATA.
+    const REPORTDATA_OFFSET: usize = 0x090;
     const REPORTDATA_FW_HASH_LEN: usize = 32;
-    // ATTRIBUTES: TdInfo starts at offset 0x200 in TDREPORT; Attributes is its
-    // first field (bit 0 = DEBUG).
+
+    // Attributes field at start of TDINFO (TdInfo starts at offset 0x200).
+    // Bit 0 = DEBUG: if set, TD is running in debug mode.
+    // Source: Intel TDX Module ABI Spec §22.3, TD_ATTRIBUTES.DEBUG.
     const ATTRIBUTES_OFFSET: usize = 0x200;
 
     #[cfg(target_os = "linux")]
@@ -107,7 +106,7 @@ mod inner {
             // Validate REPORTDATA binding: first 32 bytes must equal SHA3-256(firmware).
             let fw_hash: [u8; 32] = Sha3_256::digest(firmware).into();
             let report_data_fw = &tdreport[REPORTDATA_OFFSET..REPORTDATA_OFFSET + REPORTDATA_FW_HASH_LEN];
-            if report_data_fw != fw_hash {
+            if report_data_fw.ct_eq(fw_hash.as_ref()).unwrap_u8() == 0 {
                 return Err(PqRascvError::MeasurementFailed);
             }
 

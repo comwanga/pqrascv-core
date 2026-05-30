@@ -62,6 +62,10 @@ mod inner {
 
     #[cfg(any(target_os = "macos", target_os = "ios"))]
     impl RoT for AppleSeRoT<'_> {
+        // NOTE: This implementation generates a fresh SE key on every call.
+        // PCR 0 will differ between invocations and is NOT a stable device identity.
+        // Production use requires lookup-then-create: query the Keychain by
+        // `com.pqrascv.attestation-key` label before calling SecKey::generate.
         fn measure(&self) -> Result<Measurements, PqRascvError> {
             use security_framework::key::{GenerateKeyOptions, SecKey};
 

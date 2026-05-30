@@ -99,7 +99,14 @@ mod inner {
 
             let mut version = TeeIoVersion { impl_id: 0, impl_caps: 0, gen_caps: 0 };
 
-            // SAFETY: valid fd, TEE_IOC_VERSION is a stable ioctl, repr(C) struct.
+            // SAFETY:
+            // 1. `dev` is a valid, open file descriptor for `/dev/tee0`.
+            // 2. `TEE_IOC_VERSION` (0x800c_a40a) is the stable read ioctl from
+            //    include/uapi/linux/tee.h (_IOR(0xa4, 0xa, struct tee_ioversion)),
+            //    verified against Linux kernel 6.5. The kernel reads `impl_id` into the
+            //    struct and returns 0 on success.
+            // 3. `version` is a stack-allocated repr(C) struct matching the kernel layout.
+            //    The pointer is valid and not aliased for the duration of the ioctl.
             let ret = unsafe {
                 libc::ioctl(dev.as_raw_fd(), TEE_IOC_VERSION, &mut version as *mut TeeIoVersion)
             };

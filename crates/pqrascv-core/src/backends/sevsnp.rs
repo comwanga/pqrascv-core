@@ -24,6 +24,7 @@ mod inner {
         measurement::{Measurements, PcrBank, RoT},
     };
     use sha3::{Digest as _, Sha3_256};
+    use subtle::ConstantTimeEq;
 
     // Offsets within the raw attestation report (after MSG_HDR_LEN-byte kernel header).
     const REPORT_POLICY_OFFSET: usize = 0x008;
@@ -77,11 +78,11 @@ mod inner {
         pub fn from_le_bytes(policy: [u8; 8]) -> Self {
             let bits = u64::from_le_bytes(policy);
             Self {
+                abi_minor: (bits & 0xFF) as u8,
+                abi_major: ((bits >> 8) & 0xFF) as u8,
                 smt_allowed: (bits >> 16) & 1 == 1,
-                debug_allowed: (bits >> 19) & 1 == 1,
                 migrate_ma_allowed: (bits >> 18) & 1 == 1,
-                abi_major: ((bits >> 32) & 0xFF) as u8,
-                abi_minor: ((bits >> 40) & 0xFF) as u8,
+                debug_allowed: (bits >> 19) & 1 == 1,
             }
         }
     }
@@ -136,7 +137,7 @@ mod inner {
             // Verify REPORT_DATA binding: first 32 bytes must match SHA3-256(firmware).
             let fw_hash: [u8; 32] = Sha3_256::digest(firmware).into();
             let report_data_fw = &report[REPORT_DATA_OFFSET..REPORT_DATA_OFFSET + REPORT_DATA_FW_HASH_LEN];
-            if report_data_fw != fw_hash.as_ref() {
+            if report_data_fw.ct_eq(fw_hash.as_ref()).unwrap_u8() == 0 {
                 return Err(PqRascvError::MeasurementFailed);
             }
 
@@ -299,7 +300,7 @@ mod inner {
         }
 
         #[test]
-        fn pcrs_2_through_7_are_zero() {
+        fn pcrs_3_through_7_are_zero() {
             let resp = fake_resp([0x42u8; 48], [0xBBu8; 8]);
             let m = AmdSevSnpRoT::measurements_from_resp(&resp, b"fw", None, 0).unwrap();
             for slot in 3..8 {
@@ -330,9 +331,13 @@ mod inner {
 
         #[test]
         fn snp_policy_debug_not_allowed_decodes_correctly() {
-            // bits: SMT_ALLOWED=bit16=1, DEBUG_ALLOWED=bit19=0 → smt_allowed=true, debug_allowed=false
-            let policy: u64 = 1u64 << 16;
+            // Policy: ABI_MINOR=3, ABI_MAJOR=2, SMT_ALLOWED=bit16=1, DEBUG=bit19=0
+            let policy: u64 = 3u64        // ABI_MINOR in bits 7:0
+                | (2u64 << 8)            // ABI_MAJOR in bits 15:8
+                | (1u64 << 16);          // SMT_ALLOWED in bit 16
             let decoded = SnpPolicy::from_le_bytes(policy.to_le_bytes());
+            assert_eq!(decoded.abi_minor, 3);
+            assert_eq!(decoded.abi_major, 2);
             assert!(!decoded.debug_allowed);
             assert!(decoded.smt_allowed);
         }
