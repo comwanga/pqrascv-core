@@ -66,6 +66,9 @@ base64       = { version = "0.22", default-features = false, features = ["alloc"
 features = ["std", "dice", "software-rot-unsafe"]
 rustdoc-args = ["--cfg", "docsrs"]
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
+
 [dev-dependencies]
 pqrascv-core = { path = ".", features = ["std", "software-rot-unsafe"] }
 # path = local code in CI/dev; version = published rc.3 resolves during `cargo publish` packaging

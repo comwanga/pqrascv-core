@@ -1,0 +1,22 @@
+# Kani project configuration.
+# Run all harnesses: cargo kani
+# Run one harness: cargo kani --harness <name>
+# Docs: https://model-checking.github.io/kani/
+
+[workspace]
+
+[[harnesses]]
+name      = "pcr_bank_default_is_all_zeros"
+unwind    = 8
+
+[[harnesses]]
+name      = "nonce_ledger_rejects_duplicate"
+unwind    = 10
+
+[[harnesses]]
+name      = "policy_evaluation_is_deterministic"
+unwind    = 16
+
+[[harnesses]]
+name      = "cbor_serialization_is_deterministic"
+unwind    = 64

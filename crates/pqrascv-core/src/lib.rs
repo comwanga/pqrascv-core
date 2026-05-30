@@ -166,3 +166,8 @@ pub use policy::{HardwareBackendKind, PolicyEngineV2, PolicyRule};
 
 #[cfg(feature = "alloc")]
 pub use pki::{validate_chain, CertChain, DeviceCertificate, TrustAnchor};
+
+// ── Formal verification ───────────────────────────────────────────────────
+
+#[cfg(kani)]
+mod kani_proofs;
