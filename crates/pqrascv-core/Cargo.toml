@@ -30,7 +30,7 @@ software-rot-unsafe = []
 # Hardware backends (opt-in only)
 hardware-tpm = ["dep:tss-esapi"]
 dice         = []
-intel-tdx  = ["dep:libc"]
+intel-tdx  = ["dep:libc", "alloc"]
 amd-sev-snp = ["dep:libc", "alloc", "dep:p384", "dep:rsa"]
 op-tee = ["dep:libc"]
 apple-se = ["dep:security-framework"]
