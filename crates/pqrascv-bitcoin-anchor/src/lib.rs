@@ -30,6 +30,7 @@
 
 pub mod broadcast;
 pub mod builder;
+pub mod lifecycle;
 pub mod multi_source;
 pub mod oracle;
 
@@ -42,6 +43,7 @@ pub use broadcast::{
 pub use builder::{
     AnchorBuilder, AnchorTx, BuildError, ANCHOR_TX_LOCKTIME, ANCHOR_TX_VERSION,
 };
+pub use lifecycle::{AnchorLifecycle, LifecycleError};
 pub use multi_source::MultiSourceHeaderOracle;
 pub use oracle::{validate_chain, FixtureHeaderOracle, HeaderOracle, OracleError, RETARGET_INTERVAL};
 
