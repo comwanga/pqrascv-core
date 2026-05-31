@@ -90,9 +90,14 @@ impl OperationSet {
     }
 
     /// Returns `true` if `op` is in the set.
+    ///
+    /// Uses a linear scan rather than `binary_search`: deserialization
+    /// (`#[derive(Deserialize)]`) fills `ops` in the JSON's order, which is not
+    /// guaranteed sorted, so a binary search would be incorrect on
+    /// operator-authored config. The set has at most five elements.
     #[must_use]
     pub fn contains(&self, op: Operation) -> bool {
-        self.ops.binary_search(&op).is_ok()
+        self.ops.contains(&op)
     }
 
     /// Returns `true` if no operations are granted.
