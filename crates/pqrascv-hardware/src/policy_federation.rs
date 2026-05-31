@@ -24,13 +24,14 @@
 //!
 //! # Approval Identity and Membership Validation
 //!
-//! `add_approval` accepts any string — **no cryptographic proof** is required
-//! that the caller actually controls the identity they claim. However,
-//! `try_finalize` validates that all counted approvals belong to registered
-//! federation members; approvals from IDs not present in `federation.members`
-//! are ignored when computing the approval count. Cryptographic approval
-//! signatures (e.g., each verifier signs the epoch ID with its ML-DSA key)
-//! remain a future hardening step.
+//! Cryptographically authenticated approvals are recorded via
+//! [`FederatedPolicyEpoch::add_signed_approval`]: each [`SignedApproval`] carries
+//! an ML-DSA-65 signature over the canonical approval payload, verified against
+//! the member's `public_key` before it is recorded, and **re-verified** in
+//! `try_finalize`. Only signature-verified member approvals count toward quorum
+//! — unsigned approvals recorded via the legacy [`FederatedPolicyEpoch::add_approval`]
+//! never count. Phantom (non-member) IDs are excluded regardless. See
+//! [`crate::federation_auth`] for the signing scheme.
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
