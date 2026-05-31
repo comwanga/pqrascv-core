@@ -30,6 +30,18 @@ pub mod trust_store;
 pub use trust_store::TrustStore;
 
 #[cfg(feature = "alloc")]
+pub mod key_provider;
+#[cfg(feature = "alloc")]
+pub use key_provider::{KeyHandle, KeyProvider, SoftwareKeyProvider};
+
+#[cfg(feature = "alloc")]
+pub mod rotation;
+#[cfg(feature = "alloc")]
+pub use rotation::{
+    begin_trust_anchor_rotation, carry_forward_revocations, rolled_over_ca_key, OverlapWindow,
+};
+
+#[cfg(feature = "alloc")]
 extern crate alloc;
 
 #[cfg(feature = "alloc")]
