@@ -38,9 +38,9 @@
 //! server restart: a replay after restart still conflicts with the live row and
 //! is rejected. This satisfies the contract's crash-recovery requirement.
 
+use postgres::{Client, NoTls};
 use pqrascv_core::error::PqRascvError;
 use pqrascv_core::nonce::{InMemoryNonceLedger, NonceHandle, NonceLedger};
-use postgres::{Client, NoTls};
 
 /// PostgreSQL-backed distributed [`NonceLedger`].
 pub struct PostgresNonceLedger {

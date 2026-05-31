@@ -41,13 +41,13 @@ pub mod backends;
 pub use broadcast::{
     retry_broadcast, BroadcastError, Broadcaster, FeeRate, MockBroadcaster, RetryConfig,
 };
-pub use builder::{
-    AnchorBuilder, AnchorTx, BuildError, ANCHOR_TX_LOCKTIME, ANCHOR_TX_VERSION,
-};
+pub use builder::{AnchorBuilder, AnchorTx, BuildError, ANCHOR_TX_LOCKTIME, ANCHOR_TX_VERSION};
 pub use finality::{Anchorable, FederationCheckpoint, ProvenanceAnchor};
 pub use lifecycle::{AnchorLifecycle, LifecycleError};
 pub use multi_source::MultiSourceHeaderOracle;
-pub use oracle::{validate_chain, FixtureHeaderOracle, HeaderOracle, OracleError, RETARGET_INTERVAL};
+pub use oracle::{
+    validate_chain, FixtureHeaderOracle, HeaderOracle, OracleError, RETARGET_INTERVAL,
+};
 
 // Re-export the reused core commitment type for convenience so downstream users
 // need only depend on this crate at the boundary.

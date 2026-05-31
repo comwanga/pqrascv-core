@@ -57,7 +57,10 @@ impl core::fmt::Display for OracleError {
                 write!(f, "header at height {height} fails proof-of-work")
             }
             Self::ContinuityBroken { height } => {
-                write!(f, "header at height {height} does not link to its predecessor")
+                write!(
+                    f,
+                    "header at height {height} does not link to its predecessor"
+                )
             }
             Self::DifficultyUnstable { height } => {
                 write!(f, "difficulty changed mid-period at height {height}")

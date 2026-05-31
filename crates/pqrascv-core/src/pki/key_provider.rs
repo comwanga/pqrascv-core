@@ -220,8 +220,9 @@ impl SoftwareKeyProvider {
     /// Signs an empty probe is unnecessary; instead we expand the seed via the
     /// same path `generate_ml_dsa_keypair` uses. This is only reachable with
     /// `std` (keygen needs the OS RNG), so seed-import provides the public key.
-    fn vk_from_seed(seed: &SigningKeySeed) -> Result<[u8; ML_DSA_65_VERIFYING_KEY_SIZE], PqRascvError>
-    {
+    fn vk_from_seed(
+        seed: &SigningKeySeed,
+    ) -> Result<[u8; ML_DSA_65_VERIFYING_KEY_SIZE], PqRascvError> {
         use ml_dsa::signature::Keypair;
         use ml_dsa::{KeyGen, MlDsa65};
         let seed_b32 = ml_dsa::B32::from(*seed.as_bytes());
@@ -326,7 +327,9 @@ impl KeyProvider for SoftwareKeyProvider {
 #[cfg(all(test, feature = "alloc", feature = "std"))]
 mod tests {
     use super::*;
-    use crate::crypto::{generate_ml_dsa_keypair, CryptoBackend, MlDsaBackend, SIGNING_CONTEXT_CERT};
+    use crate::crypto::{
+        generate_ml_dsa_keypair, CryptoBackend, MlDsaBackend, SIGNING_CONTEXT_CERT,
+    };
 
     #[test]
     fn operations_require_open_session() {
@@ -435,7 +438,10 @@ mod tests {
             p.sign(h, b"x", SIGNING_CONTEXT_CERT),
             Err(PqRascvError::BackendUnavailable)
         ));
-        assert!(matches!(p.destroy(h), Err(PqRascvError::BackendUnavailable)));
+        assert!(matches!(
+            p.destroy(h),
+            Err(PqRascvError::BackendUnavailable)
+        ));
     }
 
     #[test]

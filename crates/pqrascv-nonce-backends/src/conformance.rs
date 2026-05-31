@@ -136,9 +136,7 @@ impl SharedMemoryNonceLedger {
 ///
 /// `NonceHandle` has no public constructor (single-issue is enforced at the
 /// type level), so we mint one via a throwaway core ledger.
-fn synthesize_handle(
-    nonce: [u8; 32],
-) -> Result<pqrascv_core::nonce::NonceHandle, PqRascvError> {
+fn synthesize_handle(nonce: [u8; 32]) -> Result<pqrascv_core::nonce::NonceHandle, PqRascvError> {
     use pqrascv_core::nonce::InMemoryNonceLedger;
     let mut tmp = InMemoryNonceLedger::default();
     tmp.register(nonce)
@@ -185,9 +183,13 @@ where
 {
     let mut ledger = make();
     let nonce = [0x01u8; 32];
-    let handle = ledger.register(nonce).expect("fresh register should succeed");
+    let handle = ledger
+        .register(nonce)
+        .expect("fresh register should succeed");
     assert_eq!(handle.as_bytes(), &nonce);
-    ledger.consume(&nonce).expect("first consume should succeed");
+    ledger
+        .consume(&nonce)
+        .expect("first consume should succeed");
 }
 
 /// (b) A second consume of the same nonce is rejected (single-use).

@@ -263,11 +263,9 @@ mod inner {
     const SGX_REPORT_DATA_OFFSET: usize = SGX_REPORT_BODY_LEN - 64; // 320
 
     /// OID `id-ecPublicKey` (1.2.840.10045.2.1) — PCK subject key type.
-    const ID_EC_PUBLIC_KEY: ObjectIdentifier =
-        ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
+    const ID_EC_PUBLIC_KEY: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
     /// OID `ecdsa-with-SHA256` (1.2.840.10045.4.3.2) — DCAP cert signature alg.
-    const ECDSA_WITH_SHA256: ObjectIdentifier =
-        ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.2");
+    const ECDSA_WITH_SHA256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.2");
 
     /// Errors from DCAP TD-Quote verification.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -385,8 +383,8 @@ mod inner {
             .signature
             .as_bytes()
             .ok_or(TdxVerifyError::ChainSignatureInvalid)?;
-        let sig = P256Signature::from_der(sig_der)
-            .map_err(|_| TdxVerifyError::ChainSignatureInvalid)?;
+        let sig =
+            P256Signature::from_der(sig_der).map_err(|_| TdxVerifyError::ChainSignatureInvalid)?;
         issuer
             .verify(&tbs_der, &sig)
             .map_err(|_| TdxVerifyError::ChainSignatureInvalid)
@@ -452,12 +450,10 @@ mod inner {
     /// each `CERTIFICATE` block) before calling this verifier — see the task
     /// caveats.
     fn parse_der_chain(der_blob: &[u8]) -> Result<Vec<Certificate>, TdxVerifyError> {
-        let mut reader =
-            der::SliceReader::new(der_blob).map_err(|_| TdxVerifyError::CertParse)?;
+        let mut reader = der::SliceReader::new(der_blob).map_err(|_| TdxVerifyError::CertParse)?;
         let mut certs = Vec::new();
         while !reader.is_finished() {
-            let cert =
-                Certificate::decode(&mut reader).map_err(|_| TdxVerifyError::CertParse)?;
+            let cert = Certificate::decode(&mut reader).map_err(|_| TdxVerifyError::CertParse)?;
             certs.push(cert);
         }
         if certs.is_empty() {
@@ -729,8 +725,8 @@ mod inner {
         // similar local names (leaf/intermediate/root keys); silence the noise.
         #![allow(clippy::similar_names, clippy::doc_markdown)]
         use super::*;
-        use p256::ecdsa::{signature::Signer as _, DerSignature, SigningKey};
         use der::asn1::BitString;
+        use p256::ecdsa::{signature::Signer as _, DerSignature, SigningKey};
         use std::str::FromStr as _;
         use x509_cert::certificate::{TbsCertificate, Version};
         use x509_cert::der::asn1::GeneralizedTime;
@@ -929,7 +925,9 @@ mod inner {
 
             // QE report signed by the PCK leaf key.
             let qe_sig: DerSignature = leaf_sk.sign(&qe_report);
-            let qe_sig_rs = P256Signature::from_der(qe_sig.as_bytes()).unwrap().to_bytes();
+            let qe_sig_rs = P256Signature::from_der(qe_sig.as_bytes())
+                .unwrap()
+                .to_bytes();
 
             // Assemble SigData.
             let mut sig_data = Vec::new();
@@ -972,8 +970,8 @@ mod inner {
         #[test]
         fn tdx_valid_quote_verifies() {
             let q = build_quote(None, None);
-            let v = verify_tdx_quote(&q.quote, &q.pinned_root, q.now)
-                .expect("valid quote must verify");
+            let v =
+                verify_tdx_quote(&q.quote, &q.pinned_root, q.now).expect("valid quote must verify");
             assert_eq!(v.mrtd, q.mrtd.to_vec());
             for (i, r) in q.rtmrs.iter().enumerate() {
                 assert_eq!(v.rtmrs[i], r.to_vec());

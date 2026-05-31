@@ -27,8 +27,8 @@
 
 use alloc::vec::Vec;
 
-use crate::federation_time::HybridLogicalClock;
 use crate::digest::TypedDigest;
+use crate::federation_time::HybridLogicalClock;
 
 /// ML-DSA-65 verifying-key length in bytes (FIPS 204 §5).
 pub const ML_DSA_65_VK_LEN: usize = 1952;
@@ -307,7 +307,12 @@ mod tests {
         let (_seed, vk) = keypair();
         assert!(!verify_ml_dsa(b"m", CTX_VOTE, &[], &[])); // empty key + sig
         assert!(!verify_ml_dsa(b"m", CTX_VOTE, &vk, &[0u8; 10])); // short sig
-        assert!(!verify_ml_dsa(b"m", CTX_VOTE, &[0u8; 10], &[0u8; ML_DSA_65_SIG_LEN]));
+        assert!(!verify_ml_dsa(
+            b"m",
+            CTX_VOTE,
+            &[0u8; 10],
+            &[0u8; ML_DSA_65_SIG_LEN]
+        ));
     }
 
     #[test]

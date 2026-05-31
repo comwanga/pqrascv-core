@@ -207,7 +207,10 @@ mod tests {
 
     /// Builds a federation of `n` members with real ML-DSA-65 keypairs, plus
     /// their signing seeds (indexed `v0..v{n-1}`).
-    fn make_signed_federation(n: usize, policy: QuorumPolicy) -> (VerifierFederation, Vec<[u8; 32]>) {
+    fn make_signed_federation(
+        n: usize,
+        policy: QuorumPolicy,
+    ) -> (VerifierFederation, Vec<[u8; 32]>) {
         let mut members = Vec::new();
         let mut seeds = Vec::new();
         for i in 0..n {
@@ -384,7 +387,7 @@ mod tests {
     #[test]
     fn non_member_votes_are_excluded() {
         let (fed, _s) = make_signed_federation(5, QuorumPolicy::Majority); // quorum = 3
-        // Non-members with arbitrary (here empty) signatures.
+                                                                           // Non-members with arbitrary (here empty) signatures.
         let votes = vec![
             VerifierVote {
                 verifier_id: "attacker-1".into(),

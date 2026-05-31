@@ -73,7 +73,11 @@ fn build_unsigned_appends_op_return_last() {
 fn build_unsigned_with_no_change_output_still_anchors() {
     let builder = AnchorBuilder::new();
     let anchor = builder
-        .build_unsigned(&AnchorCommitment::new([0x33; 32]), vec![dummy_input(0)], vec![])
+        .build_unsigned(
+            &AnchorCommitment::new([0x33; 32]),
+            vec![dummy_input(0)],
+            vec![],
+        )
         .expect("build");
     assert_eq!(anchor.tx.output.len(), 1);
     assert_eq!(anchor.op_return_vout, 0);
@@ -108,10 +112,18 @@ fn deterministic_txid_for_identical_inputs() {
     let builder = AnchorBuilder::new();
     let commitment = AnchorCommitment::new([0x77; 32]);
     let a = builder
-        .build_unsigned(&commitment, vec![dummy_input(3)], vec![change_output(10_000)])
+        .build_unsigned(
+            &commitment,
+            vec![dummy_input(3)],
+            vec![change_output(10_000)],
+        )
         .unwrap();
     let b = builder
-        .build_unsigned(&commitment, vec![dummy_input(3)], vec![change_output(10_000)])
+        .build_unsigned(
+            &commitment,
+            vec![dummy_input(3)],
+            vec![change_output(10_000)],
+        )
         .unwrap();
     assert_eq!(a.txid(), b.txid());
     assert_eq!(
@@ -125,12 +137,20 @@ fn deterministic_txid_for_identical_inputs() {
 fn tampering_commitment_changes_txid() {
     let builder = AnchorBuilder::new();
     let a = builder
-        .build_unsigned(&AnchorCommitment::new([0x01; 32]), vec![dummy_input(0)], vec![])
+        .build_unsigned(
+            &AnchorCommitment::new([0x01; 32]),
+            vec![dummy_input(0)],
+            vec![],
+        )
         .unwrap();
     let mut tampered = [0x01; 32];
     tampered[31] = 0x02; // flip one byte
     let b = builder
-        .build_unsigned(&AnchorCommitment::new(tampered), vec![dummy_input(0)], vec![])
+        .build_unsigned(
+            &AnchorCommitment::new(tampered),
+            vec![dummy_input(0)],
+            vec![],
+        )
         .unwrap();
     assert_ne!(a.txid(), b.txid(), "tampered commitment must change txid");
 }
@@ -157,7 +177,9 @@ fn artifact_helpers_all_reduce_to_same_tx_for_same_root() {
     let base = builder
         .build_unsigned_from_root(root, inputs(), vec![])
         .unwrap();
-    let attest = builder.anchor_attestation_batch(root, inputs(), vec![]).unwrap();
+    let attest = builder
+        .anchor_attestation_batch(root, inputs(), vec![])
+        .unwrap();
     let prov = builder.anchor_provenance(root, inputs(), vec![]).unwrap();
     let fed = builder
         .anchor_federation_checkpoint(root, inputs(), vec![])
@@ -191,7 +213,11 @@ fn txid_stable_across_segwit_signing() {
     // lets a non-custodial caller learn the txid before signing.
     let builder = AnchorBuilder::new();
     let anchor = builder
-        .build_unsigned(&AnchorCommitment::new([0x7c; 32]), vec![dummy_input(0)], vec![])
+        .build_unsigned(
+            &AnchorCommitment::new([0x7c; 32]),
+            vec![dummy_input(0)],
+            vec![],
+        )
         .unwrap();
     let before = anchor.txid();
 
@@ -200,5 +226,9 @@ fn txid_stable_across_segwit_signing() {
     w.push(vec![0xde, 0xad, 0xbe, 0xef]); // fake signature element
     signed.input[0].witness = w;
 
-    assert_eq!(before, signed.compute_txid(), "witness must not change txid");
+    assert_eq!(
+        before,
+        signed.compute_txid(),
+        "witness must not change txid"
+    );
 }

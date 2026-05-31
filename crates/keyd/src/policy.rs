@@ -169,8 +169,8 @@ impl Policy {
     /// Returns [`PolicyError::Io`] if the file cannot be read, or
     /// [`PolicyError::Parse`] if its contents are not valid policy JSON.
     pub fn from_json_file(path: impl AsRef<std::path::Path>) -> Result<Self, PolicyError> {
-        let raw = std::fs::read_to_string(path.as_ref())
-            .map_err(|e| PolicyError::Io(e.to_string()))?;
+        let raw =
+            std::fs::read_to_string(path.as_ref()).map_err(|e| PolicyError::Io(e.to_string()))?;
         Self::from_json(&raw)
     }
 

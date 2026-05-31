@@ -24,7 +24,11 @@ fn sample_tx(seed: u8) -> bitcoin::Transaction {
         script_pubkey: ScriptBuf::from_bytes(vec![0x00, 0x14, seed, seed, seed]),
     };
     AnchorBuilder::new()
-        .build_unsigned(&AnchorCommitment::new([seed; 32]), vec![input], vec![change])
+        .build_unsigned(
+            &AnchorCommitment::new([seed; 32]),
+            vec![input],
+            vec![change],
+        )
         .unwrap()
         .tx
 }
@@ -136,8 +140,8 @@ fn fee_estimate_unavailable_is_an_error() {
 fn no_retry_config_makes_exactly_one_attempt() {
     let mock = MockBroadcaster::failing(1);
     let tx = sample_tx(6);
-    let err = retry_broadcast(RetryConfig::no_retry(), || mock.broadcast(&tx), |_ms| {})
-        .unwrap_err();
+    let err =
+        retry_broadcast(RetryConfig::no_retry(), || mock.broadcast(&tx), |_ms| {}).unwrap_err();
     assert!(err.is_transient());
     assert_eq!(mock.attempt_count(), 1);
 }

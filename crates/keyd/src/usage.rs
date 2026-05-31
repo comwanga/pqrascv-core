@@ -59,7 +59,10 @@ impl UsageTracker {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let entry = guard.entry(key.to_string()).or_default();
-        *entry.per_operation.entry(op.as_str().to_string()).or_insert(0) += 1;
+        *entry
+            .per_operation
+            .entry(op.as_str().to_string())
+            .or_insert(0) += 1;
         entry.total += 1;
         entry.last_used_unix_ms = Some(ts_unix_ms);
     }

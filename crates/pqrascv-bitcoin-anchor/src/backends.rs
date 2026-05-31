@@ -229,7 +229,9 @@ impl Broadcaster for Esplora {
             .map_err(|e| BroadcastError::Transient(format!("esplora fee decode: {e}")))?;
         // Map is { "<target>": sat_per_vb }. Pick the closest target <= request,
         // else the smallest available target.
-        let obj = v.as_object().ok_or(BroadcastError::FeeEstimationUnavailable)?;
+        let obj = v
+            .as_object()
+            .ok_or(BroadcastError::FeeEstimationUnavailable)?;
         let mut best: Option<(u16, f64)> = None;
         for (k, val) in obj {
             if let (Ok(t), Some(rate)) = (k.parse::<u16>(), val.as_f64()) {
@@ -381,8 +383,7 @@ fn btc_per_kvb_to_sat_per_vb(btc_per_kvb: f64) -> FeeRate {
 /// Minimal base64 (standard alphabet) for HTTP Basic auth, avoiding an extra
 /// dependency.
 fn base64_basic(user: &str, pass: &str) -> String {
-    const ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let input = format!("{user}:{pass}");
     let bytes = input.as_bytes();
     let mut out = String::new();
@@ -432,6 +433,9 @@ mod tests {
     #[test]
     fn base64_basic_matches_known_vector() {
         // "Aladdin:open sesame" => well-known RFC 7617 example.
-        assert_eq!(base64_basic("Aladdin", "open sesame"), "QWxhZGRpbjpvcGVuIHNlc2FtZQ==");
+        assert_eq!(
+            base64_basic("Aladdin", "open sesame"),
+            "QWxhZGRpbjpvcGVuIHNlc2FtZQ=="
+        );
     }
 }

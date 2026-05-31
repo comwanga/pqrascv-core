@@ -185,11 +185,13 @@ impl AnchorBuilder {
         // The OP_RETURN is the last output. A transaction can never carry close
         // to u32::MAX outputs (Bitcoin consensus limits dwarf that), so this
         // conversion cannot realistically fail.
-        let op_return_vout =
-            u32::try_from(output.len() - 1).expect("output index fits in u32");
+        let op_return_vout = u32::try_from(output.len() - 1).expect("output index fits in u32");
 
         // Defensive: exactly one OP_RETURN must be present.
-        let op_return_count = output.iter().filter(|o| o.script_pubkey.is_op_return()).count();
+        let op_return_count = output
+            .iter()
+            .filter(|o| o.script_pubkey.is_op_return())
+            .count();
         if op_return_count != 1 {
             return Err(BuildError::MultipleOpReturn);
         }

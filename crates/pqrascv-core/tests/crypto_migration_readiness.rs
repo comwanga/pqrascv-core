@@ -15,8 +15,8 @@
 
 use pqrascv_core::cose_sign::{CoseSign1, ML_DSA_65_ALG_ID};
 use pqrascv_core::crypto::{
-    generate_ml_dsa_keypair, pub_key_id, CryptoBackend, MlDsaBackend, SIGNING_CONTEXT_QUOTE,
-    ML_DSA_65_SEED_SIZE, ML_DSA_65_SIGNATURE_SIZE, ML_DSA_65_VERIFYING_KEY_SIZE,
+    generate_ml_dsa_keypair, pub_key_id, CryptoBackend, MlDsaBackend, ML_DSA_65_SEED_SIZE,
+    ML_DSA_65_SIGNATURE_SIZE, ML_DSA_65_VERIFYING_KEY_SIZE, SIGNING_CONTEXT_QUOTE,
 };
 use pqrascv_core::quote::PROTOCOL_VERSION;
 
@@ -44,7 +44,11 @@ fn generated_keypair_matches_locked_sizes() {
     assert_eq!(vk.len(), ML_DSA_65_VERIFYING_KEY_SIZE);
 
     let sig = MlDsaBackend
-        .sign(b"migration-readiness", seed.as_bytes(), SIGNING_CONTEXT_QUOTE)
+        .sign(
+            b"migration-readiness",
+            seed.as_bytes(),
+            SIGNING_CONTEXT_QUOTE,
+        )
         .expect("sign");
     assert_eq!(sig.as_ref().len(), ML_DSA_65_SIGNATURE_SIZE);
 }

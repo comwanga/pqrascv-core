@@ -138,12 +138,16 @@ impl AuditSink for FileAuditSink {
     fn record(&self, record: &AuditRecord) -> Result<(), AuditError> {
         use std::io::Write;
 
-        let mut line = serde_json::to_string(record).map_err(|e| AuditError::Write(e.to_string()))?;
+        let mut line =
+            serde_json::to_string(record).map_err(|e| AuditError::Write(e.to_string()))?;
         line.push('\n');
 
         // Poisoned lock just means a prior writer panicked; the file is still
         // usable, so recover the guard rather than propagating the panic.
-        let _guard = self.lock.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _guard = self
+            .lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         let mut opts = std::fs::OpenOptions::new();
         opts.create(true).append(true);
@@ -220,8 +224,14 @@ mod tests {
     fn memory_sink_captures_records_in_order() {
         let sink = MemoryAuditSink::new();
         assert!(sink.is_empty());
-        sink.record(&AuditRecord::now(1000, "k", Operation::Sign, Outcome::Allowed, None))
-            .unwrap();
+        sink.record(&AuditRecord::now(
+            1000,
+            "k",
+            Operation::Sign,
+            Outcome::Allowed,
+            None,
+        ))
+        .unwrap();
         sink.record(&AuditRecord::now(
             1001,
             "k",
@@ -242,10 +252,22 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("audit.log");
         let sink = FileAuditSink::new(&path);
-        sink.record(&AuditRecord::now(1000, "k", Operation::Sign, Outcome::Allowed, None))
-            .unwrap();
-        sink.record(&AuditRecord::now(0, "k2", Operation::Generate, Outcome::Error, None))
-            .unwrap();
+        sink.record(&AuditRecord::now(
+            1000,
+            "k",
+            Operation::Sign,
+            Outcome::Allowed,
+            None,
+        ))
+        .unwrap();
+        sink.record(&AuditRecord::now(
+            0,
+            "k2",
+            Operation::Generate,
+            Outcome::Error,
+            None,
+        ))
+        .unwrap();
 
         let contents = std::fs::read_to_string(&path).unwrap();
         let lines: Vec<&str> = contents.lines().collect();

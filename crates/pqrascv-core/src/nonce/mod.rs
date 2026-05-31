@@ -549,7 +549,10 @@ mod tests {
         // now=1_059 is within registered_at(1_000)+ttl(60)=1_060.
         ledger.consume_at(&nonce, 1_059).unwrap();
         // Replay still rejected.
-        assert_eq!(ledger.consume_at(&nonce, 1_059), Err(PqRascvError::InvalidNonce));
+        assert_eq!(
+            ledger.consume_at(&nonce, 1_059),
+            Err(PqRascvError::InvalidNonce)
+        );
     }
 
     #[test]

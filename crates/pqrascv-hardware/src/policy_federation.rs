@@ -157,7 +157,12 @@ impl FederatedPolicyEpoch {
             self.previous_epoch,
             &approval.verifier_id,
         );
-        if !verify_ml_dsa(&payload, CTX_APPROVAL, &member.public_key, &approval.signature) {
+        if !verify_ml_dsa(
+            &payload,
+            CTX_APPROVAL,
+            &member.public_key,
+            &approval.signature,
+        ) {
             return Err(FederatedPolicyError::InvalidApprovalSignature {
                 verifier_id: approval.verifier_id.clone(),
             });
@@ -619,7 +624,7 @@ mod tests {
         let mut epoch = FederatedPolicyEpoch::new(1, 1000, None);
         epoch.add_approval("v0".into()).unwrap(); // unsigned
         epoch.add_approval("v1".into()).unwrap(); // unsigned
-        // Both are members and would satisfy quorum if counted — but they aren't.
+                                                  // Both are members and would satisfy quorum if counted — but they aren't.
         assert!(matches!(
             epoch.try_finalize(&fed).unwrap_err(),
             FederatedPolicyError::QuorumNotReached {

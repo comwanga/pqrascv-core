@@ -90,7 +90,8 @@ mod redis_live {
         assert_eq!(l.consume(&nonce), Err(PqRascvError::InvalidNonce));
         std::thread::sleep(std::time::Duration::from_millis(1_500));
         // After the 1s Redis EX expiry, the key is gone — consumable again.
-        l.consume(&nonce).expect("nonce re-consumable after TTL expiry");
+        l.consume(&nonce)
+            .expect("nonce re-consumable after TTL expiry");
     }
 }
 

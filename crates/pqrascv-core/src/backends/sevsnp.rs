@@ -788,8 +788,7 @@ mod inner {
             ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.10");
         const ID_EC_PUBLIC_KEY: ObjectIdentifier =
             ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
-        const SECP_384_R1: ObjectIdentifier =
-            ObjectIdentifier::new_unwrap("1.3.132.0.34");
+        const SECP_384_R1: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.132.0.34");
         const PSS_SALT_LEN: usize = 48;
 
         /// Deterministic, reproducible RNG for fast RSA key generation in tests.

@@ -414,7 +414,12 @@ mod tests {
         (fed, seeds)
     }
 
-    fn sign_quorum(seed: &[u8; 32], quorum_id: &str, sh: &crate::digest::TypedDigest, vid: &str) -> Vec<u8> {
+    fn sign_quorum(
+        seed: &[u8; 32],
+        quorum_id: &str,
+        sh: &crate::digest::TypedDigest,
+        vid: &str,
+    ) -> Vec<u8> {
         sign_ml_dsa(&quorum_payload(quorum_id, sh, vid), CTX_QUORUM, seed).unwrap()
     }
 
