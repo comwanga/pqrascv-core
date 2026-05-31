@@ -28,6 +28,10 @@ bitcoin = { version = "0.32", default-features = false, features = ["std"] }
 # package name `pqrascv-bitcoin-anchor`). Reused, never forked.
 pqrascv-bitcoin-anchor = { path = "../bitcoin-anchor", default-features = false, features = ["std"] }
 
+# SHA3-256 for canonical finality-commitment roots, matching the core
+# aggregator's quote-hash convention.
+sha3 = { workspace = true }
+
 # Live-network-only deps (optional).
 # `json` enables `send_json`/`into_json`; default TLS gives HTTPS for Esplora.
 ureq       = { version = "2", optional = true, features = ["json"] }

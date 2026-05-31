@@ -143,6 +143,21 @@ impl<B: Broadcaster, O: HeaderOracle> AnchorLifecycle<B, O> {
         Ok(AnchorBuilder::new().build_unsigned(commitment, inputs, change)?)
     }
 
+    /// **create** for any [`Anchorable`](crate::finality::Anchorable) artifact —
+    /// a federation checkpoint (7F) or provenance record (7G). Computes its
+    /// canonical commitment and builds the unsigned anchor transaction.
+    ///
+    /// # Errors
+    /// [`LifecycleError::Build`] if the transaction cannot be assembled.
+    pub fn create_anchor_for(
+        &self,
+        item: &impl crate::finality::Anchorable,
+        inputs: Vec<TxIn>,
+        change: Vec<TxOut>,
+    ) -> Result<AnchorTx, LifecycleError> {
+        self.create_anchor(&item.anchor_commitment(), inputs, change)
+    }
+
     /// **broadcast** — submits a (caller-signed) transaction idempotently with
     /// bounded retry on transient failures, returning its txid.
     ///
