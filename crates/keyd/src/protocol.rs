@@ -30,6 +30,11 @@ pub enum StatusCode {
     AlreadyExists = 2,
     SigningError = 3,
     InternalError = 4,
+    /// Authorization denied by policy (default-deny or missing per-key grant).
+    ///
+    /// Additive: existing clients that only test `status == 0` for success are
+    /// unaffected; a denied request simply reports a non-zero status as before.
+    Denied = 5,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

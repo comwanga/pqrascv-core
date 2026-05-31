@@ -6,10 +6,13 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 
-use crate::keystore::{KeyStore, KeyStoreError};
+use crate::authz::Authorizer;
 use crate::protocol::{encode_response, Request, Response, StatusCode};
 
 // SAFETY: getuid(2) is always safe — no invalid states, no side effects.
+// Only referenced by the smoke test now that per-key ACLs (not a server-UID
+// match) make the authorization decision.
+#[cfg(test)]
 fn server_uid() -> u32 {
     extern "C" {
         fn getuid() -> u32;
@@ -18,13 +21,16 @@ fn server_uid() -> u32 {
 }
 
 pub struct Server {
-    store: Arc<KeyStore>,
+    authz: Arc<Authorizer>,
 }
 
 impl Server {
-    pub fn new(store: KeyStore) -> Self {
+    /// Builds a server from a fully-wired [`Authorizer`] (policy + audit +
+    /// usage + keystore).
+    #[must_use]
+    pub fn new(authz: Authorizer) -> Self {
         Self {
-            store: Arc::new(store),
+            authz: Arc::new(authz),
         }
     }
 
@@ -39,26 +45,21 @@ impl Server {
 
         loop {
             let (stream, _) = listener.accept().await?;
-            // Reject connections from any UID other than our own.
-            let own_uid = server_uid();
-            match stream.peer_cred() {
-                Ok(cred) if cred.uid() != own_uid => {
-                    tracing::warn!(
-                        peer_uid = cred.uid(),
-                        server_uid = own_uid,
-                        "rejected connection from unexpected uid"
-                    );
-                    continue;
-                }
+            // Coarse first gate: read the authenticated peer UID via SO_PEERCRED.
+            // We no longer require it to equal the server UID — per-key ACLs in
+            // the Authorizer make the fine-grained decision. A failure to read
+            // peer credentials is fatal-to-the-connection (we cannot identify a
+            // principal, so default-deny by refusing to serve).
+            let peer_uid = match stream.peer_cred() {
+                Ok(cred) => cred.uid(),
                 Err(e) => {
                     tracing::warn!("failed to read peer credentials, rejecting: {e}");
                     continue;
                 }
-                Ok(_) => {} // same UID — allow
-            }
-            let store = Arc::clone(&self.store);
+            };
+            let authz = Arc::clone(&self.authz);
             tokio::spawn(async move {
-                if let Err(e) = handle_connection(stream, store).await {
+                if let Err(e) = handle_connection(stream, peer_uid, &authz).await {
                     tracing::warn!("connection error: {e}");
                 }
             });
@@ -66,7 +67,11 @@ impl Server {
     }
 }
 
-async fn handle_connection(mut stream: UnixStream, store: Arc<KeyStore>) -> std::io::Result<()> {
+async fn handle_connection(
+    mut stream: UnixStream,
+    peer_uid: u32,
+    authz: &Authorizer,
+) -> std::io::Result<()> {
     loop {
         let mut len_buf = [0u8; 4];
         if stream.read_exact(&mut len_buf).await.is_err() {
@@ -93,100 +98,12 @@ async fn handle_connection(mut stream: UnixStream, store: Arc<KeyStore>) -> std:
             }
         };
 
-        let resp = dispatch(req, &store);
+        // All authorization, audit logging, and usage tracking happen inside the
+        // Authorizer. `peer_uid` is the principal from SO_PEERCRED.
+        let resp = authz.handle(peer_uid, &req);
         stream.write_all(&encode_response(&resp).unwrap()).await?;
     }
     Ok(())
-}
-
-fn dispatch(req: Request, store: &KeyStore) -> Response {
-    match req.request_type {
-        1 => match store.generate(&req.label) {
-            Ok(vk) => Response {
-                status: StatusCode::Ok as u8,
-                payload: vk,
-            },
-            Err(KeyStoreError::AlreadyExists(_)) => Response {
-                status: StatusCode::AlreadyExists as u8,
-                payload: vec![],
-            },
-            Err(e) => {
-                tracing::error!("generate error: {e}");
-                Response {
-                    status: StatusCode::InternalError as u8,
-                    payload: vec![],
-                }
-            }
-        },
-        2 => match store.public_key(&req.label) {
-            Ok(vk) => Response {
-                status: StatusCode::Ok as u8,
-                payload: vk,
-            },
-            Err(KeyStoreError::NotFound(_)) => Response {
-                status: StatusCode::NotFound as u8,
-                payload: vec![],
-            },
-            Err(e) => {
-                tracing::error!("export error: {e}");
-                Response {
-                    status: StatusCode::InternalError as u8,
-                    payload: vec![],
-                }
-            }
-        },
-        3 => match store.sign(&req.label, &req.payload) {
-            Ok(sig) => Response {
-                status: StatusCode::Ok as u8,
-                payload: sig,
-            },
-            Err(KeyStoreError::NotFound(_)) => Response {
-                status: StatusCode::NotFound as u8,
-                payload: vec![],
-            },
-            Err(e) => {
-                tracing::error!("sign error: {e}");
-                Response {
-                    status: StatusCode::SigningError as u8,
-                    payload: vec![],
-                }
-            }
-        },
-        4 => match store.rotate(&req.label) {
-            Ok(vk) => Response {
-                status: StatusCode::Ok as u8,
-                payload: vk,
-            },
-            Err(e) => {
-                tracing::error!("rotate error: {e}");
-                Response {
-                    status: StatusCode::InternalError as u8,
-                    payload: vec![],
-                }
-            }
-        },
-        5 => match store.delete(&req.label) {
-            Ok(()) => Response {
-                status: StatusCode::Ok as u8,
-                payload: vec![],
-            },
-            Err(KeyStoreError::NotFound(_)) => Response {
-                status: StatusCode::NotFound as u8,
-                payload: vec![],
-            },
-            Err(e) => {
-                tracing::error!("delete error: {e}");
-                Response {
-                    status: StatusCode::InternalError as u8,
-                    payload: vec![],
-                }
-            }
-        },
-        _ => Response {
-            status: StatusCode::InternalError as u8,
-            payload: vec![],
-        },
-    }
 }
 
 #[cfg(test)]

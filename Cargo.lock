@@ -1603,6 +1603,7 @@ dependencies = [
  "ciborium",
  "pqrascv-core",
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
  "tokio",
