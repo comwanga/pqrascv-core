@@ -5,6 +5,9 @@
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
+// The `vec!` macro is in the std prelude but not the bare no_std+alloc prelude.
+#[cfg(all(feature = "alloc", not(feature = "std")))]
+use alloc::vec;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 

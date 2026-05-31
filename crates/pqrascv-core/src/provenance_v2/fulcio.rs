@@ -11,6 +11,10 @@ extern crate alloc;
 
 #[cfg(feature = "alloc")]
 use alloc::string::String;
+// `ToString` is in the std prelude but not the bare no_std+alloc prelude.
+// Imported by name (not `as _`) because it's used as a path: `ToString::to_string`.
+#[cfg(all(feature = "alloc", not(feature = "std")))]
+use alloc::string::ToString;
 
 use crate::error::PqRascvError;
 
