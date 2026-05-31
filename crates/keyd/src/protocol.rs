@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(test)]
 #[repr(u8)]
+#[allow(dead_code)] // documents the protocol request bytes; tests construct a subset
 pub enum RequestType {
     GenerateKeypair = 1,
     ExportPublicKey = 2,

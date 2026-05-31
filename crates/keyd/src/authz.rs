@@ -58,7 +58,7 @@ impl Authorizer {
     }
 
     /// Read-only access to the usage tracker (for query endpoints / monitoring).
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[allow(dead_code)] // monitoring accessor; not exercised by the current test set
     #[must_use]
     pub fn usage(&self) -> &UsageTracker {
         &self.usage

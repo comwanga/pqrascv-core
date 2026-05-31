@@ -24,7 +24,7 @@ pub enum Outcome {
 
 impl Outcome {
     /// Stable lowercase name.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[allow(dead_code)] // intentional helper; not every build path exercises it
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
