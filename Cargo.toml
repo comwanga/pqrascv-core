@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/pqrascv-core",
+    "crates/pqrascv-nonce-backends",
     "crates/verifier",
     "crates/cli",
     "crates/bitcoin-anchor",

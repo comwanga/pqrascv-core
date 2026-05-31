@@ -37,15 +37,49 @@
 //! persistent store — Redis, PostgreSQL, or equivalent. The trait requires only
 //! two methods; the implementation is straightforward.
 //!
-//! There is intentionally no built-in distributed backend in this crate. A
-//! shared store implementation must match your infrastructure's durability and
-//! consistency model.
+//! The `pqrascv-nonce-backends` crate provides reference Redis and PostgreSQL
+//! implementations of [`NonceLedger`] that satisfy the distributed and
+//! crash-recovery portions of this contract.
+//!
+//! # TTL & Crash-Recovery Contract
+//!
+//! A conforming [`NonceLedger`] implementation MUST uphold the following,
+//! which is exercised by the shared conformance suite in
+//! `pqrascv-nonce-backends`:
+//!
+//! 1. **Single-use.** A nonce registered via [`NonceLedger::register`] (or
+//!    [`register_with_ttl`](NonceLedger::register_with_ttl)) can be consumed at
+//!    most once. A second [`consume`](NonceLedger::consume) of the same nonce
+//!    MUST return [`PqRascvError::InvalidNonce`], even across concurrent handles
+//!    sharing the same store (distributed single-use).
+//!
+//! 2. **TTL eviction.** When a nonce is registered with a non-zero `ttl_secs`,
+//!    it expires once the supplied monotone clock advances strictly past
+//!    `registered_at + ttl_secs`. Consuming an expired (but never-consumed)
+//!    nonce MUST fail with [`PqRascvError::InvalidNonce`]; the same nonce value
+//!    MAY then be re-registered as if fresh. TTL is keyed on the caller-supplied
+//!    `now` ("now" seconds), which the caller derives from
+//!    [`ClockEvidence`] / a trusted clock — the ledger never reads a clock
+//!    itself, keeping the trait `no_std`-clean.
+//!
+//! 3. **Eviction bound.** An implementation MAY bound the consumed-nonce
+//!    history (see [`DEFAULT_MAX_CONSUMED`]). Eviction MUST be FIFO and MUST NOT
+//!    drop an entry that is still within its TTL window if a bounded entry is
+//!    available to evict instead is NOT required — bounded eviction is a memory
+//!    safeguard, and the security trade-off is documented per impl.
+//!
+//! 4. **Crash recovery.** A persistent-store implementation (Redis/Postgres)
+//!    MUST preserve the consumed/registered state across a process restart of
+//!    the ledger client: re-opening a ledger against the same store and
+//!    attempting to consume an already-consumed nonce MUST still be rejected.
+//!    [`InMemoryNonceLedger`] explicitly does NOT satisfy this (state is lost on
+//!    restart); persistent backends do.
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
 #[cfg(feature = "alloc")]
-use alloc::collections::{BTreeSet, VecDeque};
+use alloc::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::error::PqRascvError;
 
@@ -73,6 +107,23 @@ pub enum ClockEvidence {
     /// The verifier policy must explicitly set `allow_rtcless_devices = true`
     /// to accept these quotes.
     NoRtc,
+}
+
+impl ClockEvidence {
+    /// Returns the trusted Unix-seconds value when present.
+    ///
+    /// Returns `Some(secs)` for [`ClockEvidence::TrustedRtc`] and `None` for
+    /// [`ClockEvidence::NoRtc`]. Callers driving TTL on a [`NonceLedger`] supply
+    /// the returned value as the `now` parameter; when `None`, the caller must
+    /// fall back to a verifier-side trusted clock (the ledger never reads a
+    /// clock itself, keeping the trait `no_std`-clean).
+    #[must_use]
+    pub fn now_secs(&self) -> Option<u64> {
+        match self {
+            Self::TrustedRtc(secs) => Some(*secs),
+            Self::NoRtc => None,
+        }
+    }
 }
 
 // ── NonceHandle ───────────────────────────────────────────────────────────
@@ -141,6 +192,34 @@ pub trait NonceLedger {
     /// (collision — astronomically unlikely with a proper RNG).
     fn register(&mut self, nonce: [u8; 32]) -> Result<NonceHandle, PqRascvError>;
 
+    /// Registers a fresh nonce with a time-to-live, returning a handle.
+    ///
+    /// Identical to [`register`] except the nonce expires once the caller's
+    /// monotone clock advances strictly past `now + ttl_secs`. A `ttl_secs` of
+    /// `0` means "no TTL" — the nonce never expires on its own and behaves
+    /// exactly like [`register`]. `now` is a caller-supplied Unix-seconds value
+    /// (e.g. from [`ClockEvidence::now_secs`]); the ledger does not read a clock.
+    ///
+    /// The default implementation ignores TTL and delegates to [`register`], so
+    /// existing implementations remain valid. TTL-aware implementations
+    /// ([`InMemoryNonceLedger`] and the persistent backends) override this.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PqRascvError::InvalidNonce`] if the nonce is already registered
+    /// and still live (not expired).
+    ///
+    /// [`register`]: NonceLedger::register
+    fn register_with_ttl(
+        &mut self,
+        nonce: [u8; 32],
+        now: u64,
+        ttl_secs: u64,
+    ) -> Result<NonceHandle, PqRascvError> {
+        let _ = (now, ttl_secs);
+        self.register(nonce)
+    }
+
     /// Consumes a nonce by reference, marking it as used.
     ///
     /// Returns `Ok(())` if the nonce was registered and not yet consumed.
@@ -152,6 +231,28 @@ pub trait NonceLedger {
     ///
     /// [`consume_handle`]: NonceLedger::consume_handle
     fn consume(&mut self, nonce: &[u8; 32]) -> Result<(), PqRascvError>;
+
+    /// Consumes a nonce at a given point in time, honoring TTL expiry.
+    ///
+    /// Identical to [`consume`] except that an entry whose TTL has elapsed
+    /// (i.e. `now` is strictly past `registered_at + ttl_secs`) is treated as
+    /// already-evicted: it is removed and the call fails with
+    /// [`PqRascvError::InvalidNonce`]. `now` is a caller-supplied Unix-seconds
+    /// value; the ledger does not read a clock.
+    ///
+    /// The default implementation ignores `now` and delegates to [`consume`].
+    /// TTL-aware implementations override this.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PqRascvError::InvalidNonce`] if the nonce is unknown, already
+    /// consumed, or expired.
+    ///
+    /// [`consume`]: NonceLedger::consume
+    fn consume_at(&mut self, nonce: &[u8; 32], now: u64) -> Result<(), PqRascvError> {
+        let _ = now;
+        self.consume(nonce)
+    }
 
     /// Consumes a nonce by taking ownership of its handle.
     ///
@@ -198,7 +299,11 @@ pub const DEFAULT_MAX_CONSUMED: usize = 65_536;
 ///   oldest is evicted. See [`DEFAULT_MAX_CONSUMED`].
 #[cfg(feature = "alloc")]
 pub struct InMemoryNonceLedger {
-    pending: BTreeSet<[u8; 32]>,
+    /// Registered-but-unconsumed nonces mapped to their expiry deadline.
+    ///
+    /// The value is `Some(deadline_secs)` when a TTL was supplied, or `None`
+    /// for nonces registered without a TTL (never expire on their own).
+    pending: BTreeMap<[u8; 32], Option<u64>>,
     consumed: BTreeSet<[u8; 32]>,
     /// Insertion-order index into `consumed` for FIFO eviction.
     consumed_order: VecDeque<[u8; 32]>,
@@ -214,7 +319,7 @@ impl InMemoryNonceLedger {
     #[must_use]
     pub fn new(max_consumed: usize) -> Self {
         Self {
-            pending: BTreeSet::new(),
+            pending: BTreeMap::new(),
             consumed: BTreeSet::new(),
             consumed_order: VecDeque::new(),
             max_consumed: if max_consumed == 0 {
@@ -234,20 +339,17 @@ impl Default for InMemoryNonceLedger {
 }
 
 #[cfg(feature = "alloc")]
-impl NonceLedger for InMemoryNonceLedger {
-    fn register(&mut self, nonce: [u8; 32]) -> Result<NonceHandle, PqRascvError> {
-        if self.pending.contains(&nonce) || self.consumed.contains(&nonce) {
-            return Err(PqRascvError::InvalidNonce);
-        }
-        self.pending.insert(nonce);
-        Ok(NonceHandle { nonce })
+impl InMemoryNonceLedger {
+    /// Returns `true` if `deadline` indicates the nonce has expired at `now`.
+    ///
+    /// A nonce with no TTL (`None`) never expires. A TTL'd nonce expires once
+    /// `now` is strictly greater than its deadline.
+    fn is_expired(deadline: Option<u64>, now: u64) -> bool {
+        matches!(deadline, Some(deadline) if now > deadline)
     }
 
-    fn consume(&mut self, nonce: &[u8; 32]) -> Result<(), PqRascvError> {
-        if !self.pending.remove(nonce) {
-            // Either never registered, or already consumed (replay).
-            return Err(PqRascvError::InvalidNonce);
-        }
+    /// Inserts `nonce` into the consumed set, evicting FIFO when at capacity.
+    fn mark_consumed(&mut self, nonce: [u8; 32]) {
         // Evict the oldest consumed nonce when the cap is reached.
         // This bounds memory growth; see DEFAULT_MAX_CONSUMED for the
         // security trade-off with very old evicted nonces.
@@ -256,9 +358,77 @@ impl NonceLedger for InMemoryNonceLedger {
                 self.consumed.remove(&oldest);
             }
         }
-        self.consumed.insert(*nonce);
-        self.consumed_order.push_back(*nonce);
-        Ok(())
+        self.consumed.insert(nonce);
+        self.consumed_order.push_back(nonce);
+    }
+
+    /// Registers `nonce` with an optional expiry deadline.
+    fn register_inner(
+        &mut self,
+        nonce: [u8; 32],
+        deadline: Option<u64>,
+        now: u64,
+    ) -> Result<NonceHandle, PqRascvError> {
+        // An expired pending entry is treated as absent: it can be re-registered.
+        if let Some(&existing) = self.pending.get(&nonce) {
+            if !Self::is_expired(existing, now) {
+                return Err(PqRascvError::InvalidNonce);
+            }
+        }
+        if self.consumed.contains(&nonce) {
+            return Err(PqRascvError::InvalidNonce);
+        }
+        self.pending.insert(nonce, deadline);
+        Ok(NonceHandle { nonce })
+    }
+
+    /// Consumes `nonce`, treating any TTL-expired entry as already evicted.
+    fn consume_inner(&mut self, nonce: &[u8; 32], now: u64) -> Result<(), PqRascvError> {
+        match self.pending.remove(nonce) {
+            // Never registered, or already consumed (replay).
+            None => Err(PqRascvError::InvalidNonce),
+            // Expired before consumption — evicted, not consumed. The nonce is
+            // now re-registerable per the TTL contract.
+            Some(deadline) if Self::is_expired(deadline, now) => Err(PqRascvError::InvalidNonce),
+            Some(_) => {
+                self.mark_consumed(*nonce);
+                Ok(())
+            }
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl NonceLedger for InMemoryNonceLedger {
+    fn register(&mut self, nonce: [u8; 32]) -> Result<NonceHandle, PqRascvError> {
+        // No TTL and now=0: a never-expiring entry, equivalent to v1 behavior.
+        self.register_inner(nonce, None, 0)
+    }
+
+    fn register_with_ttl(
+        &mut self,
+        nonce: [u8; 32],
+        now: u64,
+        ttl_secs: u64,
+    ) -> Result<NonceHandle, PqRascvError> {
+        // ttl_secs == 0 means "no TTL"; otherwise the deadline saturates so a
+        // huge TTL never wraps.
+        let deadline = if ttl_secs == 0 {
+            None
+        } else {
+            Some(now.saturating_add(ttl_secs))
+        };
+        self.register_inner(nonce, deadline, now)
+    }
+
+    fn consume(&mut self, nonce: &[u8; 32]) -> Result<(), PqRascvError> {
+        // now=0 can never be "strictly past" a saturated deadline, so a
+        // non-TTL-aware caller never trips expiry.
+        self.consume_inner(nonce, 0)
+    }
+
+    fn consume_at(&mut self, nonce: &[u8; 32], now: u64) -> Result<(), PqRascvError> {
+        self.consume_inner(nonce, now)
     }
 }
 
@@ -367,6 +537,91 @@ mod tests {
         ledger.consume(&nonce).unwrap();
         // Replay attempt while nonce is still within the cap — must be rejected.
         assert_eq!(ledger.consume(&nonce), Err(PqRascvError::InvalidNonce));
+    }
+
+    // ── TTL semantics ─────────────────────────────────────────────────────
+
+    #[test]
+    fn ttl_nonce_consumable_before_expiry() {
+        let mut ledger = InMemoryNonceLedger::default();
+        let nonce = [0x10u8; 32];
+        ledger.register_with_ttl(nonce, 1_000, 60).unwrap();
+        // now=1_059 is within registered_at(1_000)+ttl(60)=1_060.
+        ledger.consume_at(&nonce, 1_059).unwrap();
+        // Replay still rejected.
+        assert_eq!(ledger.consume_at(&nonce, 1_059), Err(PqRascvError::InvalidNonce));
+    }
+
+    #[test]
+    fn ttl_nonce_rejected_after_expiry() {
+        let mut ledger = InMemoryNonceLedger::default();
+        let nonce = [0x11u8; 32];
+        ledger.register_with_ttl(nonce, 1_000, 60).unwrap();
+        // now=1_061 is strictly past the deadline 1_060: expired.
+        assert_eq!(
+            ledger.consume_at(&nonce, 1_061),
+            Err(PqRascvError::InvalidNonce)
+        );
+    }
+
+    #[test]
+    fn ttl_boundary_is_inclusive_of_deadline() {
+        let mut ledger = InMemoryNonceLedger::default();
+        let nonce = [0x12u8; 32];
+        ledger.register_with_ttl(nonce, 1_000, 60).unwrap();
+        // now == deadline (1_060): NOT strictly past, still live.
+        ledger.consume_at(&nonce, 1_060).unwrap();
+    }
+
+    #[test]
+    fn expired_nonce_is_reregisterable() {
+        let mut ledger = InMemoryNonceLedger::default();
+        let nonce = [0x13u8; 32];
+        ledger.register_with_ttl(nonce, 1_000, 60).unwrap();
+        // Expired consume evicts the entry.
+        assert_eq!(
+            ledger.consume_at(&nonce, 2_000),
+            Err(PqRascvError::InvalidNonce)
+        );
+        // Same value can be registered fresh after expiry-eviction.
+        ledger.register_with_ttl(nonce, 2_000, 60).unwrap();
+        ledger.consume_at(&nonce, 2_010).unwrap();
+    }
+
+    #[test]
+    fn expired_pending_can_be_reregistered_without_consume() {
+        let mut ledger = InMemoryNonceLedger::default();
+        let nonce = [0x14u8; 32];
+        ledger.register_with_ttl(nonce, 1_000, 10).unwrap();
+        // Re-register the same value after its TTL elapsed: allowed, the stale
+        // pending entry is overwritten.
+        ledger.register_with_ttl(nonce, 5_000, 10).unwrap();
+        ledger.consume_at(&nonce, 5_005).unwrap();
+    }
+
+    #[test]
+    fn zero_ttl_means_no_expiry() {
+        let mut ledger = InMemoryNonceLedger::default();
+        let nonce = [0x15u8; 32];
+        ledger.register_with_ttl(nonce, 1_000, 0).unwrap();
+        // Far-future now must not expire a no-TTL nonce.
+        ledger.consume_at(&nonce, u64::MAX).unwrap();
+    }
+
+    #[test]
+    fn consumed_nonce_not_resurrected_by_ttl() {
+        // A consumed nonce stays consumed regardless of TTL clock movement.
+        let mut ledger = InMemoryNonceLedger::default();
+        let nonce = [0x16u8; 32];
+        ledger.register_with_ttl(nonce, 1_000, 60).unwrap();
+        ledger.consume_at(&nonce, 1_010).unwrap();
+        // Even far in the future, replay rejected (consumed set has no TTL).
+        assert_eq!(
+            ledger.consume_at(&nonce, u64::MAX),
+            Err(PqRascvError::InvalidNonce)
+        );
+        // And re-registration is rejected because it is in the consumed set.
+        assert!(ledger.register_with_ttl(nonce, u64::MAX, 60).is_err());
     }
 
     // ── multi-node gap documentation test ────────────────────────────────

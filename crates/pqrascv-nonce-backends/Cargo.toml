@@ -1,0 +1,27 @@
+[package]
+name        = "pqrascv-nonce-backends"
+description = "Distributed replay-protection backends (Redis, PostgreSQL) implementing pqrascv-core's NonceLedger"
+publish     = false
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+authors.workspace      = true
+license.workspace      = true
+repository.workspace   = true
+
+[features]
+default = ["redis-backend", "postgres-backend"]
+redis-backend    = ["dep:redis"]
+postgres-backend = ["dep:postgres"]
+# Live-server tests against real Redis/Postgres. Gated AND env-var driven
+# (REDIS_URL / POSTGRES_URL); skipped by default so `cargo test` is green
+# with no services running.
+integration-tests = []
+
+[dependencies]
+pqrascv-core = { path = "../pqrascv-core", default-features = false, features = ["std", "alloc"] }
+redis    = { version = "0.27", optional = true }
+postgres = { version = "0.19", optional = true }
+
+[dev-dependencies]
+pqrascv-core = { path = "../pqrascv-core", features = ["std", "alloc"] }
