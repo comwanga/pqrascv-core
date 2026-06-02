@@ -34,6 +34,12 @@ allow = [
     "ISC",
     # webpki-roots (via sigstore-client → ureq). OSI-compatible permissive license.
     "CDLA-Permissive-2.0",
+    # rust-bitcoin tree (bitcoin, secp256k1, bitcoin_hashes, base58ck, bitcoin-io,
+    # bitcoin-units, hex-conservative; via pqrascv-bitcoin-broadcast). Public-domain
+    # dedication, FSF Free/Libre.
+    "CC0-1.0",
+    # hex_lit (via the bitcoin crate). Permissive MIT variant (+ no-false-attribs).
+    "MITNFA",
 ]
 # Confidence threshold for license detection (0.0–1.0).
 confidence-threshold = 0.8
