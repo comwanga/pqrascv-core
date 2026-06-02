@@ -46,7 +46,8 @@ pub use finality::{Anchorable, FederationCheckpoint, ProvenanceAnchor};
 pub use lifecycle::{AnchorLifecycle, LifecycleError};
 pub use multi_source::MultiSourceHeaderOracle;
 pub use oracle::{
-    validate_chain, FixtureHeaderOracle, HeaderOracle, OracleError, RETARGET_INTERVAL,
+    validate_chain, validate_chain_with_params, validate_retarget, FixtureHeaderOracle,
+    HeaderOracle, OracleError, RETARGET_INTERVAL,
 };
 
 // Re-export the reused core commitment type for convenience so downstream users

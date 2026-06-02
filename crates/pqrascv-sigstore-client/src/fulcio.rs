@@ -44,6 +44,7 @@ fn map_ureq_err(e: ureq::Error) -> SigstoreClientError {
 /// Request a short-lived signing certificate from Fulcio.
 ///
 /// Returns the PEM certificate chain (leaf cert is `[0]`).
+#[tracing::instrument(skip_all, err)]
 pub fn request_signing_cert(
     base_url: &str,
     id_token: &str,

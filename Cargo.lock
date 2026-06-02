@@ -1835,7 +1835,7 @@ dependencies = [
 
 [[package]]
 name = "pqrascv-bitcoin-anchor"
-version = "1.0.0-rc.5"
+version = "1.0.0-rc.6"
 dependencies = [
  "ciborium",
  "serde",
@@ -1846,7 +1846,7 @@ dependencies = [
 
 [[package]]
 name = "pqrascv-bitcoin-broadcast"
-version = "1.0.0-rc.5"
+version = "1.0.0-rc.6"
 dependencies = [
  "bitcoin",
  "pqrascv-bitcoin-anchor",
@@ -1858,7 +1858,7 @@ dependencies = [
 
 [[package]]
 name = "pqrascv-cli"
-version = "1.0.0-rc.5"
+version = "1.0.0-rc.6"
 dependencies = [
  "anyhow",
  "clap 4.6.0",
@@ -1867,11 +1867,12 @@ dependencies = [
  "pqrascv-core",
  "pqrascv-verifier",
  "sha3 0.10.8",
+ "tempfile",
 ]
 
 [[package]]
 name = "pqrascv-core"
-version = "1.0.0-rc.5"
+version = "1.0.0-rc.6"
 dependencies = [
  "base64",
  "ciborium",
@@ -1899,7 +1900,7 @@ dependencies = [
 
 [[package]]
 name = "pqrascv-ffi"
-version = "1.0.0-rc.5"
+version = "1.0.0-rc.6"
 dependencies = [
  "cbindgen",
  "pqrascv-core",
@@ -1907,7 +1908,7 @@ dependencies = [
 
 [[package]]
 name = "pqrascv-hardware"
-version = "1.0.0-rc.5"
+version = "1.0.0-rc.6"
 dependencies = [
  "chacha20poly1305",
  "ciborium",
@@ -1929,7 +1930,7 @@ dependencies = [
 
 [[package]]
 name = "pqrascv-keyd"
-version = "1.0.0-rc.5"
+version = "1.0.0-rc.6"
 dependencies = [
  "anyhow",
  "ciborium",
@@ -1946,7 +1947,7 @@ dependencies = [
 
 [[package]]
 name = "pqrascv-nonce-backends"
-version = "1.0.0-rc.5"
+version = "1.0.0-rc.6"
 dependencies = [
  "postgres",
  "pqrascv-core",
@@ -1955,7 +1956,7 @@ dependencies = [
 
 [[package]]
 name = "pqrascv-python"
-version = "1.0.0-rc.5"
+version = "1.0.0-rc.6"
 dependencies = [
  "pqrascv-core",
  "pqrascv-verifier",
@@ -1964,7 +1965,7 @@ dependencies = [
 
 [[package]]
 name = "pqrascv-sigstore-client"
-version = "1.0.0-rc.5"
+version = "1.0.0-rc.6"
 dependencies = [
  "base64",
  "hex",
@@ -1973,12 +1974,13 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "tracing",
  "ureq",
 ]
 
 [[package]]
 name = "pqrascv-verifier"
-version = "1.0.0-rc.5"
+version = "1.0.0-rc.6"
 dependencies = [
  "ciborium",
  "getrandom 0.4.2",
@@ -1987,6 +1989,7 @@ dependencies = [
  "serde",
  "sha3 0.10.8",
  "subtle",
+ "tracing",
 ]
 
 [[package]]

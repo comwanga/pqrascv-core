@@ -17,6 +17,7 @@ pub struct SignedArtifact {
 }
 
 /// Sign an artifact and submit to Rekor.
+#[tracing::instrument(skip_all, err)]
 pub fn sign_and_log(
     config: &WorkflowConfig,
     artifact_sha256: &[u8; 32],

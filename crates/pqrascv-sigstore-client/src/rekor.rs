@@ -63,6 +63,7 @@ pub struct RekorInclusionProof {
 }
 
 /// Fetch a Rekor log entry by log index.
+#[tracing::instrument(skip_all, err)]
 pub fn get_entry_by_index(
     base_url: &str,
     log_index: i64,
@@ -97,6 +98,7 @@ pub fn entry_integrated_time(entry: &RekorEntry) -> i64 {
 }
 
 /// Submit a `hashedrekord` entry to Rekor.
+#[tracing::instrument(skip_all, err)]
 pub fn submit_hashedrekord(
     base_url: &str,
     artifact_sha256: &[u8; 32],
