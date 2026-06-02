@@ -52,4 +52,4 @@ validation. No new architecture.
 - [~] #3 Hardware-attestation vendor fidelity — **partial.** TDX PEM `cert_data` support **done** (real Intel quotes parse). Still pending: SEV-SNP RSASSA-PSS param parsing/assertion; BasicConstraints/KeyUsage + AMD-TCB/Intel-QE-identity extension checks; real-vendor-vector confirmation (blocked on a real AMD/Intel quote).
 - [ ] #4 HSM (cryptoki/SoftHSM)
 - [ ] #5 CLI + binding test coverage
-- [ ] #6 Bitcoin retarget + BIP157/158
+- [~] #6 Bitcoin retarget + BIP157/158 — **retarget done; BIP157/158 deferred.** Difficulty-retarget recomputation at epoch boundaries implemented (`validate_retarget` / `validate_chain_with_params`, rust-bitcoin's adjustment rule), closing the Phase 7 stretch gap. **BIP157/158 deferred:** compact block *filters* are a distinct concern from header retrieval (don't fit the `HeaderOracle` trait); warrants a focused effort over rust-bitcoin's `bip158` module rather than a rushed add.
