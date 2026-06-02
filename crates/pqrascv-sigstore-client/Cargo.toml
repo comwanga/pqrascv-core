@@ -5,7 +5,9 @@ edition.workspace      = true
 rust-version.workspace = true
 authors.workspace      = true
 license.workspace      = true
+repository.workspace   = true
 description   = "HTTP client for Sigstore (Rekor, Fulcio) — end-to-end signing workflow for pqrascv"
+readme        = "../../README.md"
 
 [dependencies]
 serde.workspace = true
