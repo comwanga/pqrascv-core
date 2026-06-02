@@ -18,10 +18,10 @@ validation. No new architecture.
 |---|-----------|------------------|--------|
 | 1 | **Observability + replay-safe verifier** — `tracing` in verifier & sigstore client; verifier consumes the nonce ledger so replay can't be skipped | Windows-feasible | **✅ done** |
 | 2 | **Live CI lanes** — ephemeral Redis/Postgres for `pqrascv-nonce-backends`; Bitcoin regtest/signet for the anchor lifecycle | needs Linux + services | pending |
-| 3 | **Hardware-attestation fidelity** — parse/assert RSASSA-PSS params; validate cert extensions (BasicConstraints/KeyUsage, AMD TCB, Intel QE); PEM `cert_data`; confirm ABI vs a real vendor vector | code/synthetic: Windows-feasible; real-vector: blocked | pending |
-| 4 | **HSM** — a `cryptoki` (PKCS#11) `KeyProvider` validated against SoftHSM | needs SoftHSM | pending |
-| 5 | **Test-coverage gaps** — CLI test harness (0 tests today); FFI/Python cross-language integration tests | CLI: Windows-feasible; bindings: partial | pending |
-| 6 | **Bitcoin completeness** — full difficulty-retarget recomputation; BIP157/158 oracle | Windows-feasible | pending |
+| 3 | **Hardware-attestation fidelity** — parse/assert RSASSA-PSS params; validate cert extensions (BasicConstraints/KeyUsage, AMD TCB, Intel QE); PEM `cert_data`; confirm ABI vs a real vendor vector | code/synthetic: Windows-feasible; real-vector: blocked | **◑ partial** (TDX PEM done) |
+| 4 | **HSM** — a `cryptoki` (PKCS#11) `KeyProvider` validated against SoftHSM | needs SoftHSM | deferred |
+| 5 | **Test-coverage gaps** — CLI test harness (0 tests today); FFI/Python cross-language integration tests | CLI: Windows-feasible; bindings: partial | **✅ done** (CLI) |
+| 6 | **Bitcoin completeness** — full difficulty-retarget recomputation; BIP157/158 oracle | Windows-feasible | **◑ partial** (retarget done) |
 
 ## Sequencing notes
 
@@ -48,8 +48,33 @@ validation. No new architecture.
 ## Progress tracker
 
 - [x] #1 Observability + replay-safe verifier
-- [ ] #2 Live CI lanes (Redis/Postgres/Bitcoin)
-- [~] #3 Hardware-attestation vendor fidelity — **partial.** TDX PEM `cert_data` support **done** (real Intel quotes parse). Still pending: SEV-SNP RSASSA-PSS param parsing/assertion; BasicConstraints/KeyUsage + AMD-TCB/Intel-QE-identity extension checks; real-vendor-vector confirmation (blocked on a real AMD/Intel quote).
-- [ ] #4 HSM (cryptoki/SoftHSM)
-- [ ] #5 CLI + binding test coverage
-- [~] #6 Bitcoin retarget + BIP157/158 — **retarget done; BIP157/158 deferred.** Difficulty-retarget recomputation at epoch boundaries implemented (`validate_retarget` / `validate_chain_with_params`, rust-bitcoin's adjustment rule), closing the Phase 7 stretch gap. **BIP157/158 deferred:** compact block *filters* are a distinct concern from header retrieval (don't fit the `HeaderOracle` trait); warrants a focused effort over rust-bitcoin's `bip158` module rather than a rushed add.
+- [~] #2 Live CI lanes (Redis/Postgres/Bitcoin) — **deferred** (needs a Linux/services runner)
+- [~] #3 Hardware-attestation vendor fidelity — **partial.** TDX PEM `cert_data` support **done** (real Intel quotes parse). Deferred: SEV-SNP RSASSA-PSS param parsing/assertion; BasicConstraints/KeyUsage + AMD-TCB/Intel-QE-identity extension checks; real-vendor-vector confirmation (blocked on a real AMD/Intel quote).
+- [~] #4 HSM (cryptoki/SoftHSM) — **deferred** (needs SoftHSM)
+- [x] #5 CLI test coverage — **done.** 4 end-to-end CLI integration tests (keygen→attest→verify roundtrip, wrong-nonce rejection, software-rot-acknowledged gate, malformed-quote rejection). FFI/Python binding integration tests deferred.
+- [~] #6 Bitcoin retarget + BIP157/158 — **retarget done; BIP157/158 deferred.** Difficulty-retarget recomputation at epoch boundaries implemented (`validate_retarget` / `validate_chain_with_params`, rust-bitcoin's adjustment rule), closing the Phase 7 stretch gap. BIP157/158 deferred: compact block *filters* are a distinct concern from header retrieval; warrants a focused effort over rust-bitcoin's `bip158` module.
+
+## Phase 9 outcome
+
+Delivered (all verified — tests, clippy, fmt; one accumulating branch
+`feat/operational-hardening`): **replay-safe verification** (verifier consumes
+the nonce ledger, fails closed), **observability instrumentation** (tracing in
+verifier + sigstore client), **TDX interoperability** (PEM `cert_data`),
+**Bitcoin consensus-fidelity** (difficulty-retarget recomputation), and
+**initial CLI test coverage**. This rounds the phase into a coherent hardening
+milestone rather than a set of infrastructure changes.
+
+## Deferred to a follow-on milestone (Phase 10)
+
+Explicitly out of scope for this PR — each needs a Linux/live runner, real
+vendor material, or a focused standalone effort:
+
+1. **Remaining attestation fidelity** — SEV-SNP RSASSA-PSS parameter parsing/
+   assertion; BasicConstraints/KeyUsage + AMD-TCB/Intel-QE-identity extension
+   checks.
+2. **BIP157/158 compact-filter oracle.**
+3. **Redis/Postgres live validation** for the nonce backends (gated tests exist).
+4. **Bitcoin-node validation** for the anchor lifecycle (regtest/signet).
+5. **SoftHSM validation** of a real `cryptoki` `KeyProvider`.
+6. **Real AMD/Intel attestation vectors** to confirm wire/ABI fidelity of the
+   SEV-SNP and TDX verifiers.
