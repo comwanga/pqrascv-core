@@ -441,20 +441,59 @@ mod inner {
     /// Splits a DER-concatenated cert blob into its constituent X.509
     /// certificates, in order (PCK leaf, intermediate CA, root CA).
     ///
-    /// DCAP's production `qe_cert_data` type 5 is concatenated PEM. The `der`
-    /// crate is built here WITHOUT its `pem` feature, so to avoid adding a
-    /// dependency/feature we standardize on DER-concatenated encoding: the
-    /// `cert_data` bytes are the three certs' DER one after another. The
-    /// synthetic test PKI emits the same encoding. A production deployment that
-    /// receives PEM `cert_data` must first strip the PEM armor (Base64-decode
-    /// each `CERTIFICATE` block) before calling this verifier — see the task
-    /// caveats.
+    /// Parses the PCK certificate chain from `qe_cert_data` (type 5).
+    ///
+    /// DCAP production deployments send the chain as concatenated **PEM**; this
+    /// is detected by the `-----BEGIN CERTIFICATE-----` armor and each block is
+    /// Base64-decoded then DER-parsed. For convenience (and the synthetic test
+    /// PKI) a **DER-concatenated** blob is also accepted. Either way the result
+    /// is the ordered chain: PCK leaf, intermediate CA, root CA.
+    fn parse_cert_chain(blob: &[u8]) -> Result<Vec<Certificate>, TdxVerifyError> {
+        const PEM_BEGIN: &[u8] = b"-----BEGIN CERTIFICATE-----";
+        if blob.windows(PEM_BEGIN.len()).any(|w| w == PEM_BEGIN) {
+            parse_pem_chain(blob)
+        } else {
+            parse_der_chain(blob)
+        }
+    }
+
+    /// Parses DER-concatenated certificates (one after another).
     fn parse_der_chain(der_blob: &[u8]) -> Result<Vec<Certificate>, TdxVerifyError> {
         let mut reader = der::SliceReader::new(der_blob).map_err(|_| TdxVerifyError::CertParse)?;
         let mut certs = Vec::new();
         while !reader.is_finished() {
             let cert = Certificate::decode(&mut reader).map_err(|_| TdxVerifyError::CertParse)?;
             certs.push(cert);
+        }
+        if certs.is_empty() {
+            return Err(TdxVerifyError::CertParse);
+        }
+        Ok(certs)
+    }
+
+    /// Parses concatenated PEM `CERTIFICATE` blocks, in order.
+    fn parse_pem_chain(blob: &[u8]) -> Result<Vec<Certificate>, TdxVerifyError> {
+        use base64::Engine as _;
+        const BEGIN: &str = "-----BEGIN CERTIFICATE-----";
+        const END: &str = "-----END CERTIFICATE-----";
+        let b64 = base64::engine::general_purpose::STANDARD;
+
+        let text = core::str::from_utf8(blob).map_err(|_| TdxVerifyError::CertParse)?;
+        let mut certs = Vec::new();
+        let mut rest = text;
+        while let Some(start) = rest.find(BEGIN) {
+            let after = &rest[start + BEGIN.len()..];
+            let end = after.find(END).ok_or(TdxVerifyError::CertParse)?;
+            // Strip all whitespace from the Base64 body before decoding.
+            let body: String = after[..end]
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect();
+            let der = b64
+                .decode(body.as_bytes())
+                .map_err(|_| TdxVerifyError::CertParse)?;
+            certs.push(Certificate::from_der(&der).map_err(|_| TdxVerifyError::CertParse)?);
+            rest = &after[end + END.len()..];
         }
         if certs.is_empty() {
             return Err(TdxVerifyError::CertParse);
@@ -568,7 +607,7 @@ mod inner {
 
         // 4. Parse the PCK chain and verify the QE report signature under the
         //    PCK leaf key.
-        let chain = parse_der_chain(cert_data)?;
+        let chain = parse_cert_chain(cert_data)?;
         if chain.len() < 3 {
             return Err(TdxVerifyError::CertParse);
         }
@@ -1051,6 +1090,72 @@ mod inner {
                 verify_tdx_quote(&quote, &q.pinned_root, q.now),
                 Err(TdxVerifyError::UnsupportedQuoteVersion)
             );
+        }
+
+        /// PEM-armor a DER certificate the way Intel's PCS does.
+        fn pem(der: &[u8]) -> String {
+            use base64::Engine as _;
+            let b64 = base64::engine::general_purpose::STANDARD.encode(der);
+            let mut s = String::from("-----BEGIN CERTIFICATE-----\n");
+            for chunk in b64.as_bytes().chunks(64) {
+                s.push_str(core::str::from_utf8(chunk).unwrap());
+                s.push('\n');
+            }
+            s.push_str("-----END CERTIFICATE-----\n");
+            s
+        }
+
+        // Real Intel DCAP quotes carry the PCK chain as concatenated PEM. Verify
+        // the PEM form parses to the same ordered certs as the DER-concatenated
+        // form — so the same chain flows through verify_tdx_quote either way.
+        #[test]
+        fn pem_and_der_cert_chains_parse_identically() {
+            let now: u64 = 1_700_000_000;
+            let w = validity(now - 1000, now + 1_000_000);
+            let root = signer(0x21);
+            let inter = signer(0x22);
+            let leaf = signer(0x23);
+            let root_der = make_cert(
+                1,
+                "CN=Root",
+                "CN=Root",
+                ec_p256_spki(&raw_xy(&root)),
+                w,
+                &root,
+            );
+            let inter_der = make_cert(
+                2,
+                "CN=Inter",
+                "CN=Root",
+                ec_p256_spki(&raw_xy(&inter)),
+                w,
+                &root,
+            );
+            let leaf_der = make_cert(
+                3,
+                "CN=Leaf",
+                "CN=Inter",
+                ec_p256_spki(&raw_xy(&leaf)),
+                w,
+                &inter,
+            );
+
+            let mut der_blob = Vec::new();
+            der_blob.extend_from_slice(&leaf_der);
+            der_blob.extend_from_slice(&inter_der);
+            der_blob.extend_from_slice(&root_der);
+
+            let pem_blob = [pem(&leaf_der), pem(&inter_der), pem(&root_der)]
+                .concat()
+                .into_bytes();
+
+            let from_der = parse_cert_chain(&der_blob).unwrap();
+            let from_pem = parse_cert_chain(&pem_blob).unwrap();
+            assert_eq!(from_der.len(), 3);
+            assert_eq!(from_pem.len(), 3);
+            for (d, p) in from_der.iter().zip(from_pem.iter()) {
+                assert_eq!(d.to_der().unwrap(), p.to_der().unwrap());
+            }
         }
     }
 }
