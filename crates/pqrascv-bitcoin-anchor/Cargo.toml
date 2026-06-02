@@ -1,0 +1,39 @@
+[package]
+name        = "pqrascv-bitcoin-broadcast"
+description  = "Non-custodial Bitcoin OP_RETURN anchor transaction builder and broadcaster for PQ-RASCV"
+publish      = false
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+authors.workspace      = true
+license.workspace      = true
+repository.workspace   = true
+
+[features]
+default = []
+# Enables live network broadcaster backends (Bitcoin Core RPC, Esplora REST,
+# Electrum). Pulls in a blocking HTTP/JSON stack. Live behaviour is additionally
+# gated behind environment variables so that even with this feature enabled the
+# default `cargo test` makes no network calls.
+live-network = ["dep:ureq", "dep:serde", "dep:serde_json"]
+
+[dependencies]
+# rust-bitcoin: transaction construction, script building, consensus encoding,
+# and txid computation. Pinned to the 0.32 series (MSRV 1.63, well within the
+# workspace MSRV of 1.85). We rely on rust-bitcoin for all Bitcoin consensus
+# details (serialization, OP_RETURN script shape, txid double-SHA256).
+bitcoin = { version = "0.32", default-features = false, features = ["std"] }
+
+# Existing no_std commitment/verification core (directory `crates/bitcoin-anchor`,
+# package name `pqrascv-bitcoin-anchor`). Reused, never forked.
+pqrascv-bitcoin-anchor = { path = "../bitcoin-anchor", default-features = false, features = ["std"] }
+
+# SHA3-256 for canonical finality-commitment roots, matching the core
+# aggregator's quote-hash convention.
+sha3 = { workspace = true }
+
+# Live-network-only deps (optional).
+# `json` enables `send_json`/`into_json`; default TLS gives HTTPS for Esplora.
+ureq       = { version = "2", optional = true, features = ["json"] }
+serde      = { version = "1", optional = true, features = ["derive"] }
+serde_json = { version = "1", optional = true }

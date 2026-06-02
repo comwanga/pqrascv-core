@@ -13,7 +13,7 @@ mod tests {
         ) {
             let genesis = TypedDigest::new(DigestAlgorithm::Sha3_256, seed);
 
-            let mut trace_a = AuditTrace::new(genesis.clone());
+            let mut trace_a = AuditTrace::new(genesis);
             let mut trace_b = AuditTrace::new(genesis);
 
             let ev1 = TraceEvent::QuorumFormed {

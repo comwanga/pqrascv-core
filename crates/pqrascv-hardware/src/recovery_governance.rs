@@ -96,7 +96,7 @@ mod tests {
     fn invalid_event_empty_partition_id() {
         let ev = RecoveryGovernanceEvent {
             action: RecoveryGovernanceAction::ApprovePartitionHealing {
-                partition_id: "".into(),
+                partition_id: String::new(),
             },
             authorizer_id: "gov-auth-1".into(),
             epoch: 5,
