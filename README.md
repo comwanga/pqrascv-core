@@ -44,10 +44,10 @@ post-quantum signed *and* supply-chain provenance-linked.
 
 ## Features
 
-- **Post-quantum by default** — ML-DSA-65 signatures; no RSA or ECDSA anywhere
+- **Post-quantum by default** — every PQ-RASCV quote, certificate, and CRL is ML-DSA-65 signed (no RSA/ECDSA in the protocol itself). The optional hardware-attestation backends necessarily verify the *vendor's* chains with their own algorithms (AMD/Intel RSA-PSS + ECDSA), gated behind the `amd-sev-snp`/`intel-tdx`/`tpm-crypto` features.
 - **Supply-chain provenance** — SLSA v1 predicates + SBOM hash inside every signed quote
 - **Device PKI** — CBOR-native certificate chains (Root CA → Intermediate → Device), CRL revocation, and trust anchor lifecycle management
-- **Six measurement backends** — Software SHA3-256, hardware TPM 2.0, DICE CDI, Intel TDX, AMD SEV-SNP, OP-TEE, Apple Secure Enclave
+- **Seven measurement backends** — Software SHA3-256, hardware TPM 2.0, DICE CDI, Intel TDX, AMD SEV-SNP, OP-TEE, Apple Secure Enclave
 - **`no_std + alloc`** — one API across Cortex-M4, RISC-V, WASM, and Linux
 - **Allocation-free measurement path** — `RoT::measure()` never touches the heap
 - **Replay protection** — verifier-supplied 32-byte nonce bound inside the signature
@@ -56,10 +56,10 @@ post-quantum signed *and* supply-chain provenance-linked.
 - **PQ transport layer** — Noise\_PQX key derivation + COSE Sign1 (RFC 9052) wrapping for ML-DSA-65 signed attestation frames
 - **Sigstore HTTP client** — `pqrascv-sigstore-client` provides Rekor log submission and Fulcio certificate issuance via `ureq`; powers the end-to-end `sign_and_log` workflow
 - **Key management daemon** — `pqrascv-keyd` stores ML-DSA-65 keypairs on disk (0o600, seed-only), rotates on demand, and serves signing requests over a Unix domain socket
-- **Python bindings** — `pqrascv-python` (PyO3 0.22) exposes `MlDsaKey` and `QuoteVerifier`; build with `maturin develop`
+- **Python bindings** — `pqrascv-python` (PyO3 0.24) exposes `MlDsaKey` and `QuoteVerifier`; build with `maturin develop`
 - **C FFI** — `pqrascv-ffi` exports `pqrascv_generate_keypair`, `pqrascv_sign`, `pqrascv_verify`; `cbindgen` generates `include/pqrascv.h`
 - **Formal verification** — four Kani model-checking harnesses cover PCR initialisation, nonce replay prevention, policy determinism, and CBOR roundtrip
-- **Bitcoin anchoring SDK** — `pqrascv-bitcoin-anchor` builds OP_RETURN payloads and verifies RFC 6962 Merkle + SPV inclusion proofs; requires operator-provided Bitcoin node for broadcast and confirmation
+- **Bitcoin anchoring** — `pqrascv-bitcoin-anchor` (`no_std`) builds OP_RETURN payloads and verifies RFC 6962 Merkle + SPV inclusion proofs; the companion `pqrascv-bitcoin-broadcast` crate adds the full non-custodial lifecycle (anchor-tx builder, idempotent broadcaster for Core/Esplora/Electrum, locally-validated multi-source header oracle with difficulty-retarget checks, confirmation tracking)
 
 ---
 
@@ -67,10 +67,10 @@ post-quantum signed *and* supply-chain provenance-linked.
 
 ```toml
 # std (default)
-pqrascv-core = "1.0.0-rc.5"
+pqrascv-core = "1.0.0-rc.6"
 
 # bare-metal — bring your own allocator
-pqrascv-core = { version = "1.0.0-rc.5", default-features = false, features = ["alloc"] }
+pqrascv-core = { version = "1.0.0-rc.6", default-features = false, features = ["alloc"] }
 ```
 
 ### CLI
@@ -471,7 +471,7 @@ Reads the SHA-256 PCR bank (PCRs 0–7) from a hardware or simulated TPM via
 [`tss-esapi`](https://crates.io/crates/tss-esapi) (TCG TSS2 ESAPI). Linux only.
 
 ```toml
-pqrascv-core = { version = "1.0.0-rc.5", features = ["hardware-tpm"] }
+pqrascv-core = { version = "1.0.0-rc.6", features = ["hardware-tpm"] }
 ```
 
 ```rust
@@ -494,7 +494,7 @@ CDI_attestation = SHA3-256( CDI ‖ "DICE-attest" ‖ SHA3-256(firmware) )
 ```
 
 ```toml
-pqrascv-core = { version = "1.0.0-rc.5", features = ["dice"] }
+pqrascv-core = { version = "1.0.0-rc.6", features = ["dice"] }
 ```
 
 ```rust
@@ -596,11 +596,11 @@ of captured quotes.
 
 ## Status
 
-**v1.0.0-rc.5** — API stabilizing.
+**v1.0.0-rc.6** — API stabilizing.
 
 | Implemented ✅ | Preview / Experimental 🔬 | Planned 🗺 |
 |----------------|---------------------------|------------|
-| ML-DSA-65 sign / verify | Sigstore `verify_all` (conditions 1–5, partial) | Stable 1.0 API (pending `ml-dsa` crate GA) |
+| ML-DSA-65 sign / verify | Sigstore `verify_all` (all 8 conditions; 1-hop Fulcio + SET-based Rekor — see `provenance_v2` docs) | Stable 1.0 API (pending `ml-dsa` crate GA) |
 | ML-KEM-768 encapsulation (PQ transport key type) | Intel TDX backend (`intel-tdx` feature) | Kubernetes admission webhook |
 | Noise\_PQX key derivation + COSE Sign1 (RFC 9052) | AMD SEV-SNP backend (`amd-sev-snp` feature) | Prometheus metrics |
 | Sigstore HTTP client (Rekor + Fulcio) | OP-TEE backend (`op-tee` feature) | |
@@ -615,12 +615,17 @@ of captured quotes.
 | Bitcoin OP_RETURN anchoring SDK (40-byte payload) | | |
 | RFC 6962 Merkle tree + SPV proofs | | |
 | ML-DSA-65 domain separation contexts | | |
+| Cryptographically-authenticated federation (signed approvals / votes / quorum certs / observer evidence) | | |
+| Replay-safe verification (`verify_cbor_consuming` consumes the nonce ledger) | | |
+| `tracing` instrumentation (verifier + sigstore client) | | |
+| Hardware remote attestation: SEV-SNP ARK→ASK→VCEK + TDX DCAP/PCK chains | | |
+| Bitcoin anchor lifecycle (build → broadcast → track → verify; header oracle + retarget) — `pqrascv-bitcoin-broadcast` | | |
 | CLI prover + verifier binary | | |
 | `pqrascv-keyd` key management daemon | | |
-| Python bindings (PyO3 0.22) | | |
+| Python bindings (PyO3 0.24) | | |
 | C FFI + `include/pqrascv.h` (cbindgen) | | |
 | Kani formal verification harnesses (4 proofs) | | |
-| Fuzz targets: CBOR, PKI chain, provenance bundle | | |
+| Fuzz targets (7): CBOR, PKI chain, policy eval, provenance bundle, federation, quote roundtrip, Bitcoin node | | |
 | Hardware provisioning scripts (SEV-SNP, TDX, TPM2) | | |
 
 ### Backend Maturity
@@ -630,8 +635,8 @@ of captured quotes.
 | `SoftwareRoT` | `software-rot-unsafe` | **Test / demo only** | No hardware boundary; measurements are caller-supplied. Requires `--software-rot-acknowledged` in CLI. |
 | TPM 2.0 | `hardware-tpm` | **Production** | Requires `tpm2-tss` system library. Use `tools/provision-tpm.sh` for initial AK setup. |
 | DICE CDI | `dice` | **Production** | Pure-Rust; suitable for MCU boot chains. |
-| Intel TDX | `intel-tdx` | **Experimental** | Linux kernel ≥ 5.19 with `/dev/tdx_guest`. Hardened per TDX 1.5 spec (REPORTDATA binding, debug-mode rejection, constant-time checks). Use `tools/provision-tdx.sh` to verify host. |
-| AMD SEV-SNP | `amd-sev-snp` | **Experimental** | Linux kernel ≥ 5.19 with `/dev/sev-guest`. Hardened: SnpPolicy bit positions, exitinfo2 check, constant-time REPORT_DATA binding. Use `tools/provision-sevsnp.sh`. |
+| Intel TDX | `intel-tdx` | **Experimental** | Linux kernel ≥ 5.19 with `/dev/tdx_guest`. Measurement: REPORTDATA binding, debug-mode rejection, constant-time checks. **Remote attestation:** DCAP v4 TD-Quote + QE binding + PCK chain to Intel SGX Root (`verify_tdx_quote`, PEM/DER cert_data). Real-vendor-vector confirmation pending. Use `tools/provision-tdx.sh`. |
+| AMD SEV-SNP | `amd-sev-snp` | **Experimental** | Linux kernel ≥ 5.19 with `/dev/sev-guest`. Measurement: SnpPolicy bits, exitinfo2 check, constant-time REPORT_DATA binding. **Remote attestation:** report ECDSA-P384 signature + ARK→ASK→VCEK RSA-PSS chain with pinned root (`verify_snp_attestation`). Real-vendor-vector confirmation pending. Use `tools/provision-sevsnp.sh`. |
 | OP-TEE | `op-tee` | **Experimental** | Linux only; `/dev/tee0` + `TEE_IOC_VERSION` ioctl. Requires OP-TEE OS on secure world. |
 | Apple Secure Enclave | `apple-se` | **Experimental** | macOS/iOS; `Security.framework`. PCR 0 reflects a per-session SE key — not stable across reboots. |
 
@@ -653,7 +658,7 @@ cargo audit
 Areas where contributions are especially valuable:
 
 - **Platform backends** — Live evidence acquisition on TDX/SEV-SNP (kernel ioctl paths), OP-TEE TA development, Apple SE production testing
-- **Sigstore full verification** — completing `verify_all` conditions 4–5 (Rekor entry content binding, certificate chain policy)
+- **Sigstore full verification** — extending `verify_all` beyond its current limits (multi-hop Fulcio intermediates, Merkle-path Rekor inclusion in addition to SET)
 - **Ecosystem integrations** — Kubernetes admission webhook, Prometheus metrics exporter
 - **Python/C bindings** — maturin wheel publishing pipeline, `pqrascv-keyd` client library for Python/C
 - **Stable 1.0** — tracking `ml-dsa` crate GA and removing the RC pin
