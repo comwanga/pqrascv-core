@@ -88,6 +88,7 @@ fuzz_target!(|data: &[u8]| {
             trusted: i < trusted_count,
             reasons: alloc::vec![VerificationDecisionReason::Success],
             warnings: alloc::vec![],
+            signature: alloc::vec::Vec::new(),
         })
         .collect();
 
@@ -104,6 +105,7 @@ fuzz_target!(|data: &[u8]| {
         approved_by: (0..approver_count)
             .map(|i| alloc::format!("v{}", i % fed.member_count()))
             .collect(),
+        signed_approvals: alloc::vec::Vec::new(),
         quorum_reached: false,
         created_at: 1_000_000,
         previous_epoch: None,
@@ -122,6 +124,7 @@ fuzz_target!(|data: &[u8]| {
     let epoch_a = FederatedPolicyEpoch {
         epoch_id: 1,
         approved_by: alloc::vec!["v0".into()],
+        signed_approvals: alloc::vec::Vec::new(),
         quorum_reached: false,
         created_at: 1_000_000,
         previous_epoch: None,
@@ -129,6 +132,7 @@ fuzz_target!(|data: &[u8]| {
     let epoch_b = FederatedPolicyEpoch {
         epoch_id: 1, // Same id — should trigger split-brain
         approved_by: alloc::vec!["v1".into()],
+        signed_approvals: alloc::vec::Vec::new(),
         quorum_reached: false,
         created_at: 1_000_001,
         previous_epoch: None,
@@ -136,6 +140,7 @@ fuzz_target!(|data: &[u8]| {
     let epoch_c = FederatedPolicyEpoch {
         epoch_id: 0, // Non-monotonic
         approved_by: alloc::vec!["v0".into()],
+        signed_approvals: alloc::vec::Vec::new(),
         quorum_reached: false,
         created_at: 999_999,
         previous_epoch: None,
