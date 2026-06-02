@@ -14,17 +14,20 @@
 //!    header's block hash, so the slice is a single connected chain.
 //! 3. **Difficulty stability** — `nBits` is constant within a 2016-block retarget
 //!    period and may change only at a period boundary (`height % 2016 == 0`).
+//! 4. **Difficulty retarget** — at a period boundary where the full closing epoch
+//!    is present in the slice, the new `nBits` must equal the value Bitcoin's
+//!    adjustment rule recomputes from the epoch's timespan (rust-bitcoin's
+//!    [`CompactTarget::from_header_difficulty_adjustment`]); see [`validate_retarget`].
 //!
-//! # What it does NOT (yet) enforce
+//! # Caveats
 //!
-//! Full difficulty-*retarget* recomputation (deriving the exact next-period
-//! target from the previous period's timespan, BIP-9 rules, median-time-past,
-//! and the testnet 20-minute exception) is a documented stretch goal. We enforce
-//! that difficulty is *stable within a period* and meets each header's claimed
-//! target — which already defeats a forged low-work chain — but we do not yet
-//! recompute that the boundary target is the arithmetically correct one.
+//! The retarget check runs only when the caller supplies a slice spanning the
+//! full closing epoch (a boundary without the period start is allowed but cannot
+//! be recomputed locally). The computation uses rust-bitcoin's mainnet rules; it
+//! does not model the testnet 20-minute minimum-difficulty exception.
 
 use bitcoin::block::Header;
+use bitcoin::consensus::params::{Params, MAINNET};
 use bitcoin::CompactTarget;
 
 /// Bitcoin difficulty retarget interval, in blocks.
@@ -44,6 +47,9 @@ pub enum OracleError {
     ContinuityBroken { height: u32 },
     /// Difficulty (`nBits`) changed inside a retarget period.
     DifficultyUnstable { height: u32 },
+    /// A retarget-boundary header's `nBits` does not equal the value the Bitcoin
+    /// difficulty-adjustment rule computes from the closing epoch's timespan.
+    DifficultyRetargetInvalid { height: u32 },
     /// Sources disagreed beyond the configured quorum (see [`crate::multi_source`]).
     NoQuorum,
 }
@@ -65,6 +71,12 @@ impl core::fmt::Display for OracleError {
             Self::DifficultyUnstable { height } => {
                 write!(f, "difficulty changed mid-period at height {height}")
             }
+            Self::DifficultyRetargetInvalid { height } => {
+                write!(
+                    f,
+                    "incorrect difficulty retarget at boundary height {height}"
+                )
+            }
             Self::NoQuorum => f.write_str("header sources did not reach quorum agreement"),
         }
     }
@@ -74,12 +86,30 @@ impl std::error::Error for OracleError {}
 
 /// Validates a contiguous slice of headers starting at `start_height`, without
 /// trusting the caller: every header must satisfy its own proof-of-work, link to
-/// its predecessor, and keep difficulty stable within each retarget period.
+/// its predecessor, keep difficulty stable within each retarget period, and — at
+/// a period boundary where the full closing epoch is present in the slice —
+/// match the **recomputed** retarget value (Bitcoin mainnet parameters).
+///
+/// For other networks use [`validate_chain_with_params`].
 ///
 /// # Errors
 ///
-/// Returns the first [`OracleError`] encountered (PoW, continuity, or difficulty).
+/// Returns the first [`OracleError`] encountered.
 pub fn validate_chain(headers: &[Header], start_height: u32) -> Result<(), OracleError> {
+    validate_chain_with_params(headers, start_height, &MAINNET)
+}
+
+/// Like [`validate_chain`] but with explicit consensus [`Params`], used for the
+/// difficulty-retarget recomputation at period boundaries.
+///
+/// # Errors
+///
+/// Returns the first [`OracleError`] encountered.
+pub fn validate_chain_with_params(
+    headers: &[Header],
+    start_height: u32,
+    params: &Params,
+) -> Result<(), OracleError> {
     for (i, header) in headers.iter().enumerate() {
         let height = start_height + i as u32;
 
@@ -96,11 +126,47 @@ pub fn validate_chain(headers: &[Header], start_height: u32) -> Result<(), Oracl
                 return Err(OracleError::ContinuityBroken { height });
             }
 
-            // 3. Difficulty stability: nBits may change only at a period boundary.
-            if height % RETARGET_INTERVAL != 0 && header.bits != prev.bits {
-                return Err(OracleError::DifficultyUnstable { height });
+            // 3. Difficulty.
+            if height % RETARGET_INTERVAL != 0 {
+                // Within a period: nBits must hold constant.
+                if header.bits != prev.bits {
+                    return Err(OracleError::DifficultyUnstable { height });
+                }
+            } else if i >= RETARGET_INTERVAL as usize {
+                // Retarget boundary with the full closing epoch present: the new
+                // nBits must equal the recomputed retarget value.
+                let epoch_first = &headers[i - RETARGET_INTERVAL as usize];
+                validate_retarget(epoch_first, prev, header, params, height)?;
             }
+            // A boundary without the full epoch in the slice: the change is
+            // allowed but cannot be recomputed here (the period start is absent).
         }
+    }
+    Ok(())
+}
+
+/// Verifies that `new_header`'s difficulty is the correct retarget for the epoch
+/// that closed with `epoch_last`, per Bitcoin's difficulty-adjustment rule.
+///
+/// `epoch_first` and `epoch_last` are the first and last headers of the closing
+/// 2016-block epoch (e.g. blocks 0 and 2015); `new_header` is the first block of
+/// the new epoch (e.g. block 2016). The nBits/timespan math is rust-bitcoin's
+/// [`CompactTarget::from_header_difficulty_adjustment`].
+///
+/// # Errors
+///
+/// [`OracleError::DifficultyRetargetInvalid`] if the recomputed bits do not match.
+pub fn validate_retarget(
+    epoch_first: &Header,
+    epoch_last: &Header,
+    new_header: &Header,
+    params: &Params,
+    height: u32,
+) -> Result<(), OracleError> {
+    let expected =
+        CompactTarget::from_header_difficulty_adjustment(*epoch_first, *epoch_last, params);
+    if new_header.bits != expected {
+        return Err(OracleError::DifficultyRetargetInvalid { height });
     }
     Ok(())
 }
@@ -348,6 +414,34 @@ mod tests {
         assert!(matches!(
             FixtureHeaderOracle::new(0, chain),
             Err(OracleError::ContinuityBroken { height: 1 })
+        ));
+    }
+
+    // Difficulty-retarget recomputation: at a period boundary the new nBits must
+    // equal the value Bitcoin's adjustment rule derives from the closing epoch's
+    // timespan. (PoW is a separate check; this tests the retarget value only,
+    // which is why un-mined headers are fine here.)
+    #[test]
+    fn validate_retarget_matches_recomputed_bits() {
+        let bits = CompactTarget::from_consensus(0x1d00_ffff);
+        let mut first = header(BlockHash::all_zeros(), bits, 0);
+        first.time = 1_000_000;
+        let mut last = header(BlockHash::all_zeros(), bits, 0);
+        last.time = 1_000_000 + 2015 * 600; // ~ideal two-week epoch
+
+        let expected = CompactTarget::from_header_difficulty_adjustment(first, last, &MAINNET);
+        let good = header(BlockHash::all_zeros(), expected, 0);
+        assert!(validate_retarget(&first, &last, &good, &MAINNET, 2016).is_ok());
+
+        // A header claiming a difficulty other than the recomputed one is rejected.
+        let bad = header(
+            BlockHash::all_zeros(),
+            CompactTarget::from_consensus(0x1b00_ffff),
+            0,
+        );
+        assert!(matches!(
+            validate_retarget(&first, &last, &bad, &MAINNET, 2016),
+            Err(OracleError::DifficultyRetargetInvalid { height: 2016 })
         ));
     }
 }
