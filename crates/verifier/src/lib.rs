@@ -16,6 +16,7 @@ use pqrascv_core::{
     config::PolicyConfig,
     crypto::{pub_key_id, CryptoBackend, MlDsaBackend, SIGNING_CONTEXT_QUOTE},
     error::PqRascvError,
+    nonce::NonceLedger,
     pki::revocation::VerifiedRevocationList,
     pki::{
         validate_chain, validate_chain_with_store, validate_hardware_identity, CertChain,
@@ -161,10 +162,11 @@ impl Verifier {
     ///
     /// # Replay Protection — Caller Obligation
     ///
-    /// This method does **not** consume from a [`NonceLedger`]. The caller is
-    /// responsible for calling `ledger.consume(&nonce)` or `ledger.consume_handle(handle)`
-    /// before or after this call. Omitting the consume step means the same nonce
-    /// can be presented again and will pass this check.
+    /// This method does **not** consume from a [`NonceLedger`], so on its own it
+    /// will accept the same nonce again. Prefer
+    /// [`verify_cbor_consuming`](Self::verify_cbor_consuming), which verifies and
+    /// consumes in one call so the replay gate cannot be forgotten. If you call
+    /// this method directly you must `ledger.consume(&nonce)` yourself.
     ///
     /// [`NonceLedger`]: pqrascv_core::nonce::NonceLedger
     ///
@@ -205,6 +207,54 @@ impl Verifier {
         now_secs: u64,
     ) -> Result<VerificationResult, PqRascvError> {
         self.verify_cbor(cbor, verifying_key, &challenge.nonce, now_secs)
+    }
+
+    /// Verifies a CBOR quote **and** consumes its nonce from `ledger`, enforcing
+    /// single-use replay protection in one call so it cannot be forgotten.
+    ///
+    /// The nonce is consumed only after the quote verifies, so a failed
+    /// verification does not burn the nonce. A replay — whose nonce the ledger
+    /// has already consumed — is rejected by the ledger's single-use guarantee,
+    /// so the call **fails closed**. Prefer this over
+    /// [`verify_cbor`](Self::verify_cbor) wherever a [`NonceLedger`] is available.
+    ///
+    /// # Errors
+    ///
+    /// Propagates any verification error, or the ledger error (typically
+    /// [`PqRascvError::InvalidNonce`]) if the nonce was already consumed or was
+    /// never registered.
+    ///
+    /// [`NonceLedger`]: pqrascv_core::nonce::NonceLedger
+    pub fn verify_cbor_consuming<L: NonceLedger>(
+        &self,
+        cbor: &[u8],
+        verifying_key: &[u8],
+        expected_nonce: &[u8; 32],
+        now_secs: u64,
+        ledger: &mut L,
+    ) -> Result<VerificationResult, PqRascvError> {
+        let result = self.verify_cbor(cbor, verifying_key, expected_nonce, now_secs)?;
+        // Single-use: consume after a successful verify. The ledger rejects a
+        // replayed (already-consumed) nonce, so this is the replay gate.
+        ledger.consume(expected_nonce)?;
+        Ok(result)
+    }
+
+    /// [`verify_with_challenge`](Self::verify_with_challenge) plus single-use
+    /// nonce consumption — see [`verify_cbor_consuming`](Self::verify_cbor_consuming).
+    ///
+    /// # Errors
+    ///
+    /// Same as [`verify_cbor_consuming`](Self::verify_cbor_consuming).
+    pub fn verify_with_challenge_consuming<L: NonceLedger>(
+        &self,
+        cbor: &[u8],
+        verifying_key: &[u8],
+        challenge: &Challenge,
+        now_secs: u64,
+        ledger: &mut L,
+    ) -> Result<VerificationResult, PqRascvError> {
+        self.verify_cbor_consuming(cbor, verifying_key, &challenge.nonce, now_secs, ledger)
     }
 
     /// Verifies a CBOR quote using a cryptographically-validated certificate chain.
@@ -427,6 +477,7 @@ mod tests {
     use pqrascv_core::{
         crypto::generate_ml_dsa_keypair,
         measurement::SoftwareRoT,
+        nonce::InMemoryNonceLedger,
         provenance::SlsaPredicateBuilder,
         quote::{generate_quote, QuoteTimestamp},
     };
@@ -476,6 +527,47 @@ mod tests {
 
         let result = verifier.verify_cbor(&cbor, &vk, &[0x00u8; 32], 1_700_000_600);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn verify_cbor_consuming_blocks_replay() {
+        let (_, vk, quote) = setup();
+        let verifier = Verifier::new(PolicyConfig::default());
+        let cbor = quote.to_cbor().unwrap();
+        let nonce = [0x77u8; 32];
+
+        let mut ledger = InMemoryNonceLedger::new(1024);
+        ledger.register(nonce).unwrap();
+
+        // First presentation: verifies and consumes the nonce.
+        assert!(verifier
+            .verify_cbor_consuming(&cbor, &vk, &nonce, 1_700_000_600, &mut ledger)
+            .is_ok());
+        // Replay of the same quote+nonce: verification still passes, but the
+        // ledger rejects the already-consumed nonce, so the call fails closed.
+        let replay = verifier.verify_cbor_consuming(&cbor, &vk, &nonce, 1_700_000_600, &mut ledger);
+        assert!(matches!(replay, Err(PqRascvError::InvalidNonce)), "{replay:?}");
+    }
+
+    #[test]
+    fn verify_cbor_consuming_does_not_burn_nonce_on_verify_failure() {
+        let (_, vk, quote) = setup();
+        let verifier = Verifier::new(PolicyConfig::default());
+        let cbor = quote.to_cbor().unwrap();
+        let nonce = [0x77u8; 32];
+
+        let mut ledger = InMemoryNonceLedger::new(1024);
+        ledger.register(nonce).unwrap();
+
+        // A wrong expected nonce fails verification BEFORE the consume step, so
+        // the legitimately-registered nonce remains available.
+        assert!(verifier
+            .verify_cbor_consuming(&cbor, &vk, &[0x00u8; 32], 1_700_000_600, &mut ledger)
+            .is_err());
+        // The real nonce is still consumable by the legitimate attempt.
+        assert!(verifier
+            .verify_cbor_consuming(&cbor, &vk, &nonce, 1_700_000_600, &mut ledger)
+            .is_ok());
     }
 
     #[test]
