@@ -236,7 +236,10 @@ impl Verifier {
         let result = self.verify_cbor(cbor, verifying_key, expected_nonce, now_secs)?;
         // Single-use: consume after a successful verify. The ledger rejects a
         // replayed (already-consumed) nonce, so this is the replay gate.
-        ledger.consume(expected_nonce)?;
+        if let Err(e) = ledger.consume(expected_nonce) {
+            tracing::warn!(error = %e, "nonce ledger rejected consume (replay or unregistered nonce)");
+            return Err(e);
+        }
         Ok(result)
     }
 
@@ -443,6 +446,11 @@ impl Verifier {
 
     /// Verifies an already-parsed [`AttestationQuote`]. Useful if you've already
     /// deserialized the CBOR yourself and don't want to do it twice.
+    ///
+    /// Emits a `tracing` span; verification failures are logged at error level
+    /// (via `instrument(err)`) and a success is logged at debug level, so an
+    /// operator with a subscriber installed gets per-verification observability.
+    #[tracing::instrument(skip_all, err)]
     pub fn verify_quote(
         &self,
         quote: &AttestationQuote,
@@ -463,6 +471,10 @@ impl Verifier {
         let ctx = PolicyContext::from_verified_quote(quote, None, None, now_secs, None);
         self.engine.evaluate(&ctx)?;
 
+        tracing::debug!(
+            event_counter = quote.body.measurements.event_counter,
+            "attestation quote verified"
+        );
         Ok(())
     }
 }

@@ -1973,6 +1973,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "tracing",
  "ureq",
 ]
 
@@ -1987,6 +1988,7 @@ dependencies = [
  "serde",
  "sha3 0.10.8",
  "subtle",
+ "tracing",
 ]
 
 [[package]]
