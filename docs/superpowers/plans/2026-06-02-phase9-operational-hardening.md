@@ -49,7 +49,7 @@ validation. No new architecture.
 
 - [x] #1 Observability + replay-safe verifier
 - [ ] #2 Live CI lanes (Redis/Postgres/Bitcoin)
-- [ ] #3 Hardware-attestation vendor fidelity
+- [~] #3 Hardware-attestation vendor fidelity — **partial.** TDX PEM `cert_data` support **done** (real Intel quotes parse). Still pending: SEV-SNP RSASSA-PSS param parsing/assertion; BasicConstraints/KeyUsage + AMD-TCB/Intel-QE-identity extension checks; real-vendor-vector confirmation (blocked on a real AMD/Intel quote).
 - [ ] #4 HSM (cryptoki/SoftHSM)
 - [ ] #5 CLI + binding test coverage
 - [ ] #6 Bitcoin retarget + BIP157/158
