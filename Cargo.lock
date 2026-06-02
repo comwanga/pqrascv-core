@@ -1867,6 +1867,7 @@ dependencies = [
  "pqrascv-core",
  "pqrascv-verifier",
  "sha3 0.10.8",
+ "tempfile",
 ]
 
 [[package]]
