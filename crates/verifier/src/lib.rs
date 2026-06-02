@@ -558,7 +558,10 @@ mod tests {
         // Replay of the same quote+nonce: verification still passes, but the
         // ledger rejects the already-consumed nonce, so the call fails closed.
         let replay = verifier.verify_cbor_consuming(&cbor, &vk, &nonce, 1_700_000_600, &mut ledger);
-        assert!(matches!(replay, Err(PqRascvError::InvalidNonce)), "{replay:?}");
+        assert!(
+            matches!(replay, Err(PqRascvError::InvalidNonce)),
+            "{replay:?}"
+        );
     }
 
     #[test]
