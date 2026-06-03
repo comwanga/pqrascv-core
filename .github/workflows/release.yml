@@ -74,17 +74,29 @@ jobs:
           publish_crate() {
             local pkg="$1"
             echo "Publishing $pkg …"
-            local out
-            out=$(cargo publish -p "$pkg" 2>&1)
-            local code=$?
+            # Capture cargo's output AND exit code without letting `set -e`
+            # (GitHub Actions runs `bash -eo pipefail`) abort the step on the
+            # bare assignment: the command substitution lives inside an `if`,
+            # which is exempt from errexit.
+            local out code
+            if out=$(cargo publish -p "$pkg" 2>&1); then
+              code=0
+            else
+              code=$?
+            fi
             echo "$out"
-            if [ $code -ne 0 ] && echo "$out" | grep -q "already exists on crates.io"; then
+            # Idempotent: a real `cargo publish` of an already-published version
+            # errors with "… is already uploaded"; the dry-run / index path says
+            # "already exists". Match either (case-insensitive) and treat as a
+            # successful skip so the workflow can be safely re-run.
+            if [ "$code" -ne 0 ] && echo "$out" | grep -qiE "already (uploaded|exists)"; then
               echo "  → $pkg already at this version, skipping."
               return 0
             fi
-            return $code
+            return "$code"
           }
 
+          # Publish in dependency order; each step is idempotent.
           # 1. No workspace deps
           publish_crate pqrascv-bitcoin-anchor
 
@@ -92,10 +104,13 @@ jobs:
           publish_crate pqrascv-core
 
           # 3. Depends on pqrascv-core
+          publish_crate pqrascv-sigstore-client
+
+          # 4. Depends on pqrascv-core
           publish_crate pqrascv-verifier
 
-          # 4. Depends on pqrascv-bitcoin-anchor
+          # 5. Depends on pqrascv-bitcoin-anchor
           publish_crate pqrascv-hardware
 
-          # 5. Depends on pqrascv-core + pqrascv-verifier
+          # 6. Depends on pqrascv-core + pqrascv-verifier
           publish_crate pqrascv-cli
