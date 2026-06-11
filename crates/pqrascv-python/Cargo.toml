@@ -9,7 +9,7 @@ description = "Python bindings for pqrascv-core (PyO3)"
 publish = false
 
 [lib]
-name       = "pqrascv"
+name       = "pqrascv_python"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
