@@ -239,12 +239,8 @@ mod inner {
     }
 }
 
-// ── Public re-export (only when feature is enabled) ─────────────────────────
-
 #[cfg(feature = "hardware-tpm")]
 pub use inner::TpmRoT;
-
-// ── Compile-time sentinel for non-TPM builds ─────────────────────────────────
 
 /// Placeholder used when the `hardware-tpm` feature is disabled.
 ///

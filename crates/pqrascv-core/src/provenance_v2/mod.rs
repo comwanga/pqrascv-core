@@ -65,8 +65,6 @@ use alloc::{string::String, vec::Vec};
 #[cfg(feature = "alloc")]
 use crate::error::PqRascvError;
 
-// ── SigstoreConfig ────────────────────────────────────────────────────────
-
 /// Configuration required to verify a Sigstore provenance bundle.
 ///
 /// All fields are mandatory. The verifier must supply explicit values —
@@ -103,8 +101,6 @@ pub struct SigstoreConfig {
     /// Set to 0 to require the entry to be in the past.
     pub max_clock_skew_secs: u64,
 }
-
-// ── VerifiedProvenance ────────────────────────────────────────────────────
 
 /// Proof that all 10 provenance invariant conditions have been satisfied.
 ///
@@ -164,8 +160,6 @@ impl VerifiedProvenance {
     }
 }
 
-// ── SigstoreBundle ────────────────────────────────────────────────────────
-
 /// A Sigstore bundle: CI signature + Rekor transparency log proof.
 #[cfg(feature = "alloc")]
 #[non_exhaustive]
@@ -191,8 +185,6 @@ pub struct SigstoreBundle {
     /// Checked first (condition 1) before trusting any other bundle field.
     pub predicate_hash: [u8; 32],
 }
-
-// ── ExternalProvenanceBundle ──────────────────────────────────────────────
 
 /// A CI-signed provenance bundle embedded in an attestation quote.
 ///
@@ -251,8 +243,6 @@ impl ExternalProvenanceBundle {
     pub fn builder_id(&self) -> &str {
         &self.predicate.builder_id
     }
-
-    // ── Private sub-checks (conditions 1–8) ──────────────────────────────
 
     /// Condition 1 — The provenance statement is cryptographically signed.
     ///
@@ -506,8 +496,6 @@ impl ExternalProvenanceBundle {
             .map_err(|_| PqRascvError::InvalidProvenance)
     }
 
-    // ── Public entry point ────────────────────────────────────────────────
-
     /// Verifies all 10 provenance invariant conditions atomically.
     ///
     /// All conditions must pass. The first failing condition causes an immediate
@@ -636,8 +624,6 @@ impl ExternalProvenanceBundle {
     }
 }
 
-// ── ProvenancePredicate ───────────────────────────────────────────────────
-
 /// SLSA v1 provenance predicate (in-toto format).
 ///
 /// This is the payload that the CI provider signs. The device embeds it
@@ -702,8 +688,6 @@ pub struct ProvenanceSubject {
     /// SHA3-256 digest of the artifact.
     pub digest_sha3_256: [u8; 32],
 }
-
-// ── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(all(test, feature = "alloc"))]
 mod tests {

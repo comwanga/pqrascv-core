@@ -14,13 +14,6 @@
 //! Certificates use a CBOR-native format (not X.509) to remain `no_std`-compatible
 //! and avoid ASN.1 parsing on embedded targets.
 //!
-//! # Audit Finding #4 Fix
-//!
-//! v1 had no PKI. The verifier accepted arbitrary public keys with no trust
-//! anchor. v2 requires every device key to be bound to a certificate chain
-//! rooted at an offline CA. The verifier rejects any quote whose signing key
-//! is not covered by a valid, unrevoked certificate chain.
-
 pub mod revocation;
 #[cfg(feature = "alloc")]
 pub use revocation::{RevocationEntry, RevocationList, RevocationReason, VerifiedRevocationList};
@@ -56,12 +49,8 @@ use crate::error::PqRascvError;
 #[cfg(feature = "alloc")]
 use sha3::{Digest, Sha3_256};
 
-// ── Certificate version ───────────────────────────────────────────────────
-
 /// Current PQ-RASCV certificate format version.
 pub const CERT_VERSION: u8 = 3;
-
-// ── Hardware identity binding ─────────────────────────────────────────────
 
 /// Identifies the hardware root that anchors a device's measurements.
 ///
@@ -81,8 +70,6 @@ pub enum HardwareIdentity {
     SevSnpMeasurement(#[serde(with = "serde_bytes")] Vec<u8>),
 }
 
-// ── Firmware policy constraint ────────────────────────────────────────────
-
 /// Firmware policy constraints embedded in a device certificate.
 ///
 /// The issuing CA encodes which firmware images this device is permitted to
@@ -96,8 +83,6 @@ pub struct FirmwarePolicyConstraint {
     /// Minimum SLSA level required for this device's quotes.
     pub min_slsa_level: u8,
 }
-
-// ── DeviceCertificate ─────────────────────────────────────────────────────
 
 /// A CBOR-native device identity certificate.
 ///
@@ -238,8 +223,6 @@ struct DeviceCertTbs<'a> {
     max_path_length: Option<u8>,
 }
 
-// ── CaPublicKey ───────────────────────────────────────────────────────────
-
 /// A CA's ML-DSA-65 verifying key with its validity window.
 #[cfg(feature = "alloc")]
 #[derive(Clone, Debug)]
@@ -268,8 +251,6 @@ impl CaPublicKey {
         now_secs >= self.not_before && now_secs <= self.not_after
     }
 }
-
-// ── TrustAnchor ───────────────────────────────────────────────────────────
 
 /// The offline root CA trust anchor.
 ///
@@ -341,8 +322,6 @@ impl TrustAnchor {
     }
 }
 
-// ── TrustAnchorInfo ───────────────────────────────────────────────────────
-
 /// Metadata about the trust anchor that validated a certificate chain.
 ///
 /// Embedded in [`CertChain`] so verification results carry full audit context.
@@ -358,8 +337,6 @@ pub struct TrustAnchorInfo {
     /// Unix seconds: anchor expires at this time.
     pub not_after: u64,
 }
-
-// ── CertChain ─────────────────────────────────────────────────────────────
 
 /// A validated certificate chain: root CA → [intermediate CAs] → device cert.
 ///
@@ -384,8 +361,6 @@ impl CertChain {
         self.device_cert.subject_key_id
     }
 }
-
-// ── Chain validation ──────────────────────────────────────────────────────
 
 /// Validates a certificate chain against a trust anchor.
 ///

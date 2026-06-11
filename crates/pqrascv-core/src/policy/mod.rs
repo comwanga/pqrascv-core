@@ -9,13 +9,6 @@
 //! Rules are serializable so policies can be distributed, audited, and version-
 //! controlled alongside infrastructure code.
 //!
-//! # Audit Findings Addressed
-//!
-//! - **Finding #1**: `RequireHardwareBackend` rejects `SoftwareRoT` in production.
-//! - **Finding #2**: `RequireExternalProvenance` enforced via [`VerifiedProvenance`] sealed token.
-//! - **Finding #4**: `RequireCertificateChain` enforces PKI validation.
-//! - **Finding #10**: `EnforceProtocolVersion` rejects downgrade attempts.
-
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
@@ -42,8 +35,6 @@ fn hardware_backend_from_identity(identity: &HardwareIdentity) -> HardwareBacken
     }
 }
 
-// ── HardwareBackendKind ───────────────────────────────────────────────────
-
 /// Identifies the hardware backend that produced a set of measurements.
 ///
 /// Embedded in [`Measurements`](crate::measurement::Measurements) so the
@@ -69,8 +60,6 @@ impl HardwareBackendKind {
         !matches!(self, Self::SoftwareUnsafe)
     }
 }
-
-// ── PolicyRule ────────────────────────────────────────────────────────────
 
 /// A single attestation policy rule.
 ///
@@ -110,14 +99,12 @@ pub enum PolicyRule {
     RequireHardwareBackend,
 
     /// Reject quotes that are not backed by a validated certificate chain.
-    ///
-    /// Fixes audit finding #4 (missing PKI).
     RequireCertificateChain,
 
     /// Reject quotes that carry self-asserted provenance.
     ///
     /// Requires an [`ExternalProvenanceBundle`](crate::provenance_v2::ExternalProvenanceBundle)
-    /// signed by a CI provider. Fixes audit finding #2.
+    /// signed by a CI provider.
     RequireExternalProvenance,
 
     /// Reject quotes older than this many seconds (only for `TrustedRtc` quotes).
@@ -136,7 +123,7 @@ pub enum PolicyRule {
 
     /// Reject quotes with a protocol version other than the current one.
     ///
-    /// Always include this rule. Fixes audit finding #10.
+    /// Always include this rule.
     EnforceProtocolVersion {
         /// The only accepted protocol version.
         expected: u16,
@@ -155,8 +142,6 @@ pub enum PolicyRule {
     /// Set to `0` to accept any counter value (effectively disabled).
     RequireMinEventCounter(u64),
 }
-
-// ── PolicyContext ─────────────────────────────────────────────────────────
 
 /// All data available to the policy engine during evaluation.
 ///
@@ -240,8 +225,6 @@ impl<'a> PolicyContext<'a> {
         }
     }
 }
-
-// ── PolicyEngineV2 ────────────────────────────────────────────────────────
 
 /// Composable attestation policy engine.
 ///
@@ -402,8 +385,6 @@ impl PolicyEngineV2 {
         Ok(())
     }
 }
-
-// ── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(all(test, feature = "alloc"))]
 mod tests {

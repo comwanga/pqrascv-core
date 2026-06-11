@@ -248,7 +248,6 @@ mod inner {
         }
     }
 
-    // ── Remote attestation verification ────────────────────────────────────
     //
     // The collector above (`measure`) only extracts measurements; it performs no
     // cryptographic verification. Genuine remote attestation requires verifying
@@ -337,7 +336,6 @@ mod inner {
             .map_err(|_| SevSnpVerifyError::ReportSignatureInvalid)
     }
 
-    // ── Certificate-chain validation (VCEK → ASK → ARK) ────────────────────
     //
     // AMD's trust chain: the report is signed by the VCEK; the VCEK X.509 cert
     // (ECDSA P-384 subject key) is signed by the ASK; the ASK cert (RSA) is

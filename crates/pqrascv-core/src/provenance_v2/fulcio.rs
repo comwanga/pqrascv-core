@@ -174,8 +174,6 @@ pub(crate) fn verify_chain(leaf_der: &[u8], root_der: &[u8]) -> Result<(), Fulci
         .map_err(|_| FulcioError::ChainValidationFailed)
 }
 
-// ── Private helpers ───────────────────────────────────────────────────────────
-
 #[cfg(feature = "alloc")]
 fn extract_oidc_claims(cert: &x509_cert::Certificate) -> Result<(String, String), FulcioError> {
     let exts = cert
@@ -279,8 +277,6 @@ fn read_der_length(data: &[u8]) -> Option<(usize, usize)> {
     }
     Some((len, 1 + num_bytes))
 }
-
-// ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(all(test, feature = "alloc"))]
 mod tests {

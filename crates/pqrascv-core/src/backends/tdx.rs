@@ -197,7 +197,6 @@ mod inner {
         }
     }
 
-    // ── DCAP TD-Quote (v4) remote-attestation verification ──────────────────
     //
     // The collector above (`measure`) reads a locally-MAC'd TDREPORT, which is
     // NOT remotely verifiable. Genuine remote attestation uses a DCAP TD-Quote:
@@ -218,7 +217,6 @@ mod inner {
     use x509_cert::spki::ObjectIdentifier;
     use x509_cert::Certificate;
 
-    // ── DCAP TD-Quote v4 layout constants ───────────────────────────────────
     // Source: Intel SGX/TDX DCAP "Quote Generation Library" Quote v4 format.
     /// Quote header length.
     const HEADER_LEN: usize = 48;
@@ -249,7 +247,6 @@ mod inner {
     /// `cert_data_type` for "PCK certificate chain (PEM)".
     const CERT_DATA_TYPE_PCK_CHAIN: u16 = 5;
 
-    // ── Offsets inside the TD10 report body (relative to body start) ─────────
     /// MRTD offset within the TD report body.
     const BODY_MRTD_OFFSET: usize = 16 + 48 + 48 + 8 + 8 + 8; // 136
     /// RTMR0 offset within the TD report body.

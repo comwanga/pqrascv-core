@@ -126,29 +126,21 @@ pub mod measurement;
 pub mod provenance;
 pub mod quote;
 
-// ── v2 modules ───────────────────────────────────────────────────────────────
-
 /// Device PKI — certificate chain, trust anchor, and revocation.
-/// Fixes audit finding #4 (missing PKI).
 pub mod pki;
 
 /// Replay-resistant nonce management and explicit clock evidence.
-/// Fixes audit findings #3 and #6.
 pub mod nonce;
 
 /// Composable policy engine v2.
-/// Fixes audit findings #1, #2, #4, #10.
 pub mod policy;
 
 /// External CI-signed provenance bundles (Sigstore).
-/// Fixes audit finding #2 (self-asserted SLSA provenance).
 pub mod provenance_v2;
 
 /// COSE Sign1 wrapping for attestation payloads (RFC 9052, ML-DSA-65).
 #[cfg(feature = "alloc")]
 pub mod cose_sign;
-
-// ── Convenience re-exports ───────────────────────────────────────────────────
 
 pub use config::PolicyConfig;
 pub use error::PqRascvError;
@@ -166,8 +158,6 @@ pub use policy::{HardwareBackendKind, PolicyEngineV2, PolicyRule};
 
 #[cfg(feature = "alloc")]
 pub use pki::{validate_chain, CertChain, DeviceCertificate, TrustAnchor};
-
-// ── Formal verification ───────────────────────────────────────────────────
 
 #[cfg(kani)]
 mod kani_proofs;
