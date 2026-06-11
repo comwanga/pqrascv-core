@@ -38,7 +38,7 @@ enum PqrascvStatus pqrascv_generate_keypair(uint8_t *signing_key_out,
 
 // Sign `message_ptr[0..message_len]` with the ML-DSA-65 signing seed.
 //
-// `signing_key_ptr` must be 32 bytes (the seed).
+// `signing_key_ptr` must point to at least `ML_DSA_65_SEED_SIZE` (32) bytes.
 // `signature_out` must be at least 3309 bytes (ML_DSA_65_SIGNATURE_SIZE).
 //
 // # Safety
