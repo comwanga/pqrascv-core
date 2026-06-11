@@ -1,7 +1,7 @@
 //! Python bindings for pqrascv-core.
 //!
 //! Build: cd crates/pqrascv-python && maturin develop --features extension-module
-//! Import: import pqrascv
+//! Import: import pqrascv_python
 
 use pqrascv_core::crypto::{
     generate_ml_dsa_keypair, CryptoBackend, MlDsaBackend, SIGNING_CONTEXT_QUOTE,
@@ -141,7 +141,7 @@ mod python_bindings {
     }
 
     #[pymodule]
-    pub fn pqrascv(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
+    pub fn pqrascv_python(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         m.add_class::<MlDsaKey>()?;
         m.add_class::<QuoteVerifier>()?;
         Ok(())
@@ -149,7 +149,7 @@ mod python_bindings {
 }
 
 #[cfg(feature = "extension-module")]
-pub use python_bindings::pqrascv;
+pub use python_bindings::pqrascv_python;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Unit tests — pure Rust, no Python runtime required
