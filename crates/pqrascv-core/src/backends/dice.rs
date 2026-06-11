@@ -228,10 +228,6 @@ impl RoT for CompoundDiceRoT<'_> {
     }
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Tests
-// ────────────────────────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -321,7 +317,6 @@ mod tests {
         assert_eq!(m.pcrs.algorithm, PcrAlgorithm::Sha3_256);
     }
 
-    // ── CompoundDiceRoT tests ─────────────────────────────────────────────
 
     const UDS: [u8; 32] = [0x11u8; 32];
     static BL: &[u8] = b"bootloader-v1";

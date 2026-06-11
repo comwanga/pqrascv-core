@@ -16,10 +16,6 @@
 
 use crate::error::PqRascvError;
 
-// ────────────────────────────────────────────────────────────────────────────
-// PCR bank
-// ────────────────────────────────────────────────────────────────────────────
-
 /// Number of Platform Configuration Registers supported.
 pub const PCR_COUNT: usize = 8;
 /// Size of each PCR value in bytes (SHA3-256).
@@ -71,10 +67,6 @@ impl Default for PcrBank {
     }
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Measurements struct
-// ────────────────────────────────────────────────────────────────────────────
-
 /// All measurements produced by a Root-of-Trust during attestation.
 ///
 /// This struct is embedded verbatim in [`AttestationQuote`](crate::quote::AttestationQuote)
@@ -109,10 +101,6 @@ impl Measurements {
     }
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// RoT trait
-// ────────────────────────────────────────────────────────────────────────────
-
 /// Root-of-Trust abstraction.
 ///
 /// Your implementation should collect whatever platform measurements are
@@ -129,10 +117,6 @@ pub trait RoT {
     /// register cannot be read (e.g. hardware fault, permission denied).
     fn measure(&self) -> Result<Measurements, PqRascvError>;
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// SoftwareRoT — TEST-ONLY backend
-// ────────────────────────────────────────────────────────────────────────────
 
 /// Software-based [`RoT`] that hashes supplied byte regions with SHA3-256.
 ///
@@ -227,10 +211,6 @@ impl RoT for SoftwareRoT<'_> {
         })
     }
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// Tests
-// ────────────────────────────────────────────────────────────────────────────
 
 #[cfg(all(test, feature = "software-rot-unsafe"))]
 mod tests {

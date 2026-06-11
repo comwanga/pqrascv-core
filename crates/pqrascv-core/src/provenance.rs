@@ -24,10 +24,6 @@ use alloc::{string::String, vec::Vec};
 #[cfg(feature = "alloc")]
 use crate::error::PqRascvError;
 
-// ────────────────────────────────────────────────────────────────────────────
-// Subject
-// ────────────────────────────────────────────────────────────────────────────
-
 /// A subject in an in-toto statement — identifies the artefact being attested.
 #[cfg(feature = "alloc")]
 #[non_exhaustive]
@@ -55,9 +51,6 @@ impl Subject {
     }
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// ────────────────────────────────────────────────────────────────────────────
-
 /// SLSA v1 build metadata embedded in a provenance predicate.
 #[cfg(feature = "alloc")]
 #[non_exhaustive]
@@ -76,10 +69,6 @@ pub struct BuildMetadata {
     /// SLSA level achieved (1–4).
     pub slsa_level: u8,
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// InTotoAttestation
-// ────────────────────────────────────────────────────────────────────────────
 
 /// Serializable in-toto v1 attestation statement.
 ///
@@ -120,10 +109,6 @@ impl InTotoAttestation {
         self.build.slsa_level
     }
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// SlsaPredicateBuilder
-// ────────────────────────────────────────────────────────────────────────────
 
 /// Builder for SLSA v1 provenance predicates.
 ///
@@ -242,10 +227,6 @@ impl SlsaPredicateBuilder {
         })
     }
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// Tests
-// ────────────────────────────────────────────────────────────────────────────
 
 #[cfg(all(test, feature = "alloc"))]
 mod tests {

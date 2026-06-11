@@ -21,9 +21,6 @@ use crate::error::PqRascvError;
 use sha3::{Digest, Sha3_256};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-// ────────────────────────────────────────────────────────────────────────────
-// ────────────────────────────────────────────────────────────────────────────
-
 /// ML-DSA-65 signing key seed size in bytes.
 /// The seed is expanded to the full signing key on demand.
 pub const ML_DSA_65_SEED_SIZE: usize = 32;
@@ -41,12 +38,7 @@ pub const SIGNING_CONTEXT_QUOTE: &[u8] = b"pqrascv-quote-v1";
 pub const SIGNING_CONTEXT_CERT: &[u8] = b"pqrascv-cert-v2";
 
 /// Domain-separation context for ML-DSA-65 Certificate Revocation List signatures.
-/// Used by `RevocationList::verify()` once CRL signature enforcement is wired in (Task 6).
 pub const SIGNING_CONTEXT_CRL: &[u8] = b"pqrascv-crl-v2";
-
-// ────────────────────────────────────────────────────────────────────────────
-// Signature bytes — fixed-size, stack-allocatable
-// ────────────────────────────────────────────────────────────────────────────
 
 /// Raw ML-DSA-65 signature bytes. Fixed-size so usable without `alloc`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -57,10 +49,6 @@ impl AsRef<[u8]> for SignatureBytes {
         &self.0
     }
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// Zeroizing seed wrapper
-// ────────────────────────────────────────────────────────────────────────────
 
 /// A 32-byte ML-DSA-65 signing seed that zeroizes on drop.
 ///
@@ -82,10 +70,6 @@ impl SigningKeySeed {
         &self.0
     }
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// CryptoBackend trait
-// ────────────────────────────────────────────────────────────────────────────
 
 /// Abstraction over post-quantum signing and verification.
 ///
@@ -130,10 +114,6 @@ pub fn pub_key_id(verifying_key: &[u8]) -> [u8; 32] {
     h.update(verifying_key);
     h.finalize().into()
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// MlDsaBackend
-// ────────────────────────────────────────────────────────────────────────────
 
 /// Concrete [`CryptoBackend`] using `RustCrypto`'s `ml-dsa` crate (ML-DSA-65, FIPS 204).
 ///
@@ -208,9 +188,6 @@ impl CryptoBackend for MlDsaBackend {
     }
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// ────────────────────────────────────────────────────────────────────────────
-
 /// Generates a fresh ML-DSA-65 key pair using the OS random source.
 ///
 /// Returns `(seed, verifying_key_bytes)` where:
@@ -245,10 +222,6 @@ pub fn generate_ml_dsa_keypair(
 
     Ok((SigningKeySeed::new(seed_array), vk_bytes))
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// Tests
-// ────────────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

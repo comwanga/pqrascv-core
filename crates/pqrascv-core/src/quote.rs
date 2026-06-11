@@ -28,10 +28,6 @@ use crate::{
     provenance::InTotoAttestation,
 };
 
-// ────────────────────────────────────────────────────────────────────────────
-// Protocol version
-// ────────────────────────────────────────────────────────────────────────────
-
 /// Current PQ-RASCV wire protocol version.
 ///
 /// This constant is the source of truth for both the prover and verifier.
@@ -49,10 +45,6 @@ const _PROTOCOL_VERSION_MATCHES_POLICY: () = assert!(
 /// Maximum accepted CBOR size for a quote (64 KiB).
 /// Rejects oversized inputs before allocating, protecting embedded verifiers.
 pub const MAX_QUOTE_CBOR_SIZE: usize = 65_536;
-
-// ────────────────────────────────────────────────────────────────────────────
-// QuoteBody — the signed payload
-// ────────────────────────────────────────────────────────────────────────────
 
 /// Timestamp field in a [`QuoteBody`].
 ///
@@ -99,10 +91,6 @@ impl QuoteBody {
     }
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// AttestationQuote
-// ────────────────────────────────────────────────────────────────────────────
-
 /// A complete, signed PQ-RASCV attestation quote.
 ///
 /// Wire format: CBOR.  The `signature` field is an ML-DSA-65 signature
@@ -148,10 +136,6 @@ impl AttestationQuote {
     }
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Challenge
-// ────────────────────────────────────────────────────────────────────────────
-
 /// Challenge message sent from verifier to prover.
 ///
 /// The `nonce` field is what you pass directly to [`generate_quote`] on the prover side.
@@ -183,10 +167,6 @@ impl Challenge {
         self
     }
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// generate_quote — public entry point
-// ────────────────────────────────────────────────────────────────────────────
 
 /// Generates a complete, signed [`AttestationQuote`].
 ///
@@ -237,10 +217,6 @@ pub fn generate_quote<R: RoT, C: CryptoBackend>(
         signature: sig.as_ref().to_vec(),
     })
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// Tests
-// ────────────────────────────────────────────────────────────────────────────
 
 #[cfg(all(test, feature = "alloc"))]
 mod tests {

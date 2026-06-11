@@ -13,7 +13,6 @@
 #[cfg(kani)]
 extern crate alloc;
 
-// ── Harness 1: PcrBank::default() has all-zero digests ───────────────────
 
 /// Proof: `PcrBank::default()` initialises every PCR slot to the all-zeros
 /// digest.
@@ -38,7 +37,6 @@ fn pcr_bank_default_is_all_zeros() {
     }
 }
 
-// ── Harness 2: InMemoryNonceLedger rejects duplicate nonces ──────────────
 
 /// Proof: after a nonce is registered and consumed it cannot be consumed a
 /// second time (replay rejected), and a nonce that was never registered is
@@ -68,7 +66,6 @@ fn nonce_ledger_rejects_duplicate() {
     kani::assert(second_consume.is_err(), "duplicate nonce must be rejected");
 }
 
-// ── Harness 3: PolicyEngineV2::evaluate is deterministic ─────────────────
 
 /// Proof: `PolicyEngineV2::evaluate` is deterministic — calling it twice on
 /// the same `PolicyContext` always produces the same `Ok`/`Err` outcome.
@@ -143,7 +140,6 @@ fn policy_evaluation_is_deterministic() {
     );
 }
 
-// ── Harness 4: CBOR serialization roundtrip preserves critical fields ────
 
 /// Proof: if a byte slice deserialises as a valid `AttestationQuote` and the
 /// quote can be re-serialised, then the re-deserialised quote has the same

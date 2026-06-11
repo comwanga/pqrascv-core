@@ -65,7 +65,6 @@ use alloc::{string::String, vec::Vec};
 #[cfg(feature = "alloc")]
 use crate::error::PqRascvError;
 
-// ── SigstoreConfig ────────────────────────────────────────────────────────
 
 /// Configuration required to verify a Sigstore provenance bundle.
 ///
@@ -104,7 +103,6 @@ pub struct SigstoreConfig {
     pub max_clock_skew_secs: u64,
 }
 
-// ── VerifiedProvenance ────────────────────────────────────────────────────
 
 /// Proof that all 10 provenance invariant conditions have been satisfied.
 ///
@@ -164,7 +162,6 @@ impl VerifiedProvenance {
     }
 }
 
-// ── SigstoreBundle ────────────────────────────────────────────────────────
 
 /// A Sigstore bundle: CI signature + Rekor transparency log proof.
 #[cfg(feature = "alloc")]
@@ -192,7 +189,6 @@ pub struct SigstoreBundle {
     pub predicate_hash: [u8; 32],
 }
 
-// ── ExternalProvenanceBundle ──────────────────────────────────────────────
 
 /// A CI-signed provenance bundle embedded in an attestation quote.
 ///
@@ -252,7 +248,6 @@ impl ExternalProvenanceBundle {
         &self.predicate.builder_id
     }
 
-    // ── Private sub-checks (conditions 1–8) ──────────────────────────────
 
     /// Condition 1 — The provenance statement is cryptographically signed.
     ///
@@ -506,7 +501,6 @@ impl ExternalProvenanceBundle {
             .map_err(|_| PqRascvError::InvalidProvenance)
     }
 
-    // ── Public entry point ────────────────────────────────────────────────
 
     /// Verifies all 10 provenance invariant conditions atomically.
     ///
@@ -636,7 +630,6 @@ impl ExternalProvenanceBundle {
     }
 }
 
-// ── ProvenancePredicate ───────────────────────────────────────────────────
 
 /// SLSA v1 provenance predicate (in-toto format).
 ///
@@ -703,7 +696,6 @@ pub struct ProvenanceSubject {
     pub digest_sha3_256: [u8; 32],
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(all(test, feature = "alloc"))]
 mod tests {

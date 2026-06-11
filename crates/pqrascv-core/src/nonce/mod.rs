@@ -1,13 +1,5 @@
 //! Replay-resistant nonce management.
 //!
-//! # Audit Findings Fixed
-//!
-//! **Finding #3 — Replay Vulnerability**: `timestamp=0` bypassed freshness
-//! checks entirely. Captured attestations became permanently replayable.
-//!
-//! **Finding #6 — Weak Event Counter Semantics**: Counters were caller-controlled
-//! and non-monotonic.
-//!
 //! # v2 Design
 //!
 //! 1. [`ClockEvidence`] replaces the raw `u64` timestamp. `NoRtc` is an
@@ -83,18 +75,12 @@ use alloc::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::error::PqRascvError;
 
-// ── ClockEvidence ─────────────────────────────────────────────────────────
-
 /// Explicit clock evidence in an attestation quote.
 ///
 /// Replaces the raw `u64` timestamp from v1. There is no silent bypass:
 /// a device without a real-time clock must use `NoRtc`, and the verifier
 /// policy explicitly controls whether `NoRtc` quotes are accepted.
 ///
-/// # Audit Finding #3 Fix
-///
-/// In v1, `timestamp: u64` allowed `timestamp=0` to bypass freshness checks.
-/// This enum makes the absence of a clock an explicit, policy-controlled choice.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ClockEvidence {
     /// Unix seconds from a trusted real-time clock.
@@ -126,8 +112,6 @@ impl ClockEvidence {
     }
 }
 
-// ── NonceHandle ───────────────────────────────────────────────────────────
-
 /// An opaque handle to a registered, unconsumed nonce.
 ///
 /// Returned by [`NonceLedger::register`]. Consume via [`NonceLedger::consume_handle`]
@@ -149,8 +133,6 @@ impl NonceHandle {
         &self.nonce
     }
 }
-
-// ── NonceLedger trait ─────────────────────────────────────────────────────
 
 /// Single-use nonce enforcement.
 ///
@@ -273,8 +255,6 @@ pub trait NonceLedger {
         self.consume(&nonce)
     }
 }
-
-// ── InMemoryNonceLedger ───────────────────────────────────────────────────
 
 /// Default cap on the consumed-nonce history.
 ///
@@ -432,8 +412,6 @@ impl NonceLedger for InMemoryNonceLedger {
     }
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────
-
 #[cfg(all(test, feature = "alloc"))]
 mod tests {
     use super::*;
@@ -474,7 +452,6 @@ mod tests {
         assert!(ledger.register(nonce).is_err());
     }
 
-    // ── consume_handle ────────────────────────────────────────────────────
 
     #[test]
     fn consume_handle_succeeds() {
@@ -499,7 +476,6 @@ mod tests {
         );
     }
 
-    // ── bounded consumed set ──────────────────────────────────────────────
 
     #[test]
     fn consumed_set_evicts_when_cap_reached() {
@@ -539,7 +515,6 @@ mod tests {
         assert_eq!(ledger.consume(&nonce), Err(PqRascvError::InvalidNonce));
     }
 
-    // ── TTL semantics ─────────────────────────────────────────────────────
 
     #[test]
     fn ttl_nonce_consumable_before_expiry() {
@@ -627,7 +602,6 @@ mod tests {
         assert!(ledger.register_with_ttl(nonce, u64::MAX, 60).is_err());
     }
 
-    // ── multi-node gap documentation test ────────────────────────────────
     //
     // This test models the multi-node replay scenario:
     // - Node A issues and consumes a nonce.

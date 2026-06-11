@@ -4,12 +4,6 @@
 //! locally and checks it during quote verification. For offline operation,
 //! the last known CRL is used with a staleness warning.
 //!
-//! # Audit Finding #4 Fix (revocation component)
-//!
-//! v1 had no revocation mechanism. A compromised device key could sign
-//! attestation quotes indefinitely. v2 adds CRL-based revocation so that
-//! compromised device certificates can be invalidated.
-
 #[cfg(feature = "alloc")]
 extern crate alloc;
 

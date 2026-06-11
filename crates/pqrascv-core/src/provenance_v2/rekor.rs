@@ -97,7 +97,6 @@ impl RekorEntry {
     }
 }
 
-// ── Private helpers ───────────────────────────────────────────────────────────
 
 /// Verify the Rekor SET (Signed Entry Timestamp).
 ///
@@ -175,7 +174,6 @@ pub(crate) fn verify_content_binding(
     let body: Value =
         serde_json::from_slice(&body_bytes).map_err(|_| RekorError::MalformedEntry)?;
 
-    // ── 1. Predicate hash ──
     let body_hash = body["spec"]["data"]["hash"]["value"]
         .as_str()
         .ok_or(RekorError::ContentBindingMismatch)?;
@@ -191,7 +189,6 @@ pub(crate) fn verify_content_binding(
         return Err(RekorError::ContentBindingMismatch);
     }
 
-    // ── 2. CI signature ──
     let body_sig = body["spec"]["signature"]["content"]
         .as_str()
         .ok_or(RekorError::ContentBindingMismatch)?;
@@ -199,7 +196,6 @@ pub(crate) fn verify_content_binding(
         return Err(RekorError::ContentBindingMismatch);
     }
 
-    // ── 3. Signing certificate ──
     let body_cert = body["spec"]["signature"]["publicKey"]["content"]
         .as_str()
         .ok_or(RekorError::ContentBindingMismatch)?;
@@ -219,7 +215,6 @@ fn base64_decode(encoded: &str) -> Option<alloc::vec::Vec<u8>> {
         .ok()
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(all(test, feature = "alloc"))]
 mod tests {
@@ -268,7 +263,6 @@ mod tests {
     // that require key generation (p256::SigningKey). They are added in
     // crates/pqrascv-core/tests/provenance_v2_tests.rs under the "std" feature gate.
 
-    // ── Content-binding tests ─────────────────────────────────────────────
 
     fn make_body_b64(hash_hex: &str, sig_b64: &str, cert_b64: &str) -> alloc::string::String {
         use base64::Engine;
