@@ -149,12 +149,18 @@ jobs:
   miri:
     name: Miri (UB detection)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri
       - uses: Swatinem/rust-cache@v2
+      - name: Setup Miri
+        run: cargo miri setup
+        env:
+          MIRIFLAGS: -Zmiri-strict-provenance
       - name: Run Miri (no_std, no heap)
         run: cargo miri test -p pqrascv-core --no-default-features
         env:
