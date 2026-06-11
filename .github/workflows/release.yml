@@ -61,6 +61,7 @@ jobs:
             - Unit tests: Passed
           draft: false
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.event.inputs.version, '-rc') }}
+          make_latest: "true"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
