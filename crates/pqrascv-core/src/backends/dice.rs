@@ -317,7 +317,6 @@ mod tests {
         assert_eq!(m.pcrs.algorithm, PcrAlgorithm::Sha3_256);
     }
 
-
     const UDS: [u8; 32] = [0x11u8; 32];
     static BL: &[u8] = b"bootloader-v1";
     static FW: &[u8] = b"firmware-v1.0.0";

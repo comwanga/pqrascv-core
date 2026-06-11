@@ -239,10 +239,8 @@ mod inner {
     }
 }
 
-
 #[cfg(feature = "hardware-tpm")]
 pub use inner::TpmRoT;
-
 
 /// Placeholder used when the `hardware-tpm` feature is disabled.
 ///

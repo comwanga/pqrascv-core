@@ -91,7 +91,6 @@ impl IdentityConstraint {
     }
 }
 
-
 #[cfg(all(test, feature = "alloc"))]
 mod tests {
     use super::*;

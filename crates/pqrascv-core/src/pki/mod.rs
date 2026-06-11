@@ -49,10 +49,8 @@ use crate::error::PqRascvError;
 #[cfg(feature = "alloc")]
 use sha3::{Digest, Sha3_256};
 
-
 /// Current PQ-RASCV certificate format version.
 pub const CERT_VERSION: u8 = 3;
-
 
 /// Identifies the hardware root that anchors a device's measurements.
 ///
@@ -72,7 +70,6 @@ pub enum HardwareIdentity {
     SevSnpMeasurement(#[serde(with = "serde_bytes")] Vec<u8>),
 }
 
-
 /// Firmware policy constraints embedded in a device certificate.
 ///
 /// The issuing CA encodes which firmware images this device is permitted to
@@ -86,7 +83,6 @@ pub struct FirmwarePolicyConstraint {
     /// Minimum SLSA level required for this device's quotes.
     pub min_slsa_level: u8,
 }
-
 
 /// A CBOR-native device identity certificate.
 ///
@@ -227,7 +223,6 @@ struct DeviceCertTbs<'a> {
     max_path_length: Option<u8>,
 }
 
-
 /// A CA's ML-DSA-65 verifying key with its validity window.
 #[cfg(feature = "alloc")]
 #[derive(Clone, Debug)]
@@ -256,7 +251,6 @@ impl CaPublicKey {
         now_secs >= self.not_before && now_secs <= self.not_after
     }
 }
-
 
 /// The offline root CA trust anchor.
 ///
@@ -328,7 +322,6 @@ impl TrustAnchor {
     }
 }
 
-
 /// Metadata about the trust anchor that validated a certificate chain.
 ///
 /// Embedded in [`CertChain`] so verification results carry full audit context.
@@ -344,7 +337,6 @@ pub struct TrustAnchorInfo {
     /// Unix seconds: anchor expires at this time.
     pub not_after: u64,
 }
-
 
 /// A validated certificate chain: root CA → [intermediate CAs] → device cert.
 ///
@@ -369,7 +361,6 @@ impl CertChain {
         self.device_cert.subject_key_id
     }
 }
-
 
 /// Validates a certificate chain against a trust anchor.
 ///

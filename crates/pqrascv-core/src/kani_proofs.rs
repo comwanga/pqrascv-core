@@ -13,7 +13,6 @@
 #[cfg(kani)]
 extern crate alloc;
 
-
 /// Proof: `PcrBank::default()` initialises every PCR slot to the all-zeros
 /// digest.
 ///
@@ -36,7 +35,6 @@ fn pcr_bank_default_is_all_zeros() {
         i += 1;
     }
 }
-
 
 /// Proof: after a nonce is registered and consumed it cannot be consumed a
 /// second time (replay rejected), and a nonce that was never registered is
@@ -65,7 +63,6 @@ fn nonce_ledger_rejects_duplicate() {
     let second_consume = ledger.consume(&nonce);
     kani::assert(second_consume.is_err(), "duplicate nonce must be rejected");
 }
-
 
 /// Proof: `PolicyEngineV2::evaluate` is deterministic — calling it twice on
 /// the same `PolicyContext` always produces the same `Ok`/`Err` outcome.
@@ -139,7 +136,6 @@ fn policy_evaluation_is_deterministic() {
         "PolicyEngineV2::evaluate must be deterministic",
     );
 }
-
 
 /// Proof: if a byte slice deserialises as a valid `AttestationQuote` and the
 /// quote can be re-serialised, then the re-deserialised quote has the same

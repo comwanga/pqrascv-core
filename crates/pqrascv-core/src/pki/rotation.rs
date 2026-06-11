@@ -235,7 +235,6 @@ mod tests {
         TrustStore, CERT_VERSION,
     };
 
-
     fn anchor(ca_id: &str, key: &[u8; 1952], not_before: u64, not_after: u64) -> TrustAnchor {
         TrustAnchor::new(CaPublicKey {
             key_bytes: *key,
@@ -280,7 +279,6 @@ mod tests {
         cert
     }
 
-
     #[test]
     fn overlap_window_rejects_gap() {
         // new starts after old retires → gap → rejected.
@@ -304,7 +302,6 @@ mod tests {
         assert!(!w.old_is_retired(3_000));
         assert!(w.old_is_retired(3_001));
     }
-
 
     #[test]
     fn root_rollover_both_anchors_trusted_during_overlap() {
@@ -414,7 +411,6 @@ mod tests {
         ));
     }
 
-
     #[test]
     fn intermediate_rollover_old_and_new_intermediates_validate() {
         // Root signs two intermediates (old + new) sharing the same self_id.
@@ -502,7 +498,6 @@ mod tests {
             "device under NEW intermediate must validate after old retires"
         );
     }
-
 
     #[test]
     fn carry_forward_preserves_old_revocations() {

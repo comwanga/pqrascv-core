@@ -97,7 +97,6 @@ impl RekorEntry {
     }
 }
 
-
 /// Verify the Rekor SET (Signed Entry Timestamp).
 ///
 /// Real Rekor SETs are DER-encoded ECDSA P-256 signatures (the `p256/der`
@@ -215,7 +214,6 @@ fn base64_decode(encoded: &str) -> Option<alloc::vec::Vec<u8>> {
         .ok()
 }
 
-
 #[cfg(all(test, feature = "alloc"))]
 mod tests {
     use super::*;
@@ -262,7 +260,6 @@ mod tests {
     // Tests with real P-256 key pairs and valid signatures are integration tests
     // that require key generation (p256::SigningKey). They are added in
     // crates/pqrascv-core/tests/provenance_v2_tests.rs under the "std" feature gate.
-
 
     fn make_body_b64(hash_hex: &str, sig_b64: &str, cert_b64: &str) -> alloc::string::String {
         use base64::Engine;

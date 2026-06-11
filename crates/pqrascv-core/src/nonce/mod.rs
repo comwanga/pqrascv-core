@@ -452,7 +452,6 @@ mod tests {
         assert!(ledger.register(nonce).is_err());
     }
 
-
     #[test]
     fn consume_handle_succeeds() {
         let mut ledger = InMemoryNonceLedger::default();
@@ -475,7 +474,6 @@ mod tests {
             Err(PqRascvError::InvalidNonce)
         );
     }
-
 
     #[test]
     fn consumed_set_evicts_when_cap_reached() {
@@ -514,7 +512,6 @@ mod tests {
         // Replay attempt while nonce is still within the cap — must be rejected.
         assert_eq!(ledger.consume(&nonce), Err(PqRascvError::InvalidNonce));
     }
-
 
     #[test]
     fn ttl_nonce_consumable_before_expiry() {
