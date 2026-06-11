@@ -4,8 +4,8 @@
 
 | Version | Supported |
 |---------|-----------|
-| 1.0.0-rc.7 (latest) | ✅ |
-| < 1.0.0-rc.7 | ❌ |
+| 1.0.0-rc.8 (latest) | ✅ |
+| < 1.0.0-rc.8 | ❌ |
 
 ## Reporting a Vulnerability
 

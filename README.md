@@ -33,10 +33,10 @@ Traditional attestation proves *what* is running but not *how* it was built or *
 
 ```toml
 # std (default)
-pqrascv-core = "1.0.0-rc.7"
+pqrascv-core = "1.0.0-rc.8"
 
 # bare-metal / no_std
-pqrascv-core = { version = "1.0.0-rc.7", default-features = false, features = ["alloc"] }
+pqrascv-core = { version = "1.0.0-rc.8", default-features = false, features = ["alloc"] }
 ```
 
 ---
@@ -213,7 +213,7 @@ See [SECURITY.md](SECURITY.md) for the vulnerability reporting policy.
 
 ---
 
-## Status — v1.0.0-rc.7
+## Status — v1.0.0-rc.8
 
 API is stabilizing. The `ml-dsa` crate is pinned to `=0.1.0-rc.8` (FIPS-final algorithm, pre-stable Rust crate). The stable 1.0 release will follow the first stable `ml-dsa` ≥ `0.1.0`.
 
