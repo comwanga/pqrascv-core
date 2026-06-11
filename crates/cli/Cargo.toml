@@ -13,6 +13,13 @@ repository.workspace   = true
 name = "pqrascv"
 path = "src/main.rs"
 
+[lib]
+name = "pqrascv_cli"
+path = "src/lib.rs"
+
+[package.metadata.docs.rs]
+no-default-features = false
+
 [dependencies]
 # software-rot-unsafe is intentionally included: the CLI is a demo/reference tool
 # that generates test quotes via SoftwareRoT. The runtime --software-rot-acknowledged
